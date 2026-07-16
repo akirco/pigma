@@ -1,0 +1,42 @@
+[workspace]
+members = ["crates/ncm-api"]
+
+[package]
+name = "pigma"
+version = "0.1.0"
+description = "A netease cloud music client"
+license = "AGPL-3.0"
+edition = "2024"
+# authors = ["akirco <earlfx@163.com>"]
+
+[dependencies]
+crossterm = { version = "0.29.0", features = ["event-stream"] }
+futures = "0.3.32"
+ratatui = { version = "0.30.2", features = ["serde"] }
+tokio = { version = "1.52.3", features = ["full"] }
+color-eyre = "0.6.5"
+log = { version = "0.4.33", features = ["serde"] }
+simplelog = "0.12.2"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1"
+toml = "0.9.8"
+dirs = "6.0.0"
+chrono = "0.4.45"
+unicode-width = "0.2"
+ncm-api = { path = "crates/ncm-api" }
+url = "2.5"
+rodio = "0.22.2"
+qrcode = "0.14.1"
+stream-download = { version = "0.24.1", features = ["async-read"] }
+
+colorgrad = { version = "0.8", features = ["preset"] }
+rand = "0.8"
+
+
+
+# Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
