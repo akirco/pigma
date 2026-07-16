@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
+use std::sync::OnceLock;
 
 use crate::{
     logger::Logger,
@@ -89,20 +90,33 @@ impl Default for ColumnsConfig {
 
 impl ColumnsConfig {
     pub fn for_content(&self, content: &ContentState, api: Option<&str>) -> &[ColumnDef] {
-        // Check per-API override first
-        if let Some(api) = api
-            && let Some(cols) = self.overrides.get(api)
-        {
-            return cols;
-        }
-        // Fall back to type-based defaults
         match content {
-            ContentState::Songs(_) | ContentState::HotSearch(_) => &self.songs,
-            ContentState::SongLists(_) | ContentState::TopLists(_) => &self.songlist,
+            ContentState::Songs(_) => &self.songs,
+            ContentState::SongLists(_) | ContentState::TopLists(_) => {
+                if let Some(api) = api
+                    && let Some(cols) = self.overrides.get(api)
+                {
+                    return cols;
+                }
+                &self.songlist
+            }
+            ContentState::HotSearch(_) => {
+                if let Some(api) = api
+                    && let Some(cols) = self.overrides.get(api)
+                {
+                    return cols;
+                }
+                // Built-in fallback for HotSearch when no override configured
+                return HOTSEARCH_FALLBACK.get_or_init(|| vec![
+                    ColumnDef { header: "HOT SEARCH".into(), field: "keyword".into(), width: None, min_width: Some(1), ratio: None },
+                ]);
+            }
             _ => &[],
         }
     }
 }
+
+static HOTSEARCH_FALLBACK: OnceLock<Vec<ColumnDef>> = OnceLock::new();
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlayerbarConfig {
