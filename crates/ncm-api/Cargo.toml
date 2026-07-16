@@ -8,7 +8,7 @@ reqwest = { version = "0.13.4", features = ["json", "gzip"] }
 
 aes = "0.9.1"
 rsa = { version = "0.9.10", features = ["pem"] }
-num-bigint-dig = "0.8"
+num-bigint-dig = "0.9"
 md-5 = "0.11.0"
 base64 = "0.22.1"
 hex = "0.4.3"
