@@ -30,7 +30,7 @@ qrcode = "0.14.1"
 stream-download = { version = "0.24.1", features = ["async-read"] }
 
 colorgrad = { version = "0.8", features = ["preset"] }
-rand = "0.8"
+rand = "0.10"
 
 
 
