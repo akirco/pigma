@@ -5,17 +5,18 @@ use md5::{Digest, Md5};
 use rsa::RsaPublicKey;
 use rsa::pkcs8::DecodePublicKey;
 use rsa::traits::PublicKeyParts;
+use rsa::BigUint;
 use std::sync::LazyLock;
 
 /// Raw RSA public key modulus and exponent for encryption without padding
 struct RawRsaKey {
-    n: num_bigint_dig::BigUint,
-    e: num_bigint_dig::BigUint,
+    n: BigUint,
+    e: BigUint,
 }
 
 impl RawRsaKey {
     fn encrypt(&self, data: &[u8]) -> Vec<u8> {
-        let m = num_bigint_dig::BigUint::from_bytes_be(data);
+        let m = BigUint::from_bytes_be(data);
         let c = m.modpow(&self.e, &self.n);
         let bytes = c.to_bytes_be();
         // Pad to key size (128 bytes for 1024-bit key)

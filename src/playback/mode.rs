@@ -73,8 +73,7 @@ impl ShuffleMode {
         }
         let start = current_index.min(queue_len - 1);
         let mut tail: Vec<usize> = (0..queue_len).filter(|&i| i != start).collect();
-        let mut rng = rand::thread_rng();
-        tail.shuffle(&mut rng);
+        tail.shuffle(&mut rand::rng());
         let mut order = vec![start];
         order.extend(tail);
         Self { order, pos: 0 }

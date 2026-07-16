@@ -107,9 +107,9 @@ impl ColumnsConfig {
                     return cols;
                 }
                 // Built-in fallback for HotSearch when no override configured
-                return HOTSEARCH_FALLBACK.get_or_init(|| vec![
+                HOTSEARCH_FALLBACK.get_or_init(|| vec![
                     ColumnDef { header: "HOT SEARCH".into(), field: "keyword".into(), width: None, min_width: Some(1), ratio: None },
-                ]);
+                ])
             }
             _ => &[],
         }

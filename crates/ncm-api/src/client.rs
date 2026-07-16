@@ -198,17 +198,19 @@ impl NcmClient {
         }
 
         let text = resp.text().await?;
+        let preview_200 = text.chars().take(200).collect::<String>();
         log::debug!(
             "send_request status={}, body(len={}): {:?}",
             status,
             text.len(),
-            safe_truncate(&text, 200)
+            preview_200
         );
         if !status.is_success() {
+            let preview_500 = text.chars().take(500).collect::<String>();
             log::warn!(
                 "send_request non-200: status={}, body={:?}",
                 status,
-                safe_truncate(&text, 500)
+                preview_500
             );
         }
         Ok(text)
@@ -499,9 +501,10 @@ impl NcmClient {
         let result = self
             .request_eapi("/api/song/enhance/player/url/v1", &params)
             .await?;
+        let preview_300 = result.chars().take(300).collect::<String>();
         log::debug!(
             "songs_url_v1 raw response (first 300): {:?}",
-            &safe_truncate(&result, 300)
+            preview_300
         );
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
@@ -1367,19 +1370,4 @@ impl NcmClient {
         std::fs::write(&path, &bytes)?;
         Ok(())
     }
-}
-
-fn safe_truncate(s: &str, max: usize) -> &str {
-    if unicode_width::UnicodeWidthStr::width(s) <= max {
-        return s;
-    }
-    let mut width = 0;
-    for (i, ch) in s.char_indices() {
-        let cw = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
-        if width + cw > max {
-            return &s[..i];
-        }
-        width += cw;
-    }
-    s
 }

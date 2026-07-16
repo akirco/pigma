@@ -1,4 +1,6 @@
 use std::io::{Read, Seek, SeekFrom};
+#[cfg(unix)]
+use std::os::fd::AsRawFd;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -89,8 +91,8 @@ pub async fn run(
     let progress_interval = Duration::from_millis(200);
 
     tokio::task::spawn_blocking(move || {
-        let mut sink = match rodio::DeviceSinkBuilder::open_default_sink() {
-            Ok(sink) => sink,
+        let mut sink = match open_sink_silent() {
+            Ok(s) => s,
             Err(e) => {
                 if event_tx
                     .send(Event::App(AppEvent::PlaybackError(format!(
@@ -159,4 +161,23 @@ pub async fn run(
     });
 
     let _ = ready_rx.await;
+}
+
+/// Open rodio default sink while suppressing ALSA stderr noise.
+fn open_sink_silent() -> Result<rodio::MixerDeviceSink, rodio::DeviceSinkError> {
+    #[cfg(unix)]
+    {
+        let stderr_fd = 2;
+        let saved = unsafe { libc::dup(stderr_fd) };
+        let dev_null = std::fs::File::open("/dev/null").unwrap();
+        unsafe { libc::dup2(dev_null.as_raw_fd(), stderr_fd) };
+        let result = rodio::DeviceSinkBuilder::open_default_sink();
+        unsafe { libc::dup2(saved, stderr_fd) };
+        unsafe { libc::close(saved) };
+        result
+    }
+    #[cfg(not(unix))]
+    {
+        rodio::DeviceSinkBuilder::open_default_sink()
+    }
 }

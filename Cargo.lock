@@ -1818,7 +1818,6 @@ dependencies = [
  "hex",
  "log",
  "md-5",
- "num-bigint-dig",
  "qrcode",
  "rand 0.10.2",
  "reqwest",
@@ -1827,7 +1826,6 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
- "unicode-width",
  "urlencoding",
 ]
 
@@ -1905,7 +1903,6 @@ dependencies = [
  "num-iter",
  "num-traits",
  "rand 0.8.6",
- "serde",
  "smallvec",
  "zeroize",
 ]
@@ -2346,10 +2343,11 @@ dependencies = [
  "crossterm 0.29.0",
  "dirs",
  "futures",
+ "libc",
  "log",
  "ncm-api",
  "qrcode",
- "rand 0.8.6",
+ "rand 0.10.2",
  "ratatui",
  "rodio",
  "serde",
@@ -2542,7 +2540,6 @@ version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5ca0ecfa931c29007047d1bc58e623ab12e5590e8c7cc53200d5202b69266d8a"
 dependencies = [
- "libc",
  "rand_chacha",
  "rand_core 0.6.4",
 ]
@@ -3746,9 +3743,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.52.3"
+version = "1.52.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fc7f01b389ac15039e4dc9531aa973a135d7a4135281b12d7c1bc79fd57fffe"
+checksum = "317fafbbe3f02fc663dad00ea6186197de963cd4190e86a26d8d0fae095539af"
 dependencies = [
  "bytes",
  "libc",

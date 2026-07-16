@@ -13,7 +13,7 @@ edition = "2024"
 crossterm = { version = "0.29.0", features = ["event-stream"] }
 futures = "0.3.32"
 ratatui = { version = "0.30.2", features = ["serde"] }
-tokio = { version = "1.52.3", features = ["full"] }
+tokio = { version = "1.52.4", features = ["full"] }
 color-eyre = "0.6.5"
 log = { version = "0.4.33", features = ["serde"] }
 simplelog = "0.12.2"
@@ -30,8 +30,8 @@ qrcode = "0.14.1"
 stream-download = { version = "0.24.1", features = ["async-read"] }
 
 colorgrad = { version = "0.8", features = ["preset"] }
-rand = "0.8"
-
+rand = "0.10.2"
+libc = "0.2.186"
 
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
