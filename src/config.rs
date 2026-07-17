@@ -226,43 +226,36 @@ impl Default for NavConfig {
                         NavItemConfig {
                             name: "每日推荐".into(),
                             api: Some("recommend_songs".into()),
-                            columns: Some(default_song_columns()),
                             title_template: None,
                         },
                         NavItemConfig {
                             name: "推荐歌单".into(),
                             api: Some("recommend_resource".into()),
-                            columns: Some(default_songlist_columns()),
                             title_template: None,
                         },
                         NavItemConfig {
                             name: "排行榜".into(),
                             api: Some("toplist".into()),
-                            columns: Some(default_toplist_columns()),
                             title_template: None,
                         },
                         NavItemConfig {
                             name: "歌单".into(),
                             api: Some("top_song_list".into()),
-                            columns: Some(default_songlist_columns()),
                             title_template: None,
                         },
                         NavItemConfig {
                             name: "电台".into(),
                             api: Some("user_radio_sublist".into()),
-                            columns: Some(default_songlist_columns()),
                             title_template: None,
                         },
                         NavItemConfig {
                             name: "搜索".into(),
                             api: Some("search".into()),
-                            columns: Some(default_hotsearch_columns()),
                             title_template: None,
                         },
                         NavItemConfig {
                             name: "热门歌手".into(),
                             api: Some("top_singers".into()),
-                            columns: Some(default_singer_columns()),
                             title_template: None,
                         },
                     ],
@@ -273,37 +266,31 @@ impl Default for NavConfig {
                         NavItemConfig {
                             name: "我的音乐云盘".into(),
                             api: Some("user_cloud_disk".into()),
-                            columns: Some(default_song_columns()),
                             title_template: None,
                         },
                         NavItemConfig {
                             name: "我喜欢的音乐".into(),
                             api: Some("__liked__".into()),
-                            columns: Some(default_song_columns()),
                             title_template: None,
                         },
                         NavItemConfig {
                             name: "我的歌单".into(),
                             api: Some("user_song_list".into()),
-                            columns: Some(default_songlist_columns()),
                             title_template: None,
                         },
                         NavItemConfig {
                             name: "下载管理".into(),
                             api: Some("__download__".into()),
-                            columns: None,
                             title_template: None,
                         },
                         NavItemConfig {
                             name: "本地音乐".into(),
                             api: Some("__local_music__".into()),
-                            columns: Some(default_song_columns()),
                             title_template: None,
                         },
                         NavItemConfig {
                             name: "最近播放".into(),
                             api: Some("__recent__".into()),
-                            columns: Some(default_song_columns()),
                             title_template: None,
                         },
                     ],
@@ -324,10 +311,6 @@ pub struct NavItemConfig {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub api: Option<String>,
-    /// Optional column definitions for table rendering.
-    /// If None, falls back to built-in defaults for known content types.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub columns: Option<Vec<ColumnDef>>,
     /// Optional title template. Supports `{name}` (item name), `{count}` (item count).
     /// If None, defaults to `"{name} ({count})"`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -487,10 +470,6 @@ impl Config {
                     o.push_str(&format!("title_template = \"{}\"\n", template));
                 } else {
                     o.push_str("title_template = \"{name} ({count})\"\n");
-                }
-                if let Some(ref columns) = item.columns {
-                    let cols: Vec<String> = columns.iter().map(format_column_def).collect();
-                    o.push_str(&format!("columns = [{}]\n", cols.join(", ")));
                 }
                 o.push('\n');
             }
