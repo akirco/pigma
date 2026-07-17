@@ -1,7 +1,7 @@
 use crate::event::AppEvent;
 use crate::state::{App, LoginField, LoginMethod, Page};
-use crate::types::{CommandPanelAction, ContentState};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crate::types::{CommandPanelAction, ContentState, TableMode};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
 
 pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> color_eyre::Result<()> {
     if app.state.navigation.page == Page::Splash {
@@ -218,35 +218,45 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> color_eyre::Resu
                 content_select_next(app);
             }
         }
+        KeyCode::Left if key_event.modifiers == KeyModifiers::SHIFT => {
+            app.playback.prev();
+        }
+        KeyCode::Right if key_event.modifiers == KeyModifiers::SHIFT => {
+            app.playback.next();
+        }
         KeyCode::Enter => {
             if app.state.navigation.page == Page::Playlist {
                 playlist_play_selected(app);
+            } else if app.state.navigation.table_mode == TableMode::Cell {
+                cell_enter_action(app);
             } else {
-                let sel = app.state.navigation.content_selected;
-                match &app.state.navigation.content {
-                    ContentState::SongLists(lists) => {
-                        if let Some(list) = lists.get(sel) {
-                            app.state.events.send(AppEvent::PlaylistSelect(list.id));
-                        }
-                    }
-                    ContentState::TopLists(lists) => {
-                        if let Some(list) = lists.get(sel) {
-                            app.state.events.send(AppEvent::PlaylistSelect(list.id));
-                        }
-                    }
-                    ContentState::Songs(songs) => {
-                        if let Some(song) = songs.get(sel) {
-                            app.state.events.send(AppEvent::SongPlay(song.id));
-                        }
-                    }
-                    ContentState::HotSearch(keywords) => {
-                        if let Some(kw) = keywords.get(sel) {
-                            app.state.events.send(AppEvent::SearchSong(kw.clone()));
-                        }
-                    }
-                    _ => {}
-                }
+                row_enter_action(app);
             }
+        }
+        KeyCode::Left => {
+            if app.state.navigation.table_mode == TableMode::Cell
+                && app.state.navigation.page != Page::Playlist
+            {
+                cell_select_prev_column(app);
+            } else if app.playback.current_song().is_some() {
+                let interval = app.config.seek_interval_secs as f64;
+                app.playback.seek_relative(-interval);
+            }
+        }
+        KeyCode::Right => {
+            if app.state.navigation.table_mode == TableMode::Cell
+                && app.state.navigation.page != Page::Playlist
+            {
+                cell_select_next_column(app);
+            } else if app.playback.current_song().is_some() {
+                let interval = app.config.seek_interval_secs as f64;
+                app.playback.seek_relative(interval);
+            }
+        }
+        KeyCode::Char('p' | 'P') if key_event.modifiers == KeyModifiers::CONTROL => {
+            app.state
+                .events
+                .send(AppEvent::CommandPanel(CommandPanelAction::Open));
         }
         KeyCode::Char('l' | 'L') => {
             let next = match app.state.navigation.page {
@@ -258,16 +268,11 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> color_eyre::Resu
             };
             app.state.events.send(AppEvent::Navigate(next));
         }
-        KeyCode::Left => {
-            if app.playback.current_song().is_some() {
-                let interval = app.config.seek_interval_secs as f64;
-                app.playback.seek_relative(-interval);
-            }
-        }
-        KeyCode::Right => {
-            if app.playback.current_song().is_some() {
-                let interval = app.config.seek_interval_secs as f64;
-                app.playback.seek_relative(interval);
+        KeyCode::Char('p' | 'P') => {
+            if app.state.navigation.page != Page::Playlist {
+                toggle_table_mode(app);
+            } else {
+                app.playback.prev();
             }
         }
         KeyCode::Char('f' | 'F') => {
@@ -298,18 +303,9 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> color_eyre::Resu
         KeyCode::Char('b' | 'B') => {
             app.state.events.send(AppEvent::ToggleBordered);
         }
-        KeyCode::Char('p' | 'P') if key_event.modifiers == KeyModifiers::CONTROL => {
-            app.state
-                .events
-                .send(AppEvent::CommandPanel(CommandPanelAction::Open));
-        }
         KeyCode::Char(' ') => {
             app.playback.toggle_pause();
         }
-        KeyCode::Char('n') if app.state.navigation.page != Page::Playlist => {
-            app.playback.next();
-        }
-        KeyCode::Char('p' | 'P') => app.playback.prev(),
         KeyCode::Char('r') => {
             app.playback.cycle_mode();
         }
@@ -381,6 +377,7 @@ fn content_select_prev(app: &mut App) {
     }
     let sel = &mut app.state.navigation.content_selected;
     *sel = (*sel + count - 1) % count;
+    app.state.navigation.table_state.select(Some(*sel));
 }
 
 fn content_select_next(app: &mut App) {
@@ -390,6 +387,7 @@ fn content_select_next(app: &mut App) {
     }
     let sel = &mut app.state.navigation.content_selected;
     *sel = (*sel + 1) % count;
+    app.state.navigation.table_state.select(Some(*sel));
 }
 
 fn emit_nav_select(app: &mut App) {
@@ -446,5 +444,174 @@ fn apply_filter_queue_only(app: &mut App) {
             app.playback.queue.songs = filtered;
         }
         app.state.navigation.playlist_selected = 0;
+    }
+}
+
+fn toggle_table_mode(app: &mut App) {
+    let nav = &mut app.state.navigation;
+    match nav.table_mode {
+        TableMode::Row => {
+            nav.table_mode = TableMode::Cell;
+            let columns = app.config.columns.for_content(&nav.content, None).to_vec();
+            let col = next_selectable_column(0, &columns, &nav.content);
+            if let Some(c) = col {
+                nav.content_column_selected = c;
+                nav.table_state.select_first_column();
+                for _ in 0..c {
+                    nav.table_state.select_next_column();
+                }
+            } else {
+                nav.table_mode = TableMode::Row;
+            }
+        }
+        TableMode::Cell => {
+            nav.table_mode = TableMode::Row;
+            nav.content_column_selected = 0;
+            nav.table_state.select_first();
+        }
+    }
+}
+
+fn is_selectable_field(content: &ContentState, field: &str) -> bool {
+    matches!(
+        (content, field),
+        (ContentState::Songs(_), "album" | "singer") | (ContentState::Singers(_), "name")
+    )
+}
+
+fn next_selectable_column(
+    from: usize,
+    columns: &[crate::types::ColumnDef],
+    content: &ContentState,
+) -> Option<usize> {
+    let n = columns.len();
+    for i in 0..n {
+        let idx = (from + i) % n;
+        if is_selectable_field(content, &columns[idx].field) {
+            return Some(idx);
+        }
+    }
+    None
+}
+
+fn cell_select_prev_column(app: &mut App) {
+    let nav = &mut app.state.navigation;
+    let columns = app.config.columns.for_content(&nav.content, None);
+    let n = columns.len();
+    if n == 0 {
+        return;
+    }
+    let current = nav.content_column_selected;
+    for i in 1..=n {
+        let idx = (current + n - i) % n;
+        if is_selectable_field(&nav.content, &columns[idx].field) {
+            nav.content_column_selected = idx;
+            nav.table_state.select_first_column();
+            for _ in 0..idx {
+                nav.table_state.select_next_column();
+            }
+            return;
+        }
+    }
+}
+
+fn cell_select_next_column(app: &mut App) {
+    let nav = &mut app.state.navigation;
+    let columns = app.config.columns.for_content(&nav.content, None);
+    let n = columns.len();
+    if n == 0 {
+        return;
+    }
+    let current = nav.content_column_selected;
+    for i in 1..=n {
+        let idx = (current + i) % n;
+        if is_selectable_field(&nav.content, &columns[idx].field) {
+            nav.content_column_selected = idx;
+            nav.table_state.select_first_column();
+            for _ in 0..idx {
+                nav.table_state.select_next_column();
+            }
+            return;
+        }
+    }
+}
+
+fn row_enter_action(app: &mut App) {
+    let sel = app.state.navigation.content_selected;
+    match &app.state.navigation.content {
+        ContentState::SongLists(lists) => {
+            if let Some(list) = lists.get(sel) {
+                app.state.events.send(AppEvent::PlaylistSelect(list.id));
+            }
+        }
+        ContentState::TopLists(lists) => {
+            if let Some(list) = lists.get(sel) {
+                app.state.events.send(AppEvent::PlaylistSelect(list.id));
+            }
+        }
+        ContentState::Songs(songs) => {
+            if let Some(song) = songs.get(sel) {
+                app.state.events.send(AppEvent::SongPlay(song.id));
+            }
+        }
+        ContentState::Singers(_) => {
+            app.state.events.send(AppEvent::CellAction(sel, 0));
+        }
+        ContentState::HotSearch(keywords) => {
+            if let Some(kw) = keywords.get(sel) {
+                app.state.events.send(AppEvent::SearchSong(kw.clone()));
+            }
+        }
+        _ => {}
+    }
+}
+
+fn cell_enter_action(app: &mut App) {
+    let sel = app.state.navigation.content_selected;
+    let col = app.state.navigation.content_column_selected;
+    app.state.events.send(AppEvent::CellAction(sel, col));
+}
+
+pub fn handle_mouse_event(app: &mut App, kind: MouseEventKind) {
+    if app.state.command_panel.open {
+        match kind {
+            MouseEventKind::ScrollUp => {
+                app.state
+                    .events
+                    .send(AppEvent::CommandPanel(CommandPanelAction::Previous));
+            }
+            MouseEventKind::ScrollDown => {
+                app.state
+                    .events
+                    .send(AppEvent::CommandPanel(CommandPanelAction::Next));
+            }
+            _ => {}
+        }
+        return;
+    }
+
+    match app.state.navigation.page {
+        Page::Lyrics => {
+            if kind == MouseEventKind::ScrollUp {
+                app.playback.seek_relative(-5.0);
+            } else if kind == MouseEventKind::ScrollDown {
+                app.playback.seek_relative(5.0);
+            }
+        }
+        Page::Main => {
+            if kind == MouseEventKind::ScrollUp {
+                content_select_prev(app);
+            } else if kind == MouseEventKind::ScrollDown {
+                content_select_next(app);
+            }
+        }
+        Page::Playlist => {
+            if kind == MouseEventKind::ScrollUp {
+                playlist_select_prev(app);
+            } else if kind == MouseEventKind::ScrollDown {
+                playlist_select_next(app);
+            }
+        }
+        _ => {}
     }
 }

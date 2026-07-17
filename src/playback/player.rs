@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use rodio::Source;
+use rodio::cpal::traits::{DeviceTrait, HostTrait};
 use tokio::sync::mpsc;
 
 use crate::types::{AppEvent, Event};
@@ -171,13 +172,57 @@ fn open_sink_silent() -> Result<rodio::MixerDeviceSink, rodio::DeviceSinkError> 
         let saved = unsafe { libc::dup(stderr_fd) };
         let dev_null = std::fs::File::open("/dev/null").unwrap();
         unsafe { libc::dup2(dev_null.as_raw_fd(), stderr_fd) };
-        let result = rodio::DeviceSinkBuilder::open_default_sink();
+        let result = open_sink_impl();
         unsafe { libc::dup2(saved, stderr_fd) };
         unsafe { libc::close(saved) };
         result
     }
     #[cfg(not(unix))]
     {
-        rodio::DeviceSinkBuilder::open_default_sink()
+        open_sink_impl()
     }
+}
+
+/// Prefer PipeWire/PulseAudio ALSA devices so system volume/mute works.
+/// Falls back to the default ALSA device if not available.
+fn open_sink_impl() -> Result<rodio::MixerDeviceSink, rodio::DeviceSinkError> {
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "dragonfly",
+    ))]
+    {
+        let host = rodio::cpal::default_host();
+        if let Ok(devices) = host.devices() {
+            let list: Vec<_> = devices.collect();
+
+            for d in &list {
+                if let Ok(id) = d.id() {
+                    log::debug!("cpal device: {}", id.1);
+                }
+            }
+
+            for name in ["pipewire", "pulse"] {
+                if let Some(device) = list
+                    .iter()
+                    .find(|d| d.id().map(|id| id.1.as_str() == name).unwrap_or(false))
+                {
+                    log::info!("opening audio device: {}", name);
+                    if let Ok(sink) = rodio::DeviceSinkBuilder::from_device(device.clone())
+                        .and_then(|b| b.open_sink_or_fallback())
+                    {
+                        return Ok(sink);
+                    }
+                    log::warn!("failed to open {}, falling back", name);
+                } else {
+                    log::debug!("cpal device not found: {}", name);
+                }
+            }
+        }
+    }
+
+    log::debug!("falling back to default audio device");
+    rodio::DeviceSinkBuilder::open_default_sink()
 }

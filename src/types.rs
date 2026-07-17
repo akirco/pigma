@@ -1,5 +1,5 @@
 use crossterm::event::Event as CrosstermEvent;
-use ncm_api::{LoginInfo, SongInfo, SongList, TopList};
+use ncm_api::{LoginInfo, SingerInfo, SongInfo, SongList, TopList};
 use serde::{Deserialize, Serialize};
 
 use std::time::Duration;
@@ -20,6 +20,7 @@ pub enum ApiEndpoint {
     LocalMusic,
     Recent,
     Search,
+    TopSingers,
 }
 
 impl ApiEndpoint {
@@ -36,6 +37,7 @@ impl ApiEndpoint {
         ApiEndpoint::LocalMusic,
         ApiEndpoint::Recent,
         ApiEndpoint::Search,
+        ApiEndpoint::TopSingers,
     ];
 
     pub fn as_str(&self) -> &'static str {
@@ -52,6 +54,7 @@ impl ApiEndpoint {
             ApiEndpoint::LocalMusic => "__local_music__",
             ApiEndpoint::Recent => "__recent__",
             ApiEndpoint::Search => "search",
+            ApiEndpoint::TopSingers => "top_singers",
         }
     }
 
@@ -69,6 +72,7 @@ impl ApiEndpoint {
             "__local_music__" => Some(ApiEndpoint::LocalMusic),
             "__recent__" => Some(ApiEndpoint::Recent),
             "search" => Some(ApiEndpoint::Search),
+            "top_singers" => Some(ApiEndpoint::TopSingers),
             _ => None,
         }
     }
@@ -87,6 +91,7 @@ pub enum ContentState {
     SongLists(Vec<SongList>),
     TopLists(Vec<TopList>),
     HotSearch(Vec<String>),
+    Singers(Vec<SingerInfo>),
 }
 
 impl ContentState {
@@ -96,6 +101,7 @@ impl ContentState {
             ContentState::SongLists(l) => l.len(),
             ContentState::TopLists(l) => l.len(),
             ContentState::HotSearch(kw) => kw.len(),
+            ContentState::Singers(s) => s.len(),
             _ => 0,
         }
     }
@@ -103,6 +109,12 @@ impl ContentState {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TableMode {
+    Row,
+    Cell,
 }
 
 #[derive(Clone, Debug)]
@@ -156,6 +168,7 @@ pub enum AppEvent {
     ToggleBordered,
     ExecuteCommand(CommandAction),
     ContentRestore,
+    CellAction(usize, usize),
 }
 
 #[derive(Clone, Debug)]
@@ -378,4 +391,23 @@ pub fn default_hotsearch_columns() -> Vec<ColumnDef> {
         min_width: Some(1),
         ratio: None,
     }]
+}
+
+pub fn default_singer_columns() -> Vec<ColumnDef> {
+    vec![
+        ColumnDef {
+            header: "ARTIST".into(),
+            field: "name".into(),
+            width: None,
+            min_width: Some(16),
+            ratio: None,
+        },
+        ColumnDef {
+            header: "ID".into(),
+            field: "id".into(),
+            width: Some(10),
+            min_width: None,
+            ratio: None,
+        },
+    ]
 }

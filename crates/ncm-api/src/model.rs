@@ -77,6 +77,7 @@ pub struct SongInfo {
     pub id: u64,
     pub name: String,
     pub singer: String,
+    pub artist_id: u64,
     pub album: String,
     pub album_id: u64,
     pub pic_url: String,
@@ -304,12 +305,23 @@ fn first_artist_name(v: &Value) -> String {
         .to_string()
 }
 
+fn first_artist_id(v: &Value) -> u64 {
+    v.get("ar")
+        .or_else(|| v.get("artists"))
+        .and_then(|a| a.as_array())
+        .and_then(|a| a.first())
+        .and_then(|a| a.get("id"))
+        .and_then(|n| n.as_u64())
+        .unwrap_or(0)
+}
+
 pub(crate) fn parse_song_info(v: &Value, context: SongContext) -> Result<SongInfo, String> {
     let unk = "unknown".to_string();
-    let (name, singer, album, album_id, pic_url, duration) = match context {
+    let (name, singer, artist_id, album, album_id, pic_url, duration) = match context {
         SongContext::Usl | SongContext::SingerSongs => {
             let name = str_val(v, "name");
             let singer = first_artist_name(v);
+            let artist_id = first_artist_id(v);
             let album = v
                 .get("al")
                 .and_then(|a| a.get("name"))
@@ -328,7 +340,7 @@ pub(crate) fn parse_song_info(v: &Value, context: SongContext) -> Result<SongInf
                 .unwrap_or("")
                 .to_string();
             let duration = u64_val(v, "dt");
-            (name, singer, album, album_id, pic_url, duration)
+            (name, singer, artist_id, album, album_id, pic_url, duration)
         }
         SongContext::Rmd | SongContext::Search => {
             let name = str_val(v, "name");
@@ -340,6 +352,13 @@ pub(crate) fn parse_song_info(v: &Value, context: SongContext) -> Result<SongInf
                 .and_then(|n| n.as_str())
                 .unwrap_or(&unk)
                 .to_string();
+            let artist_id = v
+                .get("artists")
+                .and_then(|a| a.as_array())
+                .and_then(|a| a.first())
+                .and_then(|a| a.get("id"))
+                .and_then(|n| n.as_u64())
+                .unwrap_or(0);
             let album = v
                 .get("album")
                 .and_then(|a| a.get("name"))
@@ -358,11 +377,12 @@ pub(crate) fn parse_song_info(v: &Value, context: SongContext) -> Result<SongInf
                 .unwrap_or("")
                 .to_string();
             let duration = u64_val(v, "duration");
-            (name, singer, album, album_id, pic_url, duration)
+            (name, singer, artist_id, album, album_id, pic_url, duration)
         }
         SongContext::Rmds => {
             let name = str_val(v, "name");
             let singer = first_artist_name(v);
+            let artist_id = first_artist_id(v);
             let album = v
                 .get("al")
                 .and_then(|a| a.get("name"))
@@ -381,11 +401,12 @@ pub(crate) fn parse_song_info(v: &Value, context: SongContext) -> Result<SongInf
                 .unwrap_or("")
                 .to_string();
             let duration = u64_val(v, "dt");
-            (name, singer, album, album_id, pic_url, duration)
+            (name, singer, artist_id, album, album_id, pic_url, duration)
         }
         SongContext::Singer => {
             let name = str_val(v, "name");
             let singer = first_artist_name(v);
+            let artist_id = first_artist_id(v);
             let album = v
                 .get("al")
                 .and_then(|a| a.get("name"))
@@ -399,7 +420,7 @@ pub(crate) fn parse_song_info(v: &Value, context: SongContext) -> Result<SongInf
                 .unwrap_or(0);
             let pic_url = String::new();
             let duration = u64_val(v, "dt");
-            (name, singer, album, album_id, pic_url, duration)
+            (name, singer, artist_id, album, album_id, pic_url, duration)
         }
     };
 
@@ -428,6 +449,7 @@ pub(crate) fn parse_song_info(v: &Value, context: SongContext) -> Result<SongInf
         id: u64_val(v, "id"),
         name,
         singer,
+        artist_id,
         album,
         album_id,
         pic_url,
@@ -703,6 +725,13 @@ pub(crate) fn parse_cloud_disk_songs(value: &Value) -> Result<Vec<SongInfo>, Str
                     .unwrap_or(0),
                 name: v["songName"].as_str().unwrap_or("unknown").to_string(),
                 singer: v["artist"].as_str().unwrap_or("unknown").to_string(),
+                artist_id: simple
+                    .get("ar")
+                    .and_then(|a| a.as_array())
+                    .and_then(|a| a.first())
+                    .and_then(|a| a.get("id"))
+                    .and_then(|n| n.as_u64())
+                    .unwrap_or(0),
                 album: v["album"].as_str().unwrap_or("unknown").to_string(),
                 album_id: 0,
                 pic_url: simple
@@ -734,6 +763,7 @@ pub(crate) fn parse_radio_programs(value: &Value) -> Result<Vec<SongInfo>, Strin
                     .as_str()
                     .unwrap_or("unknown")
                     .to_string(),
+                artist_id: 0,
                 album: v["radio"]["name"].as_str().unwrap_or("").to_string(),
                 album_id: 0,
                 pic_url: v["coverUrl"].as_str().unwrap_or("").to_string(),
@@ -760,6 +790,14 @@ pub(crate) fn parse_intelligence_songs(value: &Value) -> Result<Vec<SongInfo>, S
                 .and_then(|n| n.as_str())
                 .unwrap_or(&unk)
                 .to_string();
+            let artist_id = info
+                .get("ar")
+                .or_else(|| info.get("artists"))
+                .and_then(|a| a.as_array())
+                .and_then(|a| a.first())
+                .and_then(|a| a.get("id"))
+                .and_then(|n| n.as_u64())
+                .unwrap_or(0);
             Ok(SongInfo {
                 id: v["id"]
                     .as_u64()
@@ -767,6 +805,7 @@ pub(crate) fn parse_intelligence_songs(value: &Value) -> Result<Vec<SongInfo>, S
                     .unwrap_or(0),
                 name: info["name"].as_str().unwrap_or("unknown").to_string(),
                 singer,
+                artist_id,
                 album: info
                     .get("al")
                     .or_else(|| info.get("album"))

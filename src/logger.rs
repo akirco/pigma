@@ -7,6 +7,7 @@ use crate::config::Config;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Logger {
     pub log_level: Level,
+    #[serde(skip)]
     pub log_file: String,
 }
 
@@ -32,13 +33,14 @@ impl Default for Logger {
 }
 
 pub fn init_logger(config: &Config) -> color_eyre::Result<()> {
+    let log_file = log_file();
     simplelog::WriteLogger::init(
         config.logger.log_level.to_level_filter(),
         simplelog::Config::default(),
         OpenOptions::new()
             .append(true)
             .create(true)
-            .open(&config.logger.log_file)?,
+            .open(&log_file)?,
     )?;
     Ok(())
 }

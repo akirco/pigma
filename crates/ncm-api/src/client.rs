@@ -228,6 +228,11 @@ impl NcmClient {
 
         let body = encrypt::weapi(&params_json);
 
+        let path = path
+            .strip_prefix("/api/")
+            .map(|suffix| format!("/weapi/{}", suffix))
+            .unwrap_or_else(|| path.to_string());
+
         let url = if path.contains('?') {
             format!("{}{}&csrf_token={}", BASE_URL, path, cookies.csrf)
         } else {
@@ -502,10 +507,7 @@ impl NcmClient {
             .request_eapi("/api/song/enhance/player/url/v1", &params)
             .await?;
         let preview_300 = result.chars().take(300).collect::<String>();
-        log::debug!(
-            "songs_url_v1 raw response (first 300): {:?}",
-            preview_300
-        );
+        log::debug!("songs_url_v1 raw response (first 300): {:?}", preview_300);
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
         parse_song_url(&value).map_err(|e| NcmError::Api {
@@ -913,6 +915,51 @@ impl NcmClient {
                 code: 0,
                 message: e,
             }
+        })
+    }
+
+    /// 获取热门歌手
+    pub async fn top_artists(&self, offset: u16, limit: u16) -> Result<Vec<SingerInfo>, NcmError> {
+        let offset_str = offset.to_string();
+        let limit_str = limit.to_string();
+        let params = vec![
+            ("offset", offset_str.as_str()),
+            ("limit", limit_str.as_str()),
+            ("total", "true"),
+        ];
+        let result = self.request_weapi("/api/artist/top", &params).await?;
+        let value: Value = serde_json::from_str(&result)?;
+        Self::check_api_code(&value)?;
+        parse_singer_info(&value, &["artists"]).map_err(|e| NcmError::Api {
+            code: 0,
+            message: e,
+        })
+    }
+
+    /// 获取歌手榜（排行榜）
+    ///
+    /// * `r#type` — 榜单类型（1-华语, 2-欧美, 3-韩国, 4-日本）
+    pub async fn toplist_artist(&self, r#type: u8) -> Result<Vec<SingerInfo>, NcmError> {
+        let limit_str = 100u16.to_string();
+        let offset_str = 0u16.to_string();
+        let type_str = r#type.to_string();
+        let params = vec![
+            ("type", type_str.as_str()),
+            ("limit", limit_str.as_str()),
+            ("offset", offset_str.as_str()),
+            ("total", "true"),
+        ];
+        let result = self.request_weapi("/api/toplist/artist", &params).await?;
+        let value: Value = serde_json::from_str(&result)?;
+        Self::check_api_code(&value)?;
+        // Response: { code: 200, list: { artists: [...] } }
+        let list = value.get("list").ok_or_else(|| NcmError::Api {
+            code: 0,
+            message: "list not found".into(),
+        })?;
+        parse_singer_info(list, &["artists"]).map_err(|e| NcmError::Api {
+            code: 0,
+            message: e,
         })
     }
 

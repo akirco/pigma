@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::sync::{Arc, OnceLock};
 
-use ratatui::widgets::ListState;
+use ratatui::widgets::{ListState, TableState};
 
 pub use crate::config::{NavItemConfig as NavItem, NavSectionConfig as NavSection};
 use ncm_api::SongInfo;
@@ -10,7 +10,7 @@ use crate::{
     config::{Config, NavConfig},
     event::EventHandler,
     theme::{Theme, ThemeRegistry},
-    types::ContentState,
+    types::{ContentState, TableMode},
     ui::text_input::TextInput,
 };
 use ncm_api::{LoginInfo, NcmClient};
@@ -260,6 +260,9 @@ pub struct NavigationState {
     pub previous_content: Option<ContentState>,
     pub previous_api: Option<String>,
     pub content_selected: usize,
+    pub content_column_selected: usize,
+    pub table_mode: TableMode,
+    pub table_state: TableState,
     pub playlist_selected: usize,
     pub search: SearchState,
     /// Cached rendered rows to avoid per-frame serde serialization.
@@ -270,6 +273,10 @@ pub struct NavigationState {
 impl NavigationState {
     pub fn set_content(&mut self, content: ContentState) {
         self.content = content;
+        self.content_selected = 0;
+        self.content_column_selected = 0;
+        self.table_state = TableState::default();
+        self.table_state.select_first();
         *self.content_rows_cache.borrow_mut() = None;
     }
 }
@@ -366,6 +373,9 @@ impl App {
                     previous_content: None,
                     previous_api: None,
                     content_selected: 0,
+                    content_column_selected: 0,
+                    table_mode: TableMode::Row,
+                    table_state: TableState::default(),
                     playlist_selected: 0,
                     search: SearchState::default(),
                     content_rows_cache: RefCell::new(None),

@@ -4,8 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-reqwest = { version = "0.13.4", features = ["json", "gzip"] }
-
+reqwest = { version = "0.13.4", default-features = false, features = [
+  "default-tls",
+  "json",
+  "gzip",
+  "charset",
+] }
 aes = "0.9.1"
 rsa = { version = "0.9.10", features = ["pem"] }
 md-5 = "0.11.0"

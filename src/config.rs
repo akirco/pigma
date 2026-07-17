@@ -7,8 +7,8 @@ use crate::{
     logger::Logger,
     theme::Theme,
     types::{
-        ApiEndpoint, ColumnDef, ContentState, default_hotsearch_columns, default_song_columns,
-        default_songlist_columns, default_toplist_columns,
+        ApiEndpoint, ColumnDef, ContentState, default_hotsearch_columns, default_singer_columns,
+        default_song_columns, default_songlist_columns, default_toplist_columns,
     },
 };
 
@@ -107,9 +107,23 @@ impl ColumnsConfig {
                     return cols;
                 }
                 // Built-in fallback for HotSearch when no override configured
-                HOTSEARCH_FALLBACK.get_or_init(|| vec![
-                    ColumnDef { header: "HOT SEARCH".into(), field: "keyword".into(), width: None, min_width: Some(1), ratio: None },
-                ])
+                HOTSEARCH_FALLBACK.get_or_init(|| {
+                    vec![ColumnDef {
+                        header: "HOT SEARCH".into(),
+                        field: "keyword".into(),
+                        width: None,
+                        min_width: Some(1),
+                        ratio: None,
+                    }]
+                })
+            }
+            ContentState::Singers(_) => {
+                if let Some(api) = api
+                    && let Some(cols) = self.overrides.get(api)
+                {
+                    return cols;
+                }
+                SINGER_FALLBACK.get_or_init(default_singer_columns)
             }
             _ => &[],
         }
@@ -117,6 +131,7 @@ impl ColumnsConfig {
 }
 
 static HOTSEARCH_FALLBACK: OnceLock<Vec<ColumnDef>> = OnceLock::new();
+static SINGER_FALLBACK: OnceLock<Vec<ColumnDef>> = OnceLock::new();
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlayerbarConfig {
@@ -242,6 +257,12 @@ impl Default for NavConfig {
                             name: "搜索".into(),
                             api: Some("search".into()),
                             columns: Some(default_hotsearch_columns()),
+                            title_template: None,
+                        },
+                        NavItemConfig {
+                            name: "热门歌手".into(),
+                            api: Some("top_singers".into()),
+                            columns: Some(default_singer_columns()),
                             title_template: None,
                         },
                     ],
@@ -395,7 +416,6 @@ impl Config {
         }
 
         o.push_str("[logger]\n");
-        o.push_str(&format!("log_file = \"{}\"\n", self.logger.log_file));
         o.push_str(&format!(
             "log_level = \"{}\"\n",
             format_log_level(self.logger.log_level)

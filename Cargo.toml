@@ -12,8 +12,19 @@ edition = "2024"
 [dependencies]
 crossterm = { version = "0.29.0", features = ["event-stream"] }
 futures = "0.3.32"
-ratatui = { version = "0.30.2", features = ["serde"] }
-tokio = { version = "1.52.4", features = ["full"] }
+ratatui = { version = "0.30.2", default-features = false, features = [
+  "crossterm",
+  "layout-cache",
+  "macros",
+  "underline-color",
+  "serde",
+] }
+tokio = { version = "1.52.4", features = [
+  "macros",
+  "rt-multi-thread",
+  "sync",
+  "time",
+] }
 color-eyre = "0.6.5"
 log = { version = "0.4.33", features = ["serde"] }
 simplelog = "0.12.2"
@@ -21,14 +32,18 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1"
 toml = "0.9.8"
 dirs = "6.0.0"
-chrono = "0.4.45"
 unicode-width = "0.2"
 ncm-api = { path = "crates/ncm-api" }
 url = "2.5"
-rodio = "0.22.2"
+rodio = { version = "0.22.2", default-features = false, features = [
+  "playback",
+  "mp3",
+  "flac",
+  "mp4",
+  "wav",
+] }
 qrcode = "0.14.1"
 stream-download = { version = "0.24.1", features = ["async-read"] }
-
 colorgrad = { version = "0.8", features = ["preset"] }
 rand = "0.10.2"
 libc = "0.2.186"

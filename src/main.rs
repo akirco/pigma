@@ -22,9 +22,9 @@ async fn main() -> color_eyre::Result<()> {
     let config = Config::load();
     init_logger(&config)?;
     let terminal = ratatui::init();
-    let _ = execute!(stdout(), crossterm::event::EnableMouseCapture);
+    execute!(stdout(), crossterm::event::EnableMouseCapture)?;
     let result = App::new(config)?.run(terminal).await;
-    let _ = execute!(stdout(), crossterm::event::DisableMouseCapture);
+    execute!(stdout(), crossterm::event::DisableMouseCapture)?;
     ratatui::restore();
     result
 }

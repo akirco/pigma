@@ -1,9 +1,9 @@
 use crate::{
     input,
     state::{App, LoginMethod, Page, parse_lyric_lines},
-    types::{ApiEndpoint, AppEvent, CommandPanelAction, ContentState, Event},
+    types::{ApiEndpoint, AppEvent, CommandPanelAction, ContentState, Event, TableMode},
 };
-use crossterm::event::{Event as CrosstermEvent, MouseEventKind};
+use crossterm::event::Event as CrosstermEvent;
 use ratatui::{DefaultTerminal, Frame};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, sleep};
@@ -182,15 +182,7 @@ impl App {
                     input::handle_key_events(self, key)?
                 }
                 CrosstermEvent::Mouse(mouse) => {
-                    if mouse.kind == MouseEventKind::ScrollUp {
-                        if self.state.navigation.page == Page::Lyrics {
-                            self.playback.seek_relative(-5.0);
-                        }
-                    } else if mouse.kind == MouseEventKind::ScrollDown
-                        && self.state.navigation.page == Page::Lyrics
-                    {
-                        self.playback.seek_relative(5.0);
-                    }
+                    input::handle_mouse_event(self, mouse.kind);
                 }
                 _ => {}
             },
@@ -262,6 +254,7 @@ impl App {
             AppEvent::ToggleBordered => self.state.bordered = !self.state.bordered,
             AppEvent::ExecuteCommand(action) => self.execute_command(action),
             AppEvent::ContentRestore => self.handle_content_restore(),
+            AppEvent::CellAction(row, col) => self.handle_cell_action(row, col)?,
         }
         Ok(())
     }
@@ -534,6 +527,10 @@ impl App {
                 }),
                 ApiEndpoint::Download => Ok(ContentState::Empty),
                 ApiEndpoint::LocalMusic => unreachable!(),
+                ApiEndpoint::TopSingers => api_client
+                    .top_artists(0, 50)
+                    .await
+                    .map(ContentState::Singers),
             };
 
             let state = match result {
@@ -558,6 +555,8 @@ impl App {
     fn handle_content_loaded(&mut self, content: ContentState) {
         self.state.navigation.set_content(content);
         self.state.navigation.content_selected = 0;
+        self.state.navigation.table_mode = TableMode::Row;
+        self.state.navigation.content_column_selected = 0;
     }
 
     fn handle_playlist_select(&mut self, id: u64) {
@@ -737,8 +736,7 @@ impl App {
                 self.playback.queue.songs = songs;
             }
         } else if let Some(prev) = nav.previous_content.take() {
-            nav.content = prev;
-            *nav.content_rows_cache.borrow_mut() = None;
+            nav.set_content(prev);
             if let Some(ref api) = nav.previous_api.take() {
                 nav.nav.restore_focus_by_api(api);
             }
@@ -746,20 +744,152 @@ impl App {
         nav.search.active = false;
         nav.search.input = crate::ui::text_input::TextInput::new();
         nav.nav.subtitle = None;
-        nav.content_selected = 0;
     }
 
     fn handle_content_restore(&mut self) {
         let nav = &mut self.state.navigation;
         if let Some(prev) = nav.previous_content.take() {
-            nav.content = prev;
-            *nav.content_rows_cache.borrow_mut() = None;
+            nav.set_content(prev);
             nav.nav.subtitle = None;
-            nav.content_selected = 0;
             if let Some(ref api) = nav.previous_api.take() {
                 nav.nav.restore_focus_by_api(api);
             }
         }
+    }
+
+    fn handle_cell_action(&mut self, row: usize, col: usize) -> color_eyre::Result<()> {
+        let columns = self
+            .config
+            .columns
+            .for_content(&self.state.navigation.content, None)
+            .to_vec();
+        let column = match columns.get(col) {
+            Some(c) => c.clone(),
+            None => return Ok(()),
+        };
+        let field = column.field.clone();
+
+        match (&self.state.navigation.content, field.as_str()) {
+            (ContentState::Songs(songs), "album") => {
+                if let Some(song) = songs.get(row) {
+                    let album_id = song.album_id;
+                    let api = self.api.clone();
+                    let sender = self.state.events.sender();
+                    let prev_content = self.state.navigation.content.clone();
+                    let prev_api = self.state.navigation.nav.section_states
+                        [self.state.navigation.nav.focus_section]
+                        .selected()
+                        .and_then(|i| {
+                            self.state.navigation.nav.sections
+                                [self.state.navigation.nav.focus_section]
+                                .items
+                                .get(i)
+                        })
+                        .and_then(|item| item.api.clone());
+                    let name = format!("{}: {}", column.header, song.album);
+                    self.state.navigation.previous_content = Some(prev_content);
+                    self.state.navigation.previous_api = prev_api;
+                    self.state.navigation.set_content(ContentState::Loading);
+                    tokio::spawn(async move {
+                        match api.album(album_id).await {
+                            Ok(detail) => {
+                                let _ = sender.send(Event::App(AppEvent::ContentLoaded(
+                                    ContentState::Songs(detail.songs),
+                                )));
+                                let _ = sender.send(Event::App(AppEvent::BreadcrumbSet(name)));
+                            }
+                            Err(e) => {
+                                let _ = sender.send(Event::App(AppEvent::ContentLoaded(
+                                    ContentState::Error(e.to_string()),
+                                )));
+                            }
+                        }
+                    });
+                }
+            }
+            (ContentState::Songs(songs), "singer") => {
+                if let Some(song) = songs.get(row) {
+                    let artist_id = song.artist_id;
+                    if artist_id == 0 {
+                        return Ok(());
+                    }
+                    let api = self.api.clone();
+                    let sender = self.state.events.sender();
+                    let prev_content = self.state.navigation.content.clone();
+                    let prev_api = self.state.navigation.nav.section_states
+                        [self.state.navigation.nav.focus_section]
+                        .selected()
+                        .and_then(|i| {
+                            self.state.navigation.nav.sections
+                                [self.state.navigation.nav.focus_section]
+                                .items
+                                .get(i)
+                        })
+                        .and_then(|item| item.api.clone());
+                    let name = format!("{}: {}", column.header, song.singer);
+                    self.state.navigation.previous_content = Some(prev_content);
+                    self.state.navigation.previous_api = prev_api;
+                    self.state.navigation.set_content(ContentState::Loading);
+                    tokio::spawn(async move {
+                        match api.singer_songs(artist_id).await {
+                            Ok(songs) => {
+                                let _ = sender.send(Event::App(AppEvent::ContentLoaded(
+                                    ContentState::Songs(songs),
+                                )));
+                                let _ = sender.send(Event::App(AppEvent::BreadcrumbSet(name)));
+                            }
+                            Err(e) => {
+                                let _ = sender.send(Event::App(AppEvent::ContentLoaded(
+                                    ContentState::Error(e.to_string()),
+                                )));
+                            }
+                        }
+                    });
+                }
+            }
+            (ContentState::Singers(singers), "name") => {
+                if let Some(singer) = singers.get(row) {
+                    let artist_id = singer.id;
+                    if artist_id == 0 {
+                        return Ok(());
+                    }
+                    let api = self.api.clone();
+                    let sender = self.state.events.sender();
+                    let prev_content = self.state.navigation.content.clone();
+                    let prev_api = self.state.navigation.nav.section_states
+                        [self.state.navigation.nav.focus_section]
+                        .selected()
+                        .and_then(|i| {
+                            self.state.navigation.nav.sections
+                                [self.state.navigation.nav.focus_section]
+                                .items
+                                .get(i)
+                        })
+                        .and_then(|item| item.api.clone());
+                    let name = format!("{}: {}", column.header, singer.name);
+                    self.state.navigation.previous_content = Some(prev_content);
+                    self.state.navigation.previous_api = prev_api;
+                    self.state.navigation.set_content(ContentState::Loading);
+                    tokio::spawn(async move {
+                        match api.singer_songs(artist_id).await {
+                            Ok(songs) => {
+                                let _ = sender.send(Event::App(AppEvent::ContentLoaded(
+                                    ContentState::Songs(songs),
+                                )));
+                                let _ = sender.send(Event::App(AppEvent::BreadcrumbSet(name)));
+                            }
+                            Err(e) => {
+                                let _ = sender.send(Event::App(AppEvent::ContentLoaded(
+                                    ContentState::Error(e.to_string()),
+                                )));
+                            }
+                        }
+                    });
+                }
+            }
+            _ => {}
+        }
+        Ok(())
     }
 
     fn draw(&mut self, frame: &mut Frame) {

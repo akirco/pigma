@@ -518,6 +518,7 @@ pub fn scan_local_music(dir: &std::path::Path) -> Vec<SongInfo> {
             id: 0,
             name,
             singer: "本地".into(),
+            artist_id: 0,
             album: path.to_string_lossy().to_string(),
             album_id: 0,
             pic_url: String::new(),

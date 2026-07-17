@@ -83,7 +83,7 @@ pub fn draw_queue_table(
 
             Row::new(vec![
                 Cell::from(num).style(Style::default().fg(colors.muted)),
-                Cell::from(song.name.clone()).style(Style::default().fg(colors.text)),
+                Cell::from(song.name.clone()).style(Style::default().fg(colors.muted)),
                 Cell::from(song.singer.clone()).style(Style::default().fg(colors.muted)),
                 Cell::from(dur).style(Style::default().fg(colors.muted)),
             ])

@@ -178,7 +178,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         api,
                         &app.state.navigation.content_rows_cache,
                         colors,
-                        Some(app.state.navigation.content_selected),
+                        &mut app.state.navigation.table_state,
+                        app.state.navigation.table_mode,
                         inner,
                     );
                 }
@@ -243,7 +244,7 @@ pub(crate) fn create_block<'a>(
             } else {
                 colors.surface
             }))
-            .style(Style::default().bg(colors.surface))
+            .style(Style::default().bg(colors.bg))
             .title(format!(" {} ", title))
             .title_style(Style::default().fg(border_color))
             .padding(Padding::horizontal(1))

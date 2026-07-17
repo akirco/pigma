@@ -6,14 +6,14 @@ use ratatui::{
     layout::Rect,
     style::Style,
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Paragraph, TableState},
 };
 
 use super::table;
 use crate::config::ColumnsConfig;
 use crate::field::to_map;
 use crate::theme::Theme;
-use crate::types::{ColumnDef, ContentState};
+use crate::types::{ColumnDef, ContentState, TableMode};
 
 fn compute_rows(content: &ContentState, columns: &[ColumnDef]) -> Vec<Vec<String>> {
     match content {
@@ -41,6 +41,10 @@ fn compute_rows(content: &ContentState, columns: &[ColumnDef]) -> Vec<Vec<String
                 .collect();
             table::build_rows(&maps, columns)
         }
+        ContentState::Singers(singers) => {
+            let maps: Vec<HashMap<String, String>> = singers.iter().map(to_map).collect();
+            table::build_rows(&maps, columns)
+        }
         _ => vec![],
     }
 }
@@ -66,7 +70,8 @@ pub fn render_content(
     api: Option<&str>,
     cache: &RefCell<Option<Vec<Vec<String>>>>,
     colors: &Theme,
-    selected: Option<usize>,
+    table_state: &mut TableState,
+    table_mode: TableMode,
     area: Rect,
 ) {
     match content {
@@ -96,7 +101,8 @@ pub fn render_content(
                 f,
                 cols,
                 rows.as_deref().unwrap_or(&[]),
-                selected,
+                table_state,
+                table_mode,
                 colors,
                 area,
             );
