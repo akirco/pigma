@@ -29,14 +29,14 @@ cargo install --git https://github.com/akirco/pigma.git
 
 | 快捷键       |     描述      |
 | :----------- | :-----------: |
-| 󱞥            | 播放/进入列表 |
-| 󱁐            |     暂停      |
+| enter            | 播放/进入列表 |
+| space            |     暂停      |
 | f            |   播放队列    |
 | l            |     歌词      |
 | /            |   搜索/过滤   |
 | b            |   样式切换    |
-|  /         |   seek 15s    |
-| shift +  / | 上一首/下一首 |
+| left /right         |   seek 15s    |
+| shift + left /right | 上一首/下一首 |
 | ctrl+p       | command panel |
 
 
