@@ -11,23 +11,25 @@ use ratatui::{
 
 use super::table;
 use crate::config::ColumnsConfig;
-use crate::field::to_map;
+use crate::field::ToFieldMap;
 use crate::theme::Theme;
 use crate::types::{ColumnDef, ContentState, TableMode};
 
 fn compute_rows(content: &ContentState, columns: &[ColumnDef]) -> Vec<Vec<String>> {
     match content {
         ContentState::Songs(songs) => {
-            let mut maps: Vec<HashMap<String, String>> = songs.iter().map(to_map).collect();
-            format_duration_fields(&mut maps);
+            let maps: Vec<HashMap<String, String>> =
+                songs.iter().map(ToFieldMap::to_field_map).collect();
             table::build_rows(&maps, columns)
         }
         ContentState::SongLists(lists) => {
-            let maps: Vec<HashMap<String, String>> = lists.iter().map(to_map).collect();
+            let maps: Vec<HashMap<String, String>> =
+                lists.iter().map(ToFieldMap::to_field_map).collect();
             table::build_rows(&maps, columns)
         }
         ContentState::TopLists(lists) => {
-            let maps: Vec<HashMap<String, String>> = lists.iter().map(to_map).collect();
+            let maps: Vec<HashMap<String, String>> =
+                lists.iter().map(ToFieldMap::to_field_map).collect();
             table::build_rows(&maps, columns)
         }
         ContentState::HotSearch(keywords) => {
@@ -42,24 +44,11 @@ fn compute_rows(content: &ContentState, columns: &[ColumnDef]) -> Vec<Vec<String
             table::build_rows(&maps, columns)
         }
         ContentState::Singers(singers) => {
-            let maps: Vec<HashMap<String, String>> = singers.iter().map(to_map).collect();
+            let maps: Vec<HashMap<String, String>> =
+                singers.iter().map(ToFieldMap::to_field_map).collect();
             table::build_rows(&maps, columns)
         }
         _ => vec![],
-    }
-}
-
-/// Convert raw millisecond duration values to "MM:SS" format.
-fn format_duration_fields(maps: &mut [HashMap<String, String>]) {
-    for map in maps.iter_mut() {
-        if let Some(v) = map.get("duration")
-            && let Ok(ms) = v.parse::<u64>()
-        {
-            let total_secs = ms / 1000;
-            let mins = total_secs / 60;
-            let secs = total_secs % 60;
-            map.insert("duration".into(), format!("{:02}:{:02}", mins, secs));
-        }
     }
 }
 

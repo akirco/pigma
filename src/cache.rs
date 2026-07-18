@@ -70,9 +70,19 @@ impl CacheManager {
     }
 
     pub fn save_lyrics_cache(&self, id: u64, lyrics: &ncm_api::Lyrics) {
-        let _ = fs::create_dir_all(&self.lyrics_dir);
-        if let Ok(json) = serde_json::to_string(lyrics) {
-            let _ = fs::write(self.lyrics_path(id), json);
+        if let Err(e) = fs::create_dir_all(&self.lyrics_dir) {
+            log::warn!("Failed to create lyrics cache dir: {e}");
+            return;
+        }
+        match serde_json::to_string(lyrics) {
+            Ok(json) => {
+                if let Err(e) = fs::write(self.lyrics_path(id), json) {
+                    log::warn!("Failed to write lyrics cache for {id}: {e}");
+                }
+            }
+            Err(e) => {
+                log::warn!("Failed to serialize lyrics cache for {id}: {e}");
+            }
         }
     }
 
@@ -88,7 +98,10 @@ impl CacheManager {
     }
 
     pub fn save_content_cache(&self, api: &str, content: &ContentState) {
-        let _ = fs::create_dir_all(&self.content_dir);
+        if let Err(e) = fs::create_dir_all(&self.content_dir) {
+            log::warn!("Failed to create content cache dir: {e}");
+            return;
+        }
         let cached_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -97,8 +110,15 @@ impl CacheManager {
             data: content.clone(),
             cached_at,
         };
-        if let Ok(json) = serde_json::to_string(&entry) {
-            let _ = fs::write(self.content_path(api), json);
+        match serde_json::to_string(&entry) {
+            Ok(json) => {
+                if let Err(e) = fs::write(self.content_path(api), json) {
+                    log::warn!("Failed to write content cache for {api}: {e}");
+                }
+            }
+            Err(e) => {
+                log::warn!("Failed to serialize content cache for {api}: {e}");
+            }
         }
     }
 }

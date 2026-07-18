@@ -15,6 +15,7 @@ pub mod state;
 pub mod theme;
 pub mod types;
 pub mod ui;
+pub mod utils;
 
 #[tokio::main]
 async fn main() -> color_eyre::Result<()> {

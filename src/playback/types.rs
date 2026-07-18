@@ -78,9 +78,10 @@ pub fn parse_lyric_lines(raw: &[String]) -> Vec<LyricLine> {
     let mut lines: Vec<LyricLine> = raw
         .iter()
         .filter_map(|line| {
-            let close = line.find(']')?;
-            let ts = &line[1..close];
-            let text = line[close + 1..].trim().to_string();
+            let rest = line.strip_prefix('[')?;
+            let close = rest.find(']')?;
+            let ts = &rest[..close];
+            let text = rest[close + 1..].trim().to_string();
             if text.is_empty() {
                 return None;
             }
@@ -94,6 +95,9 @@ pub fn parse_lyric_lines(raw: &[String]) -> Vec<LyricLine> {
             Some(LyricLine { time, text })
         })
         .collect();
-    lines.sort_by_key(|l| l.time);
+    // Only sort if not already sorted (LRC files are typically pre-sorted)
+    if lines.windows(2).any(|w| w[0].time > w[1].time) {
+        lines.sort_by_key(|l| l.time);
+    }
     lines
 }

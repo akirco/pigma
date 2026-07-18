@@ -2,6 +2,7 @@ use aes::Aes128;
 use aes::cipher::{BlockCipherEncrypt, KeyInit};
 use base64::{Engine, engine::general_purpose};
 use md5::{Digest, Md5};
+use percent_encoding::{NON_ALPHANUMERIC, AsciiSet};
 use rsa::BigUint;
 use rsa::RsaPublicKey;
 use rsa::pkcs8::DecodePublicKey;
@@ -35,6 +36,13 @@ const IV: &[u8] = b"0102030405060708";
 const PRESET_KEY: &[u8] = b"0CoJUm6Qyw8W8jud";
 const EAPIKEY: &[u8] = b"e82ckenh8dichen8";
 const BASE62: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+/// Characters allowed in URL form-encoded values: unreserved + `-*_.`
+const FORM_ENCODED: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'*')
+    .remove(b'_')
+    .remove(b'.');
 
 // RSA public key PEM (without headers)
 const RSA_PEM_BODY: &str = "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDgtQn2JZ34ZC28NWYpAUd98iZ37BUrX/aKzmFbt7clFSs6sXqHauqKWqdtLkF2KexO40H1YTX8z2lSgBBOAxLsvaklV8k4cBFK9snQXE9/DDaFt6Rr7iVZMldczhC0JNgTz+SHXT6CBHuX3e9SdB1Ua44oncaTWz7OBGLbCiK45wIDAQAB";
@@ -70,8 +78,8 @@ pub fn weapi(plaintext: &str) -> String {
 
     format!(
         "params={}&encSecKey={}",
-        urlencoding::encode(&params),
-        urlencoding::encode(&enc_sec_key)
+        utf8_percent_encode(&params),
+        utf8_percent_encode(&enc_sec_key)
     )
 }
 
@@ -82,9 +90,9 @@ pub fn eapi(url: &str, text: &str) -> String {
     let data = format!("{}-36cd479b6b5-{}-36cd479b6b5-{}", url, text, digest);
 
     let encrypted = aes_ecb_encrypt(data.as_bytes(), EAPIKEY);
-    let params = hex::encode_upper(&encrypted);
+    let params: String = encrypted.iter().map(|b| format!("{:02X}", b)).collect();
 
-    format!("params={}", urlencoding::encode(&params))
+    format!("params={}", utf8_percent_encode(&params))
 }
 
 /// PKCS7 padding
@@ -136,13 +144,13 @@ fn rsa_encrypt(data: &[u8]) -> String {
     padded.extend_from_slice(data);
 
     let encrypted = RSA_KEY.encrypt(&padded);
-    hex::encode(&encrypted)
+    encrypted.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 fn md5_hex(data: &str) -> String {
     let mut hasher = Md5::new();
     hasher.update(data.as_bytes());
-    hex::encode(hasher.finalize())
+    hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 fn random_key_16() -> Vec<u8> {
@@ -150,6 +158,10 @@ fn random_key_16() -> Vec<u8> {
     let mut buf = [0u8; 16];
     rand::rng().fill_bytes(&mut buf);
     buf.to_vec()
+}
+
+fn utf8_percent_encode(input: &str) -> String {
+    percent_encoding::utf8_percent_encode(input, FORM_ENCODED).to_string()
 }
 
 #[cfg(test)]

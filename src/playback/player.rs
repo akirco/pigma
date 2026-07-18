@@ -1,6 +1,4 @@
 use std::io::{Read, Seek, SeekFrom};
-#[cfg(unix)]
-use std::os::fd::AsRawFd;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -25,13 +23,19 @@ pub struct SharedReader(pub Arc<Mutex<Box<dyn AudioReader + 'static>>>);
 
 impl Read for SharedReader {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        self.0.lock().unwrap().read(buf)
+        self.0
+            .lock()
+            .map_err(|e| std::io::Error::other(format!("mutex poisoned: {e}")))?
+            .read(buf)
     }
 }
 
 impl Seek for SharedReader {
     fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
-        self.0.lock().unwrap().seek(pos)
+        self.0
+            .lock()
+            .map_err(|e| std::io::Error::other(format!("mutex poisoned: {e}")))?
+            .seek(pos)
     }
 }
 
@@ -164,18 +168,55 @@ pub async fn run(
     let _ = ready_rx.await;
 }
 
+/// RAII guard that redirects stderr to /dev/null while alive, restoring it on drop.
+/// Used to suppress ALSA noise during audio device initialization.
+#[cfg(unix)]
+struct StderrGuard {
+    saved_fd: std::os::fd::RawFd,
+}
+
+#[cfg(unix)]
+impl StderrGuard {
+    fn new() -> std::io::Result<Self> {
+        use std::os::fd::AsRawFd;
+
+        let stderr_fd = 2;
+        let saved = unsafe { libc::dup(stderr_fd) };
+        if saved < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+
+        let dev_null = std::fs::File::open("/dev/null")?;
+        let ret = unsafe { libc::dup2(dev_null.as_raw_fd(), stderr_fd) };
+        if ret < 0 {
+            unsafe { libc::close(saved) };
+            return Err(std::io::Error::last_os_error());
+        }
+
+        Ok(Self { saved_fd: saved })
+    }
+}
+
+#[cfg(unix)]
+impl Drop for StderrGuard {
+    fn drop(&mut self) {
+        let stderr_fd = 2;
+        unsafe {
+            libc::dup2(self.saved_fd, stderr_fd);
+            libc::close(self.saved_fd);
+        }
+    }
+}
+
 /// Open rodio default sink while suppressing ALSA stderr noise.
 fn open_sink_silent() -> Result<rodio::MixerDeviceSink, rodio::DeviceSinkError> {
     #[cfg(unix)]
     {
-        let stderr_fd = 2;
-        let saved = unsafe { libc::dup(stderr_fd) };
-        let dev_null = std::fs::File::open("/dev/null").unwrap();
-        unsafe { libc::dup2(dev_null.as_raw_fd(), stderr_fd) };
-        let result = open_sink_impl();
-        unsafe { libc::dup2(saved, stderr_fd) };
-        unsafe { libc::close(saved) };
-        result
+        let _guard = StderrGuard::new().map_err(|e| {
+            log::warn!("Failed to create stderr guard: {e}");
+            rodio::DeviceSinkError::NoDevice
+        })?;
+        open_sink_impl()
     }
     #[cfg(not(unix))]
     {

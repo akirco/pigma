@@ -1,0 +1,12 @@
+name: 📝 Other
+description: Ask a question or share anything else not covered by the other templates
+title: "[Other] "
+labels: ["question"]
+body:
+  - type: textarea
+    id: content
+    attributes:
+      label: What would you like to share?
+      description: Describe your question, feedback, or anything else.
+    validations:
+      required: true

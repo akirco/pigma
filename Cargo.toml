@@ -1,5 +1,5 @@
-[workspace]
-members = ["crates/ncm-api"]
+# [workspace]
+# members = ["crates/ncm-api"]
 
 [package]
 name = "pigma"
@@ -9,9 +9,13 @@ license = "AGPL-3.0"
 edition = "2024"
 # authors = ["akirco <earlfx@163.com>"]
 
+
 [dependencies]
 crossterm = { version = "0.29.0", features = ["event-stream"] }
-futures = "0.3.32"
+futures = { version = "0.3", default-features = false, features = [
+  "std",
+  "async-await",
+] }
 ratatui = { version = "0.30.2", default-features = false, features = [
   "crossterm",
   "layout-cache",
@@ -19,15 +23,14 @@ ratatui = { version = "0.30.2", default-features = false, features = [
   "underline-color",
   "serde",
 ] }
-tokio = { version = "1.52.4", features = [
+tokio = { version = "1.53.0", features = [
   "macros",
   "rt-multi-thread",
   "sync",
   "time",
 ] }
 color-eyre = "0.6.5"
-log = { version = "0.4.33", features = ["serde"] }
-simplelog = "0.12.2"
+log = { version = "0.4.33", features = ["std", "serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1"
 toml = "0.9.8"
@@ -39,14 +42,14 @@ rodio = { version = "0.22.2", default-features = false, features = [
   "playback",
   "mp3",
   "flac",
-  "mp4",
   "wav",
+  "vorbis",
 ] }
 qrcode = "0.14.1"
 stream-download = { version = "0.24.1", features = ["async-read"] }
-colorgrad = { version = "0.8", features = ["preset"] }
 rand = "0.10.2"
 libc = "0.2.186"
+time = { version = "0.3", features = ["local-offset", "macros", "formatting"] }
 
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
@@ -55,3 +58,4 @@ codegen-units = 1
 lto = true
 opt-level = "s"
 strip = true
+panic = "abort"

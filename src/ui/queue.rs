@@ -6,7 +6,8 @@ use ratatui::widgets::{Cell, Paragraph, Row, Table};
 use super::create_block;
 use crate::playback::PlaybackEngine;
 use crate::theme::Theme;
-use crate::ui::{calc_scroll_offset, format_duration, render_scrollbar};
+use crate::ui::{calc_scroll_offset, render_scrollbar};
+use crate::utils::format_duration;
 
 pub fn draw_queue_table(
     f: &mut Frame,
@@ -68,8 +69,8 @@ pub fn draw_queue_table(
             let row_style = if is_playing {
                 Style::default()
                     .fg(colors.text)
-                    .bg(colors.error)
-                    .add_modifier(Modifier::BOLD)
+                    .bg(colors.accent)
+                    .add_modifier(Modifier::SLOW_BLINK)
             } else if is_selected {
                 Style::default()
                     .fg(colors.bg)
@@ -83,8 +84,8 @@ pub fn draw_queue_table(
 
             Row::new(vec![
                 Cell::from(num).style(Style::default().fg(colors.muted)),
-                Cell::from(song.name.clone()).style(Style::default().fg(colors.muted)),
-                Cell::from(song.singer.clone()).style(Style::default().fg(colors.muted)),
+                Cell::from(song.name.as_str()).style(Style::default().fg(colors.muted)),
+                Cell::from(song.singer.as_str()).style(Style::default().fg(colors.muted)),
                 Cell::from(dur).style(Style::default().fg(colors.muted)),
             ])
             .height(1)
@@ -98,7 +99,7 @@ pub fn draw_queue_table(
             Constraint::Length(5),
             Constraint::Min(20),
             Constraint::Length(16),
-            Constraint::Length(7),
+            Constraint::Length(9),
         ],
     )
     .header(header)

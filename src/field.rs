@@ -1,12 +1,54 @@
-use serde_json::Value;
 use std::collections::HashMap;
 
-/// Serialize any `Serialize` type into a `HashMap<String, String>`.
-///
-/// Uses serde_json as an intermediate representation to ensure all field types are handled
-/// correctly (numbers, booleans, strings, enums). Nested objects are flattened to their
-/// debug representation; arrays are joined.
+use ncm_api::{SingerInfo, SongInfo, SongList, TopList};
+
+/// Trait for converting a data model into a field→string map for table rendering.
+pub trait ToFieldMap {
+    fn to_field_map(&self) -> HashMap<String, String>;
+}
+
+impl ToFieldMap for SongInfo {
+    fn to_field_map(&self) -> HashMap<String, String> {
+        let mut m = HashMap::with_capacity(4);
+        m.insert("name".into(), self.name.clone());
+        m.insert("singer".into(), self.singer.clone());
+        m.insert("album".into(), self.album.clone());
+        m.insert("duration".into(), crate::utils::format_duration(self.duration));
+        m
+    }
+}
+
+impl ToFieldMap for SongList {
+    fn to_field_map(&self) -> HashMap<String, String> {
+        let mut m = HashMap::with_capacity(2);
+        m.insert("name".into(), self.name.clone());
+        m.insert("author".into(), self.author.clone());
+        m
+    }
+}
+
+impl ToFieldMap for TopList {
+    fn to_field_map(&self) -> HashMap<String, String> {
+        let mut m = HashMap::with_capacity(2);
+        m.insert("name".into(), self.name.clone());
+        m.insert("description".into(), self.description.clone());
+        m
+    }
+}
+
+impl ToFieldMap for SingerInfo {
+    fn to_field_map(&self) -> HashMap<String, String> {
+        let mut m = HashMap::with_capacity(2);
+        m.insert("name".into(), self.name.clone());
+        m.insert("id".into(), self.id.to_string());
+        m
+    }
+}
+
+/// Generic fallback using serde_json for any other Serialize type.
 pub fn to_map<T: serde::Serialize>(item: &T) -> HashMap<String, String> {
+    use serde_json::Value;
+
     let value = match serde_json::to_value(item) {
         Ok(Value::Object(map)) => map,
         _ => return HashMap::new(),

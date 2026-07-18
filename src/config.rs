@@ -19,6 +19,7 @@ pub struct Config {
     pub bordered: bool,
     pub border_rounded: bool,
     pub seek_interval_secs: u32,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub themes: Vec<Theme>,
     pub logger: Logger,
     pub navigation: NavConfig,
@@ -31,6 +32,10 @@ pub struct Config {
     pub titles: TitlesConfig,
     #[serde(default)]
     pub columns: ColumnsConfig,
+    /// 歌词高亮渐变风格：warm / cubehelix / rainbow / spectral / viridis / turbo。
+    /// 未知值回退到 warm。
+    #[serde(default = "default_lyric_gradient")]
+    pub lyric_gradient: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -179,6 +184,10 @@ fn default_content_cache_ttl() -> u64 {
     300
 }
 
+fn default_lyric_gradient() -> String {
+    "rainbow".into()
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -186,26 +195,14 @@ impl Default for Config {
             bordered: true,
             border_rounded: false,
             seek_interval_secs: 15,
-            themes: vec![
-                Theme::default(),
-                Theme::terminal(),
-                Theme::dracula(),
-                Theme::nord(),
-                Theme::gruvbox_dark(),
-                Theme::solarized_dark(),
-                Theme::tokyo_night(),
-                Theme::catppuccin_mocha(),
-                Theme::one_dark(),
-                Theme::monokai(),
-                Theme::rose_pine(),
-                Theme::kanagawa(),
-            ],
+            themes: Vec::new(),
             logger: Logger::default(),
             navigation: NavConfig::default(),
             content_cache_ttl: 300,
             playerbar: PlayerbarConfig::default(),
             titles: TitlesConfig::default(),
             columns: ColumnsConfig::default(),
+            lyric_gradient: default_lyric_gradient(),
         }
     }
 }
@@ -221,7 +218,7 @@ impl Default for NavConfig {
         Self {
             sections: vec![
                 NavSectionConfig {
-                    title: "DISCOVER".into(),
+                    title: "<accent>▎</accent> <b>DISCOVER</b>".into(),
                     items: vec![
                         NavItemConfig {
                             name: "每日推荐".into(),
@@ -261,7 +258,7 @@ impl Default for NavConfig {
                     ],
                 },
                 NavSectionConfig {
-                    title: "MY MUSIC".into(),
+                    title: "<accent>▎</accent> <b>MY MUSIC</b>".into(),
                     items: vec![
                         NavItemConfig {
                             name: "我的音乐云盘".into(),
@@ -377,138 +374,6 @@ impl Config {
     }
 
     fn to_toml(&self) -> String {
-        let mut o = String::with_capacity(2048);
-
-        o.push_str(&format!("default_theme = \"{}\"\n", self.default_theme));
-        o.push_str(&format!("bordered = {}\n", self.bordered));
-        o.push_str(&format!("border_rounded = {}\n", self.border_rounded));
-        o.push_str(&format!(
-            "seek_interval_secs = {}\n",
-            self.seek_interval_secs
-        ));
-        o.push_str(&format!("content_cache_ttl = {}\n", self.content_cache_ttl));
-        o.push('\n');
-
-        // themes — use toml crate for complex ratatui::Color serialization
-        for theme in &self.themes {
-            if let Ok(s) = toml::to_string_pretty(theme) {
-                o.push_str("[[themes]]\n");
-                o.push_str(&s);
-                o.push('\n');
-            }
-        }
-
-        o.push_str("[logger]\n");
-        o.push_str(&format!(
-            "log_level = \"{}\"\n",
-            format_log_level(self.logger.log_level)
-        ));
-        o.push('\n');
-
-        // playerbar
-        o.push_str("[playerbar]\n");
-        o.push_str(&format!(
-            "filled_symbol = \"{}\"\n",
-            self.playerbar.filled_symbol
-        ));
-        o.push_str(&format!(
-            "unfilled_symbol = \"{}\"\n",
-            self.playerbar.unfilled_symbol
-        ));
-        o.push_str(&format!(
-            "filled_color = \"{}\"\n",
-            self.playerbar.filled_color
-        ));
-        o.push_str(&format!(
-            "unfilled_color = \"{}\"\n",
-            self.playerbar.unfilled_color
-        ));
-        o.push_str(&format!(
-            "unfilled_color_cached = \"{}\"\n",
-            self.playerbar.unfilled_color_cached
-        ));
-        o.push('\n');
-
-        // titles
-        o.push_str("[titles]\n");
-        o.push_str(&format!("sidebar = \"{}\"\n", self.titles.sidebar));
-        o.push_str(&format!("playlist = \"{}\"\n", self.titles.playlist));
-        o.push_str(&format!("lyrics = \"{}\"\n", self.titles.lyrics));
-        o.push('\n');
-
-        // columns
-        o.push_str("[columns]\n");
-        o.push_str(&format!("songs = [{}]\n", fmt_columns(&self.columns.songs)));
-        o.push_str(&format!(
-            "songlist = [{}]\n",
-            fmt_columns(&self.columns.songlist)
-        ));
-        if !self.columns.overrides.is_empty() {
-            o.push_str("[columns.overrides]\n");
-            let mut keys: Vec<&String> = self.columns.overrides.keys().collect();
-            keys.sort();
-            for key in keys {
-                if let Some(cols) = self.columns.overrides.get(key) {
-                    o.push_str(&format!("{key} = [{}]\n", fmt_columns(cols)));
-                }
-            }
-        }
-        o.push('\n');
-
-        // navigation — manual format with inline columns
-        o.push_str("[navigation]\n\n");
-        for section in &self.navigation.sections {
-            o.push_str("[[navigation.sections]]\n");
-            o.push_str(&format!("title = \"{}\"\n\n", section.title));
-            for item in &section.items {
-                o.push_str("[[navigation.sections.items]]\n");
-                o.push_str(&format!("name = \"{}\"\n", item.name));
-                if let Some(ref api) = item.api {
-                    o.push_str(&format!("api = \"{}\"\n", api));
-                }
-                if let Some(ref template) = item.title_template {
-                    o.push_str(&format!("title_template = \"{}\"\n", template));
-                } else {
-                    o.push_str("title_template = \"{name} ({count})\"\n");
-                }
-                o.push('\n');
-            }
-        }
-
-        o
+        toml::to_string_pretty(self).expect("Config should always serialize to valid TOML")
     }
-}
-
-fn format_log_level(level: log::Level) -> &'static str {
-    match level {
-        log::Level::Error => "error",
-        log::Level::Warn => "warn",
-        log::Level::Info => "info",
-        log::Level::Debug => "debug",
-        log::Level::Trace => "trace",
-    }
-}
-
-fn format_column_def(c: &ColumnDef) -> String {
-    let mut parts = vec![
-        format!("header = \"{}\"", c.header),
-        format!("field = \"{}\"", c.field),
-    ];
-    if let Some(v) = c.width {
-        parts.push(format!("width = {}", v));
-    }
-    if let Some(v) = c.min_width {
-        parts.push(format!("min_width = {}", v));
-    }
-    if let Some((a, b)) = c.ratio {
-        parts.push(format!("ratio = [{}, {}]", a, b));
-    }
-    format!("{{ {} }}", parts.join(", "))
-}
-
-fn fmt_columns(cols: &[ColumnDef]) -> String {
-    cols.iter()
-        .map(format_column_def)
-        .collect::<Vec<_>>()
-        .join(", ")
 }

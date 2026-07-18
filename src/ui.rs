@@ -9,6 +9,7 @@ mod playerbar;
 mod queue;
 mod spinner;
 mod splash;
+pub mod styled_text;
 pub mod table;
 pub mod text_input;
 mod topbar;
@@ -17,7 +18,6 @@ use std::sync::OnceLock;
 
 use ratatui::{
     Frame,
-    layout::{Constraint, Layout},
     style::Style,
     widgets::{
         Block, BorderType, Borders, Padding, Scrollbar, ScrollbarOrientation, ScrollbarState,
@@ -31,13 +31,6 @@ use crate::{
     state::{App, Page},
     theme::Theme,
 };
-
-pub fn format_duration(ms: u64) -> String {
-    let total_secs = ms / 1000;
-    let mins = total_secs / 60;
-    let secs = total_secs % 60;
-    format!("{:02}:{:02}", mins, secs)
-}
 
 pub fn calc_scroll_offset(selected: usize, visible_height: usize, total: usize) -> usize {
     if total <= visible_height || visible_height == 0 {
@@ -61,10 +54,32 @@ pub fn render_scrollbar(f: &mut Frame, total: usize, selected: usize, area: rata
 }
 
 /// Render a title template with `{name}` and `{count}` placeholders.
-pub fn render_title(template: &str, name: &str, count: usize) -> String {
-    template
-        .replace("{name}", name)
-        .replace("{count}", &count.to_string())
+pub fn render_title<'a>(template: &'a str, name: &str, count: usize) -> std::borrow::Cow<'a, str> {
+    if !template.contains('{') {
+        return std::borrow::Cow::Borrowed(template);
+    }
+    let mut result = String::with_capacity(template.len() + name.len() + 8);
+    let mut chars = template.char_indices().peekable();
+    while let Some((i, ch)) = chars.next() {
+        if ch == '{' {
+            if template[i..].starts_with("{name}") {
+                result.push_str(name);
+                for _ in 0..5 {
+                    chars.next();
+                }
+            } else if template[i..].starts_with("{count}") {
+                result.push_str(&count.to_string());
+                for _ in 0..6 {
+                    chars.next();
+                }
+            } else {
+                result.push(ch);
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+    std::borrow::Cow::Owned(result)
 }
 
 fn theme_fallback() -> &'static Theme {
@@ -101,7 +116,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             login::draw(f, &app.state.navigation.login, colors, bordered, &lay);
         }
         page => {
-            let lay = layout::main(area);
+            let lay = layout::build_layout(area, page);
 
             topbar::draw(
                 f,
@@ -132,12 +147,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         bordered,
                         border_rounded,
                         &app.config.titles.sidebar,
-                        lay.nav,
+                        lay.sidebar,
                     );
-
-                    let [breadcrumb_area, block_area] =
-                        Layout::vertical([Constraint::Length(3), Constraint::Min(1)])
-                            .areas(lay.songs);
 
                     breadcrumb::render_breadcrumb(
                         f,
@@ -145,7 +156,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         colors,
                         bordered,
                         border_rounded,
-                        breadcrumb_area,
+                        lay.breadcrumb,
                     );
 
                     let nav = &app.state.navigation.nav;
@@ -166,8 +177,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         format!(" {} ", render_title(template, name, count))
                     };
                     let block = create_block(&title, colors, bordered, border_rounded, false);
-                    let inner = block.inner(block_area);
-                    f.render_widget(block, block_area);
+                    let inner = block.inner(lay.content);
+                    f.render_widget(block, lay.content);
 
                     let api = current_item.and_then(|item| item.api.as_deref());
 
@@ -190,8 +201,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         colors,
                         bordered,
                         border_rounded,
+                        &app.config.lyric_gradient,
                         &app.config.titles.lyrics,
-                        lay.body,
+                        lay.content,
                     );
                 }
                 Page::Playlist => {
@@ -203,7 +215,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         bordered,
                         border_rounded,
                         &app.config.titles.playlist,
-                        lay.body,
+                        lay.content,
                     );
                 }
                 _ => {}

@@ -316,54 +316,34 @@ fn first_artist_id(v: &Value) -> u64 {
 }
 
 pub(crate) fn parse_song_info(v: &Value, context: SongContext) -> Result<SongInfo, String> {
-    let unk = "unknown".to_string();
-    let (name, singer, artist_id, album, album_id, pic_url, duration) = match context {
-        SongContext::Usl | SongContext::SingerSongs => {
-            let name = str_val(v, "name");
-            let singer = first_artist_name(v);
-            let artist_id = first_artist_id(v);
-            let album = v
-                .get("al")
-                .and_then(|a| a.get("name"))
-                .and_then(|n| n.as_str())
-                .unwrap_or(&unk)
-                .to_string();
-            let album_id = v
-                .get("al")
-                .and_then(|a| a.get("id"))
-                .and_then(|i| i.as_u64())
-                .unwrap_or(0);
-            let pic_url = v
-                .get("al")
-                .and_then(|a| a.get("picUrl"))
-                .and_then(|n| n.as_str())
-                .unwrap_or("")
-                .to_string();
-            let duration = u64_val(v, "dt");
-            (name, singer, artist_id, album, album_id, pic_url, duration)
-        }
-        SongContext::Rmd | SongContext::Search => {
-            let name = str_val(v, "name");
-            let singer = v
-                .get("artists")
+    let name = str_val(v, "name");
+
+    let (singer, artist_id) = match context {
+        SongContext::Rmd | SongContext::Search => (
+            v.get("artists")
                 .and_then(|a| a.as_array())
                 .and_then(|a| a.first())
                 .and_then(|a| a.get("name"))
                 .and_then(|n| n.as_str())
-                .unwrap_or(&unk)
-                .to_string();
-            let artist_id = v
-                .get("artists")
+                .unwrap_or("unknown")
+                .to_string(),
+            v.get("artists")
                 .and_then(|a| a.as_array())
                 .and_then(|a| a.first())
                 .and_then(|a| a.get("id"))
                 .and_then(|n| n.as_u64())
-                .unwrap_or(0);
-            let album = v
+                .unwrap_or(0),
+        ),
+        _ => (first_artist_name(v), first_artist_id(v)),
+    };
+
+    let (album, album_id, pic_url) = match context {
+        SongContext::Rmd | SongContext::Search => {
+            let album_name = v
                 .get("album")
                 .and_then(|a| a.get("name"))
                 .and_then(|n| n.as_str())
-                .unwrap_or(&unk)
+                .unwrap_or("unknown")
                 .to_string();
             let album_id = v
                 .get("album")
@@ -376,53 +356,49 @@ pub(crate) fn parse_song_info(v: &Value, context: SongContext) -> Result<SongInf
                 .and_then(|n| n.as_str())
                 .unwrap_or("")
                 .to_string();
-            let duration = u64_val(v, "duration");
-            (name, singer, artist_id, album, album_id, pic_url, duration)
-        }
-        SongContext::Rmds => {
-            let name = str_val(v, "name");
-            let singer = first_artist_name(v);
-            let artist_id = first_artist_id(v);
-            let album = v
-                .get("al")
-                .and_then(|a| a.get("name"))
-                .and_then(|n| n.as_str())
-                .unwrap_or(&unk)
-                .to_string();
-            let album_id = v
-                .get("al")
-                .and_then(|a| a.get("id"))
-                .and_then(|i| i.as_u64())
-                .unwrap_or(0);
-            let pic_url = v
-                .get("al")
-                .and_then(|a| a.get("picUrl"))
-                .and_then(|n| n.as_str())
-                .unwrap_or("")
-                .to_string();
-            let duration = u64_val(v, "dt");
-            (name, singer, artist_id, album, album_id, pic_url, duration)
+            (album_name, album_id, pic_url)
         }
         SongContext::Singer => {
-            let name = str_val(v, "name");
-            let singer = first_artist_name(v);
-            let artist_id = first_artist_id(v);
-            let album = v
+            let album_name = v
                 .get("al")
                 .and_then(|a| a.get("name"))
                 .and_then(|n| n.as_str())
-                .unwrap_or(&unk)
+                .unwrap_or("unknown")
                 .to_string();
             let album_id = v
                 .get("al")
                 .and_then(|a| a.get("id"))
                 .and_then(|i| i.as_u64())
                 .unwrap_or(0);
-            let pic_url = String::new();
-            let duration = u64_val(v, "dt");
-            (name, singer, artist_id, album, album_id, pic_url, duration)
+            (album_name, album_id, String::new())
+        }
+        _ => {
+            let album_name = v
+                .get("al")
+                .and_then(|a| a.get("name"))
+                .and_then(|n| n.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let album_id = v
+                .get("al")
+                .and_then(|a| a.get("id"))
+                .and_then(|i| i.as_u64())
+                .unwrap_or(0);
+            let pic_url = v
+                .get("al")
+                .and_then(|a| a.get("picUrl"))
+                .and_then(|n| n.as_str())
+                .unwrap_or("")
+                .to_string();
+            (album_name, album_id, pic_url)
         }
     };
+
+    let duration_field = match context {
+        SongContext::Rmd | SongContext::Search => "duration",
+        _ => "dt",
+    };
+    let duration = u64_val(v, duration_field);
 
     let copyright = v
         .get("privilege")
@@ -489,14 +465,7 @@ pub(crate) fn parse_login_info(value: &Value) -> Result<LoginInfo, String> {
         })
     } else {
         let msg = value["msg"].as_str().unwrap_or("unknown error").to_string();
-        Ok(LoginInfo {
-            code,
-            uid: 0,
-            nickname: String::new(),
-            avatar_url: String::new(),
-            vip_type: 0,
-            msg,
-        })
+        Err(msg)
     }
 }
 
@@ -975,10 +944,8 @@ mod tests {
             "code": 400,
             "msg": "login failed"
         });
-        let info = parse_login_info(&v).unwrap();
-        assert_eq!(info.code, 400);
-        assert_eq!(info.msg, "login failed");
-        assert_eq!(info.uid, 0);
+        let err = parse_login_info(&v).unwrap_err();
+        assert_eq!(err, "login failed");
     }
 
     #[test]

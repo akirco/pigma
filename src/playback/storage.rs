@@ -17,6 +17,16 @@ pub struct SavedQueue {
     pub progress: f64,
 }
 
+#[derive(Serialize)]
+struct SavedQueueRef<'a> {
+    queue: &'a [SongInfo],
+    history: &'a [SongInfo],
+    current_index: Option<usize>,
+    mode: &'a PlayMode,
+    volume: f64,
+    progress: f64,
+}
+
 pub struct PlaylistStorage {
     base_dir: PathBuf,
 }
@@ -58,11 +68,11 @@ impl PlaylistStorage {
         volume: f64,
         progress: f64,
     ) {
-        let saved = SavedQueue {
-            queue: queue.to_vec(),
-            history: history.to_vec(),
+        let saved = SavedQueueRef {
+            queue,
+            history,
             current_index,
-            mode: mode.clone(),
+            mode,
             volume,
             progress,
         };

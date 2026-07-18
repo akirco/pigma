@@ -69,7 +69,7 @@ pub fn draw(
         }
     }
 
-    right_spans.push(Span::styled("v0.1.0", Style::default().fg(colors.muted)));
+    // right_spans.push(Span::styled("v0.1.0", Style::default().fg(colors.muted)));
 
     let right_line = Line::from(right_spans).alignment(Alignment::Right);
     f.render_widget(Paragraph::new(right_line), chunks[2]);

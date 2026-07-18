@@ -6,7 +6,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use super::create_block;
+use super::{create_block, styled_text};
 use crate::state::NavState;
 use crate::theme::Theme;
 
@@ -30,12 +30,7 @@ pub fn render_breadcrumb(
     };
 
     let line = if let Some(sub) = &nav.subtitle {
-        let mut parts = vec![Span::styled(
-            section,
-            Style::default()
-                .fg(colors.text)
-                .add_modifier(Modifier::BOLD),
-        )];
+        let mut parts = styled_text::parse_styled(section, colors);
         if !item.is_empty() {
             parts.push(Span::styled(" / ", Style::default().fg(colors.muted)));
             parts.push(Span::styled(
@@ -54,28 +49,17 @@ pub fn render_breadcrumb(
         ));
         Line::from(parts)
     } else if item.is_empty() {
-        Line::from(Span::styled(
-            section,
-            Style::default()
-                .fg(colors.text)
-                .add_modifier(Modifier::BOLD),
-        ))
+        Line::from(styled_text::parse_styled(section, colors))
     } else {
-        Line::from(vec![
-            Span::styled(
-                section,
-                Style::default()
-                    .fg(colors.text)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(" / ", Style::default().fg(colors.muted)),
-            Span::styled(
-                item,
-                Style::default()
-                    .fg(colors.accent)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ])
+        let mut parts = styled_text::parse_styled(section, colors);
+        parts.push(Span::styled(" / ", Style::default().fg(colors.muted)));
+        parts.push(Span::styled(
+            item,
+            Style::default()
+                .fg(colors.accent)
+                .add_modifier(Modifier::BOLD),
+        ));
+        Line::from(parts)
     };
 
     let block = create_block("", colors, bordered, border_rounded, false);

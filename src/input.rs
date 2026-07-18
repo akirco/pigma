@@ -141,6 +141,7 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> color_eyre::Resu
                     app.state.navigation.search.active = false;
                     app.state.navigation.search.filter_queue_only = false;
                     app.state.navigation.search.unfiltered_songs = None;
+                    app.state.navigation.search.unfiltered_songs_lower = None;
                     app.state.navigation.playlist_selected = 0;
                     if let Some(id) = song_id
                         && let Some(pos) = app.playback.queue.songs.iter().position(|s| s.id == id)
@@ -292,8 +293,14 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> color_eyre::Resu
         KeyCode::Char('/') => {
             if app.state.navigation.page == Page::Playlist {
                 app.state.navigation.search.filter_queue_only = true;
-                app.state.navigation.search.unfiltered_songs =
-                    Some(app.playback.queue.songs.clone());
+                let songs = &app.playback.queue.songs;
+                app.state.navigation.search.unfiltered_songs = Some(songs.clone());
+                app.state.navigation.search.unfiltered_songs_lower = Some(
+                    songs
+                        .iter()
+                        .map(|s| (s.name.to_lowercase(), s.singer.to_lowercase()))
+                        .collect(),
+                );
                 app.state.navigation.search.active = true;
                 app.state.navigation.search.input = crate::ui::text_input::TextInput::new();
             } else {
@@ -429,17 +436,18 @@ fn playlist_play_selected(app: &mut App) {
 
 fn apply_filter_queue_only(app: &mut App) {
     let keyword = app.state.navigation.search.input.value.to_lowercase();
-    if let Some(full) = &app.state.navigation.search.unfiltered_songs {
+    if let (Some(full), Some(lower)) = (
+        &app.state.navigation.search.unfiltered_songs,
+        &app.state.navigation.search.unfiltered_songs_lower,
+    ) {
         if keyword.is_empty() {
             app.playback.queue.songs.clone_from(full);
         } else {
             let filtered: Vec<_> = full
                 .iter()
-                .filter(|s| {
-                    s.name.to_lowercase().contains(&keyword)
-                        || s.singer.to_lowercase().contains(&keyword)
-                })
-                .cloned()
+                .zip(lower.iter())
+                .filter(|(_s, (ln, ls))| ln.contains(&keyword) || ls.contains(&keyword))
+                .map(|(s, _)| s.clone())
                 .collect();
             app.playback.queue.songs = filtered;
         }

@@ -57,9 +57,9 @@ impl PlaylistQueue {
         self.history.pop()
     }
 
-    pub fn append(&mut self, songs: Vec<SongInfo>) -> usize {
+    pub fn append(&mut self, songs: &[SongInfo]) -> usize {
         let offset = self.songs.len();
-        self.songs.extend(songs);
+        self.songs.extend_from_slice(songs);
         offset
     }
 

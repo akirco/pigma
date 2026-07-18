@@ -1,5 +1,7 @@
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
 
+use crate::state::Page;
+
 pub struct SplashLayout {
     pub logo: Rect,
     pub progress: Rect,
@@ -42,30 +44,66 @@ pub fn login(area: Rect) -> LoginLayout {
     }
 }
 
-pub struct MainLayout {
+pub struct LayoutAreas {
     pub topbar: Rect,
-    pub nav: Rect,
-    pub songs: Rect,
-    pub body: Rect,
+    pub sidebar: Rect,
+    pub breadcrumb: Rect,
+    pub content: Rect,
     pub playerbar: Rect,
 }
 
-pub fn main(area: Rect) -> MainLayout {
-    let [topbar_area, body, playerbar_area] = Layout::vertical([
-        Constraint::Length(3),
-        Constraint::Min(10),
-        Constraint::Length(5),
-    ])
-    .areas(area);
+pub fn build_layout(area: Rect, page: Page) -> LayoutAreas {
+    match page {
+        Page::Main => {
+            let [topbar, middle, playerbar] = Layout::vertical([
+                Constraint::Length(3),
+                Constraint::Min(10),
+                Constraint::Length(5),
+            ])
+            .areas(area);
 
-    let [nav_area, songs_area] =
-        Layout::horizontal([Constraint::Length(26), Constraint::Min(40)]).areas(body);
+            let [sidebar, right] = Layout::horizontal([
+                Constraint::Length(26),
+                Constraint::Min(40),
+            ])
+            .areas(middle);
 
-    MainLayout {
-        topbar: topbar_area,
-        nav: nav_area,
-        songs: songs_area,
-        body,
-        playerbar: playerbar_area,
+            let [breadcrumb, content] = Layout::vertical([
+                Constraint::Length(3),
+                Constraint::Min(1),
+            ])
+            .areas(right);
+
+            LayoutAreas {
+                topbar,
+                sidebar,
+                breadcrumb,
+                content,
+                playerbar,
+            }
+        }
+        Page::Lyrics | Page::Playlist => {
+            let [topbar, middle, playerbar] = Layout::vertical([
+                Constraint::Length(3),
+                Constraint::Min(10),
+                Constraint::Length(5),
+            ])
+            .areas(area);
+
+            LayoutAreas {
+                topbar,
+                sidebar: Rect::default(),
+                breadcrumb: Rect::default(),
+                content: middle,
+                playerbar,
+            }
+        }
+        _ => LayoutAreas {
+            topbar: Rect::default(),
+            sidebar: Rect::default(),
+            breadcrumb: Rect::default(),
+            content: area,
+            playerbar: Rect::default(),
+        },
     }
 }

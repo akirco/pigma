@@ -1,13 +1,13 @@
 use ratatui::{
     Frame,
-    layout::{Constraint, Layout, Rect},
+    layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{List, ListItem, Paragraph},
+    widgets::{List, ListItem},
 };
 
-use super::create_block;
-use crate::state::{NavItem, NavState};
+use super::{create_block, styled_text};
+use crate::state::NavState;
 use crate::theme::Theme;
 
 pub fn draw(
@@ -27,69 +27,28 @@ pub fn draw(
         return;
     }
 
-    let constraints: Vec<Constraint> = nav
-        .sections
-        .iter()
-        .flat_map(|s| {
-            vec![
-                Constraint::Length(1),
-                Constraint::Length(s.items.len() as u16),
-            ]
-        })
-        .collect();
+    let total_rows: usize = nav.sections.iter().map(|s| s.items.len() + 1).sum();
+    let mut list_items = Vec::with_capacity(total_rows);
 
-    if constraints.is_empty() {
-        return;
-    }
-
-    let chunks = Layout::vertical(constraints).split(inner);
+    let mut global_selected_idx = None;
+    let mut current_global_row = 0;
 
     for (i, section) in nav.sections.iter().enumerate() {
-        let title_area = chunks[i * 2];
-        let items_area = chunks[i * 2 + 1];
         let focused = i == nav.focus_section;
 
-        render_title(f, &section.title, colors, title_area);
-        render_items(
-            f,
-            &section.items,
-            &mut nav.section_states[i],
-            colors,
-            focused,
-            items_area,
-        );
-    }
-}
+        let title_spans = styled_text::parse_styled(&section.title, colors);
+        list_items.push(ListItem::new(Line::from(title_spans)));
+        current_global_row += 1;
 
-fn render_title(f: &mut Frame, title: &str, colors: &Theme, area: Rect) {
-    let line = Line::from(vec![
-        Span::styled("▎", Style::default().fg(colors.accent)),
-        Span::raw(" "),
-        Span::styled(
-            title,
-            Style::default()
-                .fg(colors.text)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ]);
-    f.render_widget(Paragraph::new(line), area);
-}
-
-fn render_items(
-    f: &mut Frame,
-    items: &[NavItem],
-    state: &mut ratatui::widgets::ListState,
-    colors: &Theme,
-    focused: bool,
-    area: Rect,
-) {
-    let list_items: Vec<ListItem> = items
-        .iter()
-        .enumerate()
-        .map(|(idx, item)| {
+        let state = &nav.section_states[i];
+        for (idx, item) in section.items.iter().enumerate() {
             let is_selected = state.selected() == Some(idx);
+
+            if is_selected && focused {
+                global_selected_idx = Some(current_global_row);
+            }
+
             let prefix = if is_selected && focused { "▶ " } else { "  " };
-            let text = format!("{}{}", prefix, item.name);
             let item_style = if is_selected && focused {
                 Style::default()
                     .fg(colors.accent)
@@ -98,10 +57,20 @@ fn render_items(
             } else {
                 Style::default().fg(colors.text)
             };
-            ListItem::new(Line::from(Span::raw(text))).style(item_style)
-        })
-        .collect();
+
+            let name_spans = styled_text::parse_styled(&item.name, colors);
+            let mut spans = Vec::with_capacity(name_spans.len() + 1);
+            spans.push(Span::styled(prefix, item_style));
+            spans.extend(name_spans);
+
+            list_items.push(ListItem::new(Line::from(spans)).style(item_style));
+            current_global_row += 1;
+        }
+    }
 
     let list = List::new(list_items);
-    f.render_stateful_widget(list, area, state);
+    let mut global_state =
+        ratatui::widgets::ListState::default().with_selected(global_selected_idx);
+
+    f.render_stateful_widget(list, inner, &mut global_state);
 }

@@ -1,3 +1,6 @@
+use std::future::Future;
+use std::sync::Arc;
+
 use crate::{
     input,
     state::{App, LoginMethod, Page, parse_lyric_lines},
@@ -14,23 +17,6 @@ fn send_event(tx: &mpsc::UnboundedSender<Event>, event: Event) {
     if tx.send(event).is_err() {
         log::error!("Failed to send event: receiver dropped");
     }
-}
-
-fn now_time() -> String {
-    let (h, m, s) = chrono_local_time();
-    format!("{:02}:{:02}:{:02}", h, m, s)
-}
-
-fn chrono_local_time() -> (u32, u32, u32) {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    (
-        (secs / 3600 % 24) as u32,
-        (secs / 60 % 60) as u32,
-        (secs % 60) as u32,
-    )
 }
 
 impl App {
@@ -87,7 +73,7 @@ impl App {
                     Event::App(AppEvent::SplashTick {
                         progress,
                         log: Some(SplashLogEntry {
-                            time: now_time(),
+                            time: crate::utils::clock_time(),
                             text: text.to_string(),
                             level,
                         }),
@@ -268,7 +254,10 @@ impl App {
             self.state.splash.status = "READY".to_string();
             self.state.splash.boot_complete = true;
         } else {
-            self.state.splash.status = splash_status(progress);
+            let new_status = splash_status(progress);
+            if self.state.splash.status != new_status {
+                self.state.splash.status = new_status.to_string();
+            }
         }
     }
 
@@ -593,7 +582,7 @@ impl App {
         if let ContentState::Songs(songs) = &self.state.navigation.content
             && let Some(pos) = songs.iter().position(|s| s.id == id)
         {
-            self.playback.append_and_play(songs.clone(), pos);
+            self.playback.append_and_play(songs, pos);
         }
     }
 
@@ -698,6 +687,7 @@ impl App {
         nav.search.input = crate::ui::text_input::TextInput::new();
         nav.search.filter_queue_only = false;
         nav.search.unfiltered_songs = None;
+        nav.search.unfiltered_songs_lower = None;
         nav.nav.subtitle = None;
         nav.content_selected = 0;
 
@@ -735,6 +725,7 @@ impl App {
             if let Some(songs) = nav.search.unfiltered_songs.take() {
                 self.playback.queue.songs = songs;
             }
+            nav.search.unfiltered_songs_lower = None;
         } else if let Some(prev) = nav.previous_content.take() {
             nav.set_content(prev);
             if let Some(ref api) = nav.previous_api.take() {
@@ -757,6 +748,39 @@ impl App {
         }
     }
 
+    fn navigate_to_entity<F, Fut>(&mut self, name: String, api_call: F)
+    where
+        F: FnOnce(Arc<ncm_api::NcmClient>) -> Fut + Send + 'static,
+        Fut: Future<Output = Result<Vec<ncm_api::SongInfo>, ncm_api::NcmError>> + Send,
+    {
+        let prev_content = self.state.navigation.content.clone();
+        let prev_api = self.state.navigation.nav.section_states
+            [self.state.navigation.nav.focus_section]
+            .selected()
+            .and_then(|i| {
+                self.state.navigation.nav.sections
+                    [self.state.navigation.nav.focus_section]
+                    .items
+                    .get(i)
+            })
+            .and_then(|item| item.api.clone());
+        self.state.navigation.previous_content = Some(prev_content);
+        self.state.navigation.previous_api = prev_api;
+        self.state.navigation.set_content(ContentState::Loading);
+
+        let api = self.api.clone();
+        let sender = self.state.events.sender();
+        tokio::spawn(async move {
+            let result = api_call(api).await;
+            let state = match result {
+                Ok(songs) => ContentState::Songs(songs),
+                Err(e) => ContentState::Error(e.to_string()),
+            };
+            let _ = sender.send(Event::App(AppEvent::ContentLoaded(state)));
+            let _ = sender.send(Event::App(AppEvent::BreadcrumbSet(name)));
+        });
+    }
+
     fn handle_cell_action(&mut self, row: usize, col: usize) -> color_eyre::Result<()> {
         let columns = self
             .config
@@ -773,37 +797,9 @@ impl App {
             (ContentState::Songs(songs), "album") => {
                 if let Some(song) = songs.get(row) {
                     let album_id = song.album_id;
-                    let api = self.api.clone();
-                    let sender = self.state.events.sender();
-                    let prev_content = self.state.navigation.content.clone();
-                    let prev_api = self.state.navigation.nav.section_states
-                        [self.state.navigation.nav.focus_section]
-                        .selected()
-                        .and_then(|i| {
-                            self.state.navigation.nav.sections
-                                [self.state.navigation.nav.focus_section]
-                                .items
-                                .get(i)
-                        })
-                        .and_then(|item| item.api.clone());
                     let name = format!("{}: {}", column.header, song.album);
-                    self.state.navigation.previous_content = Some(prev_content);
-                    self.state.navigation.previous_api = prev_api;
-                    self.state.navigation.set_content(ContentState::Loading);
-                    tokio::spawn(async move {
-                        match api.album(album_id).await {
-                            Ok(detail) => {
-                                let _ = sender.send(Event::App(AppEvent::ContentLoaded(
-                                    ContentState::Songs(detail.songs),
-                                )));
-                                let _ = sender.send(Event::App(AppEvent::BreadcrumbSet(name)));
-                            }
-                            Err(e) => {
-                                let _ = sender.send(Event::App(AppEvent::ContentLoaded(
-                                    ContentState::Error(e.to_string()),
-                                )));
-                            }
-                        }
+                    self.navigate_to_entity(name, move |api| async move {
+                        api.album(album_id).await.map(|d| d.songs)
                     });
                 }
             }
@@ -813,37 +809,9 @@ impl App {
                     if artist_id == 0 {
                         return Ok(());
                     }
-                    let api = self.api.clone();
-                    let sender = self.state.events.sender();
-                    let prev_content = self.state.navigation.content.clone();
-                    let prev_api = self.state.navigation.nav.section_states
-                        [self.state.navigation.nav.focus_section]
-                        .selected()
-                        .and_then(|i| {
-                            self.state.navigation.nav.sections
-                                [self.state.navigation.nav.focus_section]
-                                .items
-                                .get(i)
-                        })
-                        .and_then(|item| item.api.clone());
                     let name = format!("{}: {}", column.header, song.singer);
-                    self.state.navigation.previous_content = Some(prev_content);
-                    self.state.navigation.previous_api = prev_api;
-                    self.state.navigation.set_content(ContentState::Loading);
-                    tokio::spawn(async move {
-                        match api.singer_songs(artist_id).await {
-                            Ok(songs) => {
-                                let _ = sender.send(Event::App(AppEvent::ContentLoaded(
-                                    ContentState::Songs(songs),
-                                )));
-                                let _ = sender.send(Event::App(AppEvent::BreadcrumbSet(name)));
-                            }
-                            Err(e) => {
-                                let _ = sender.send(Event::App(AppEvent::ContentLoaded(
-                                    ContentState::Error(e.to_string()),
-                                )));
-                            }
-                        }
+                    self.navigate_to_entity(name, move |api| async move {
+                        api.singer_songs(artist_id).await
                     });
                 }
             }
@@ -853,37 +821,9 @@ impl App {
                     if artist_id == 0 {
                         return Ok(());
                     }
-                    let api = self.api.clone();
-                    let sender = self.state.events.sender();
-                    let prev_content = self.state.navigation.content.clone();
-                    let prev_api = self.state.navigation.nav.section_states
-                        [self.state.navigation.nav.focus_section]
-                        .selected()
-                        .and_then(|i| {
-                            self.state.navigation.nav.sections
-                                [self.state.navigation.nav.focus_section]
-                                .items
-                                .get(i)
-                        })
-                        .and_then(|item| item.api.clone());
                     let name = format!("{}: {}", column.header, singer.name);
-                    self.state.navigation.previous_content = Some(prev_content);
-                    self.state.navigation.previous_api = prev_api;
-                    self.state.navigation.set_content(ContentState::Loading);
-                    tokio::spawn(async move {
-                        match api.singer_songs(artist_id).await {
-                            Ok(songs) => {
-                                let _ = sender.send(Event::App(AppEvent::ContentLoaded(
-                                    ContentState::Songs(songs),
-                                )));
-                                let _ = sender.send(Event::App(AppEvent::BreadcrumbSet(name)));
-                            }
-                            Err(e) => {
-                                let _ = sender.send(Event::App(AppEvent::ContentLoaded(
-                                    ContentState::Error(e.to_string()),
-                                )));
-                            }
-                        }
+                    self.navigate_to_entity(name, move |api| async move {
+                        api.singer_songs(artist_id).await
                     });
                 }
             }
@@ -897,7 +837,7 @@ impl App {
     }
 }
 
-fn splash_status(progress: f64) -> String {
+fn splash_status(progress: f64) -> &'static str {
     if progress < 0.3 {
         "INITIALIZING SYSTEM..."
     } else if progress < 0.6 {
@@ -907,9 +847,9 @@ fn splash_status(progress: f64) -> String {
     } else {
         "READY"
     }
-    .to_string()
 }
 
-async fn check_network(api: &ncm_api::NcmClient) -> bool {
-    api.search_hot().await.is_ok()
+async fn check_network(_api: &ncm_api::NcmClient) -> bool {
+    use tokio::net::TcpStream;
+    TcpStream::connect("music.163.com:443").await.is_ok()
 }

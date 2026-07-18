@@ -7,7 +7,7 @@ use ratatui::{
 
 use crate::theme::Theme;
 use crate::types::{ColumnDef, TableMode};
-use crate::ui::{calc_scroll_offset, render_scrollbar};
+use crate::ui::render_scrollbar;
 
 pub fn render_table(
     f: &mut Frame,
@@ -35,6 +35,8 @@ pub fn render_table(
 
     let widths: Vec<Constraint> = headers.iter().map(|h| h.to_constraint()).collect();
 
+    let sel = table_state.selected().unwrap_or(0);
+
     let table_rows: Vec<Row> = rows
         .iter()
         .map(|cells| {
@@ -52,12 +54,6 @@ pub fn render_table(
             Row::new(styled_cells).height(1)
         })
         .collect();
-
-    let selected = table_state.selected();
-    let sel = selected.unwrap_or(0);
-    let visible_height = table_area.height.saturating_sub(1) as usize;
-    let offset = calc_scroll_offset(sel, visible_height, rows.len());
-    *table_state.offset_mut() = offset;
 
     match table_mode {
         TableMode::Row => {

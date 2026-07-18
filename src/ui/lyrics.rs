@@ -6,17 +6,9 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Padding, Paragraph};
 
-use colorgrad::Gradient;
-
 use super::create_block;
 use crate::state::PlaybackState;
 use crate::theme::Theme;
-
-fn warm_gradient() -> &'static colorgrad::preset::CubehelixGradient {
-    use std::sync::OnceLock;
-    static GRAD: OnceLock<colorgrad::preset::CubehelixGradient> = OnceLock::new();
-    GRAD.get_or_init(colorgrad::preset::warm)
-}
 
 thread_local! {
     static LAST_CUR: Cell<usize> = const { Cell::new(0) };
@@ -52,6 +44,7 @@ pub fn draw(
     colors: &Theme,
     bordered: bool,
     border_rounded: bool,
+    gradient: &str,
     title: &str,
     area: Rect,
 ) {
@@ -80,9 +73,14 @@ pub fn draw(
     let cur = find_current_line(lyrics, cur_ms);
 
     let h = inner.height as usize;
-    let half = h / 2;
+    let has_translations = player
+        .translated_lyrics
+        .as_ref()
+        .is_some_and(|t| !t.is_empty());
+    let lines_per_lyric = if has_translations { 2 } else { 1 };
+    let half = (h / lines_per_lyric) / 2;
     let start = cur.saturating_sub(half);
-    let end = (start + h).min(lyrics.len());
+    let end = (start + h / lines_per_lyric).min(lyrics.len());
 
     let mut lines: Vec<Line> = Vec::new();
     for i in start..end {
@@ -100,6 +98,7 @@ pub fn draw(
                 l.time.as_millis() as f64,
                 lyrics.get(i + 1).map(|n| n.time.as_millis() as f64),
                 colors,
+                gradient,
             ));
         } else {
             let d = i.abs_diff(cur);
@@ -143,12 +142,11 @@ fn render_current_line(
     line_ms: f64,
     next_ms: Option<f64>,
     colors: &Theme,
+    gradient: &str,
 ) -> Line<'static> {
     let seg_dur = next_ms.map(|n| (n - line_ms).max(1.0)).unwrap_or(4000.0);
     let seg_progress = ((cur_ms - line_ms) / seg_dur).clamp(0.0, 1.0);
     let split_at = (text.chars().count() as f64 * seg_progress).floor() as usize;
-
-    let grad = warm_gradient();
 
     let chars: Vec<char> = text.chars().collect();
     let total = chars.len();
@@ -158,7 +156,7 @@ fn render_current_line(
     for (j, &ch) in chars.iter().enumerate() {
         let s = if j < split_at {
             let t = j as f64 / split_at.max(1) as f64;
-            let [r, g, b, _] = grad.at(t as f32).to_rgba8();
+            let [r, g, b] = crate::utils::gradient_color(gradient, t as f32);
             Span::styled(ch.to_string(), Style::default().fg(Color::Rgb(r, g, b)))
         } else if j == split_at {
             Span::styled(
@@ -170,7 +168,7 @@ fn render_current_line(
             )
         } else {
             let t = (j - split_at) as f64 / (total - split_at).max(1) as f64;
-            let [r, g, b, _] = grad.at(1.0 - t as f32).to_rgba8();
+            let [r, g, b] = crate::utils::gradient_color(gradient, 1.0 - t as f32);
             Span::styled(ch.to_string(), Style::default().fg(Color::Rgb(r, g, b)))
         };
         spans.push(s);

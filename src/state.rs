@@ -287,6 +287,7 @@ pub struct SearchState {
     pub input: TextInput,
     pub filter_queue_only: bool,
     pub unfiltered_songs: Option<Vec<SongInfo>>,
+    pub unfiltered_songs_lower: Option<Vec<(String, String)>>,
 }
 
 pub struct State {
@@ -353,8 +354,11 @@ impl App {
 
         let api = Arc::new(NcmClient::new()?);
 
+        // Clone only navigation config (small) instead of entire Config
+        let nav_config = config.navigation.clone();
+
         Ok(Self {
-            config: config.clone(),
+            config,
             api: api.clone(),
             playback: PlaybackEngine::new(tx, api.clone()),
             state: State {
@@ -368,7 +372,7 @@ impl App {
                     page: Page::Splash,
                     login: LoginState::default(),
                     user: None,
-                    nav: NavState::from_config(&config.navigation),
+                    nav: NavState::from_config(&nav_config),
                     content: ContentState::Empty,
                     previous_content: None,
                     previous_api: None,

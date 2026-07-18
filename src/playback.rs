@@ -96,7 +96,7 @@ impl PlaybackEngine {
         self.start_current_song(None);
     }
 
-    pub fn append_and_play(&mut self, songs: Vec<SongInfo>, index: usize) {
+    pub fn append_and_play(&mut self, songs: &[SongInfo], index: usize) {
         if songs.is_empty() || index >= songs.len() {
             return;
         }
@@ -130,6 +130,9 @@ impl PlaybackEngine {
         }
 
         if matches!(self.state.mode, PlayMode::Heartbeat { .. }) {
+            // FIXME(Heartbeat): `next_heartbeat` 仅 spawn 异步请求并立即返回，不会停止当前歌曲，
+            // 也不会推进 current_index。当前歌曲播完后 on_playback_finished → next() 会再次
+            // next_heartbeat()，导致多个 in-flight 请求交错、可能拿到过期/重复的下一首。
             self.next_heartbeat();
             return;
         }
@@ -422,6 +425,12 @@ impl PlaybackEngine {
         });
     }
 
+    // FIXME(Heartbeat): 已知问题 ——
+    // 1. 当前歌曲播完前不会 stop，会重复触发 next_heartbeat 产生并发请求；
+    // 2. playmode_intelligence_list 返回列表只取第一首(next())，其余丢弃，
+    //    没有真正维护"心动队列"，每次切歌都再发一次网络请求；
+    // 3. HeartbeatSong 异步回传与 on_playback_finished 之间存在竞态，
+    //    快速切歌时可能播放到过时推荐。
     fn next_heartbeat(&mut self) {
         let song = match self.queue.current_song() {
             Some(s) => s.clone(),
@@ -440,6 +449,8 @@ impl PlaybackEngine {
         tokio::spawn(async move {
             match api.playmode_intelligence_list(song.id, playlist_id).await {
                 Ok(songs) => {
+                    // FIXME(Heartbeat): 只取推荐列表第一首，其余丢弃，没有维护"心动队列"。
+                    // 建议缓存整段推荐队列，本地推进，仅在队列耗尽时再请求。
                     if let Some(next_song) = songs.into_iter().next() {
                         if event_tx
                             .send(Event::App(AppEvent::HeartbeatSong(next_song)))
@@ -466,9 +477,14 @@ impl PlaybackEngine {
             }
         });
 
-        // Keep state.playing=true so on_playback_finished doesn't clear current_song
+        // NOTE(Heartbeat): 故意保持 state.playing=true，避免 on_playback_finished 清掉
+        // current_song。但这样会与上面 FIXME 的竞态叠加：歌曲已结束、progress 已归零、
+        // 下一首尚未送达期间，用户操作或再次触发 next 会产生未定义行为。
     }
 
+    // FIXME(Heartbeat): 从 AppEvent(HeartbeatSong) 异步回调进入，先 stop 再 push 新歌。
+    // 多个并发的 next_heartbeat 请求可能依次送达，导致一首歌被"下一首"覆盖多次，
+    // 或播放顺序与用户预期不符。
     pub fn play_heartbeat_song(&mut self, song: SongInfo) {
         self.controller.stop();
         self.queue.push_to_history();
