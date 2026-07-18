@@ -758,8 +758,7 @@ impl App {
             [self.state.navigation.nav.focus_section]
             .selected()
             .and_then(|i| {
-                self.state.navigation.nav.sections
-                    [self.state.navigation.nav.focus_section]
+                self.state.navigation.nav.sections[self.state.navigation.nav.focus_section]
                     .items
                     .get(i)
             })

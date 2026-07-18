@@ -13,7 +13,10 @@ impl ToFieldMap for SongInfo {
         m.insert("name".into(), self.name.clone());
         m.insert("singer".into(), self.singer.clone());
         m.insert("album".into(), self.album.clone());
-        m.insert("duration".into(), crate::utils::format_duration(self.duration));
+        m.insert(
+            "duration".into(),
+            crate::utils::format_duration(self.duration),
+        );
         m
     }
 }

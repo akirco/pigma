@@ -62,17 +62,11 @@ pub fn build_layout(area: Rect, page: Page) -> LayoutAreas {
             ])
             .areas(area);
 
-            let [sidebar, right] = Layout::horizontal([
-                Constraint::Length(26),
-                Constraint::Min(40),
-            ])
-            .areas(middle);
+            let [sidebar, right] =
+                Layout::horizontal([Constraint::Length(26), Constraint::Min(40)]).areas(middle);
 
-            let [breadcrumb, content] = Layout::vertical([
-                Constraint::Length(3),
-                Constraint::Min(1),
-            ])
-            .areas(right);
+            let [breadcrumb, content] =
+                Layout::vertical([Constraint::Length(3), Constraint::Min(1)]).areas(right);
 
             LayoutAreas {
                 topbar,

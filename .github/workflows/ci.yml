@@ -45,6 +45,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - name: Install Linux audio dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libasound2-dev
       - name: Run clippy action
         uses: clechasseur/rs-clippy-check@v5
       - name: Cache Cargo dependencies
