@@ -4,8 +4,8 @@ use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Cell, Paragraph, Row, Table};
 
 use super::create_block;
+use crate::config::Theme;
 use crate::playback::PlaybackEngine;
-use crate::theme::Theme;
 use crate::ui::{calc_scroll_offset, render_scrollbar};
 use crate::utils::format_duration;
 
@@ -19,13 +19,13 @@ pub fn draw_queue_table(
     title_template: &str,
     area: Rect,
 ) {
-    let count = playback.queue.songs.len();
+    let count = playback.queue_len();
     let title = format!(" {} ", crate::ui::render_title(title_template, "", count));
     let block = create_block(&title, colors, bordered, border_rounded, false);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    if playback.queue.is_empty() {
+    if playback.queue_len() == 0 {
         let empty = Paragraph::new("\u{64ad}\u{653e}\u{5217}\u{8868}\u{4e3a}\u{7a7a}")
             .style(Style::default().fg(colors.muted))
             .alignment(Alignment::Center);
@@ -36,7 +36,7 @@ pub fn draw_queue_table(
     let [table_area, scrollbar_area] =
         Layout::horizontal([Constraint::Min(1), Constraint::Length(1)]).areas(inner);
 
-    let queue_len = playback.queue.len();
+    let queue_len = playback.queue_len();
     let visible = table_area.height.saturating_sub(1) as usize;
     let sel = selected.min(queue_len.saturating_sub(1));
     let offset = calc_scroll_offset(sel, visible, queue_len);
@@ -50,11 +50,10 @@ pub fn draw_queue_table(
     .style(Style::default().add_modifier(Modifier::UNDERLINED))
     .height(1);
 
-    let current_idx = playback.queue.current_index;
+    let current_idx = playback.queue_current_index();
 
     let rows: Vec<Row> = playback
-        .queue
-        .songs
+        .queue_songs()
         .iter()
         .enumerate()
         .skip(offset)

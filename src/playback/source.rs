@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use ncm_api::{NcmClient, SongInfo};
 use stream_download::{Settings, StreamDownload};
 
-use super::player::{Input, SharedReader};
+use super::player::{AudioInput, SharedReader};
 use crate::cache::CacheManager;
 
 #[derive(Clone)]
@@ -21,26 +21,34 @@ impl AudioSource {
         }
     }
 
-    pub async fn resolve(&self, song: &SongInfo) -> Result<Input, String> {
+    pub async fn resolve(&self, song: &SongInfo) -> Result<AudioInput, String> {
         if song.id == 0 {
-            let path = std::path::Path::new(&song.album);
-            let file = std::fs::File::open(path).map_err(|e| {
-                format!("\u{65e0}\u{6cd5}\u{6253}\u{5f00}\u{672c}\u{5730}\u{6587}\u{4ef6}: {e}")
-            })?;
-            return Ok(Input::Reader(SharedReader(Arc::new(Mutex::new(Box::new(
-                file,
-            ))))));
+            let path = std::path::Path::new(&song.album).to_path_buf();
+            let file = tokio::task::spawn_blocking(move || std::fs::File::open(path))
+                .await
+                .map_err(|e| {
+                    format!("\u{65e0}\u{6cd5}\u{6253}\u{5f00}\u{672c}\u{5730}\u{6587}\u{4ef6}: {e}")
+                })?
+                .map_err(|e| {
+                    format!("\u{65e0}\u{6cd5}\u{6253}\u{5f00}\u{672c}\u{5730}\u{6587}\u{4ef6}: {e}")
+                })?;
+            return Ok(SharedReader(Arc::new(Mutex::new(Box::new(file)))));
         }
 
         let ext = "mp3";
 
         if self.cache.is_cached(song.id, ext) {
-            let file = self.cache.open_cached(song.id, ext).map_err(|e| {
-                format!("\u{65e0}\u{6cd5}\u{6253}\u{5f00}\u{7f13}\u{5b58}\u{6587}\u{4ef6}: {e}")
-            })?;
-            return Ok(Input::Reader(SharedReader(Arc::new(Mutex::new(Box::new(
-                file,
-            ))))));
+            let cache = self.cache.clone();
+            let song_id = song.id;
+            let file = tokio::task::spawn_blocking(move || cache.open_cached(song_id, ext))
+                .await
+                .map_err(|e| {
+                    format!("\u{65e0}\u{6cd5}\u{6253}\u{5f00}\u{7f13}\u{5b58}\u{6587}\u{4ef6}: {e}")
+                })?
+                .map_err(|e| {
+                    format!("\u{65e0}\u{6cd5}\u{6253}\u{5f00}\u{7f13}\u{5b58}\u{6587}\u{4ef6}: {e}")
+                })?;
+            return Ok(SharedReader(Arc::new(Mutex::new(Box::new(file)))));
         }
 
         let urls = self
@@ -69,8 +77,6 @@ impl AudioSource {
             .await
             .map_err(|e| format!("\u{6d41}\u{4e0b}\u{8f7d}\u{5931}\u{8d25}: {e}"))?;
 
-        Ok(Input::Reader(SharedReader(Arc::new(Mutex::new(Box::new(
-            reader,
-        ))))))
+        Ok(SharedReader(Arc::new(Mutex::new(Box::new(reader)))))
     }
 }

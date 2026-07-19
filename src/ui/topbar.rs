@@ -5,8 +5,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 use super::create_block;
+use crate::config::Theme;
 use crate::state::SearchState;
-use crate::theme::Theme;
 use ncm_api::LoginInfo;
 
 pub fn draw(

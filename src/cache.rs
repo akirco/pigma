@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use stream_download::storage::StorageProvider;
 
-use crate::types::ContentState;
+use crate::state::ContentState;
 
 #[derive(Serialize, Deserialize)]
 struct ContentCacheEntry {

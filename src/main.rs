@@ -2,6 +2,7 @@ use crate::{config::Config, logger::init_logger, state::App};
 use crossterm::execute;
 use std::io::stdout;
 
+pub mod api;
 pub mod app;
 pub mod cache;
 pub mod config;
@@ -12,8 +13,6 @@ pub mod layout;
 pub mod logger;
 pub mod playback;
 pub mod state;
-pub mod theme;
-pub mod types;
 pub mod ui;
 pub mod utils;
 

@@ -6,14 +6,12 @@ use rodio::Source;
 use rodio::cpal::traits::{DeviceTrait, HostTrait};
 use tokio::sync::mpsc;
 
-use crate::types::{AppEvent, Event};
+use crate::event::{AppEvent, Event};
 
 pub trait AudioReader: Read + Seek + Send + Sync {}
 impl<T: Read + Seek + Send + Sync> AudioReader for T {}
 
-pub enum Input {
-    Reader(SharedReader),
-}
+pub type AudioInput = SharedReader;
 
 /// A reader wrapper that can be shared between the player and the seek controller.
 /// On seek, the controller locks the shared reader, seeks to the new position,
@@ -48,13 +46,11 @@ pub enum ControlCmd {
 }
 
 pub async fn run(
-    input: Input,
+    reader: SharedReader,
     seek_time: Option<Duration>,
     event_tx: mpsc::UnboundedSender<Event>,
     control_rx: std::sync::mpsc::Receiver<ControlCmd>,
 ) {
-    let Input::Reader(reader) = input;
-
     let decoder = match tokio::task::spawn_blocking(move || rodio::Decoder::new(reader)).await {
         Ok(Ok(d)) => d,
         Err(e) => {

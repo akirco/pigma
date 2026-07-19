@@ -1,10 +1,12 @@
 use std::future::Future;
 use std::sync::Arc;
 
+use crate::playback::types::parse_lyric_lines;
 use crate::{
+    api::ApiEndpoint,
+    event::{AppEvent, CommandPanelAction, Event},
     input,
-    state::{App, LoginMethod, Page, parse_lyric_lines},
-    types::{ApiEndpoint, AppEvent, CommandPanelAction, ContentState, Event, TableMode},
+    state::{App, ContentState, LoginMethod, Page, TableMode},
 };
 use crossterm::event::Event as CrosstermEvent;
 use ratatui::{DefaultTerminal, Frame};
@@ -109,7 +111,10 @@ impl App {
                 &format!("Scanning local music: {}", music_dir.display()),
                 LogLevel::Info,
             );
-            let local_songs = crate::playback::scan_local_music(&music_dir);
+            let local_songs =
+                tokio::task::spawn_blocking(move || crate::playback::scan_local_music(&music_dir))
+                    .await
+                    .unwrap_or_default();
             let count = local_songs.len();
             send(
                 0.80,
@@ -193,22 +198,14 @@ impl App {
             AppEvent::NavSelect(api_str) => self.handle_nav_select(api_str)?,
             AppEvent::BreadcrumbSet(name) => self.handle_breadcrumb(name),
             AppEvent::ContentLoaded(content) => self.handle_content_loaded(content),
-            AppEvent::PlaylistSelect(id) => self.handle_playlist_select(id),
+            AppEvent::PlaylistSelect { id, name } => self.handle_playlist_select(id, name),
             AppEvent::SongPlay(id) => self.handle_song_play(id),
             AppEvent::PlaybackStarted => self.handle_playback_started(),
             AppEvent::PlaybackProgress { position, total } => {
                 self.playback.on_playback_progress(position, total);
             }
             AppEvent::PlaybackFinished => {
-                let song_info = self
-                    .playback
-                    .state
-                    .current_song
-                    .as_ref()
-                    .map(|s| (s.id, s.duration));
-                let progress = self.playback.state.progress;
-                self.playback.on_playback_finished();
-                if let Some((song_id, duration)) = song_info {
+                if let Some((song_id, duration, progress)) = self.playback.finish_and_snapshot() {
                     let time_ms = (duration as f64 * progress) as u64;
                     let api = self.api.clone();
                     tokio::spawn(async move {
@@ -455,7 +452,7 @@ impl App {
         let ttl = self.config.content_cache_ttl;
         if ttl > 0
             && api != ApiEndpoint::Search
-            && let Some(cached) = self.playback.source.cache.load_content_cache(&api_str, ttl)
+            && let Some(cached) = self.playback.cache().load_content_cache(&api_str, ttl)
         {
             self.state.navigation.set_content(cached);
             self.state.navigation.content_selected = 0;
@@ -467,7 +464,7 @@ impl App {
         if api == ApiEndpoint::Search {
             self.state.navigation.nav.subtitle = Some("热搜榜".into());
         }
-        let cache = self.playback.source.cache.clone();
+        let cache = self.playback.cache().clone();
         let api_client = self.api.clone();
         let sender = self.state.events.sender();
         let uid = self.state.navigation.user.as_ref().map(|u| u.uid);
@@ -529,7 +526,14 @@ impl App {
 
             // Save to disk cache (skip Search — results change too quickly)
             if ttl > 0 && api != ApiEndpoint::Search {
-                cache.save_content_cache(&api_str, &state);
+                let cache_clone = cache.clone();
+                let api_str_clone = api_str.clone();
+                let state_clone = state.clone();
+                tokio::task::spawn_blocking(move || {
+                    cache_clone.save_content_cache(&api_str_clone, &state_clone);
+                })
+                .await
+                .ok();
             }
 
             send_event(&sender, Event::App(AppEvent::ContentLoaded(state)));
@@ -548,7 +552,7 @@ impl App {
         self.state.navigation.content_column_selected = 0;
     }
 
-    fn handle_playlist_select(&mut self, id: u64) {
+    fn handle_playlist_select(&mut self, id: u64, name: Option<String>) {
         self.playback.set_playlist_id(id);
         self.state.navigation.previous_content = Some(std::mem::replace(
             &mut self.state.navigation.content,
@@ -556,26 +560,46 @@ impl App {
         ));
         *self.state.navigation.content_rows_cache.borrow_mut() = None;
         self.state.navigation.content_selected = 0;
+
+        let is_radio = self
+            .state
+            .navigation
+            .nav
+            .section_states
+            .get(self.state.navigation.nav.focus_section)
+            .and_then(|st| st.selected())
+            .and_then(|i| {
+                self.state.navigation.nav.sections[self.state.navigation.nav.focus_section]
+                    .items
+                    .get(i)
+            })
+            .and_then(|item| item.api.as_deref())
+            == Some("user_radio_sublist");
+
         let api = self.api.clone();
         let sender = self.state.events.sender();
         tokio::spawn(async move {
-            let result = api.song_list_detail(id).await;
-            let (state, name) = match result {
-                Ok(detail) => (ContentState::Songs(detail.songs), Some(detail.name)),
-                Err(e) => (ContentState::Error(e.to_string()), None),
+            let (state, detail_name) = if is_radio {
+                match api.radio_program(id, 0, 1000).await {
+                    Ok(songs) => (ContentState::Songs(songs), None),
+                    Err(e) => (ContentState::Error(e.to_string()), None),
+                }
+            } else {
+                match api.song_list_detail(id).await {
+                    Ok(detail) => (ContentState::Songs(detail.songs), Some(detail.name)),
+                    Err(e) => (ContentState::Error(e.to_string()), None),
+                }
             };
             send_event(&sender, Event::App(AppEvent::ContentLoaded(state)));
-            if let Some(name) = name {
+            let breadcrumb = detail_name.or(name);
+            if let Some(name) = breadcrumb {
                 send_event(&sender, Event::App(AppEvent::BreadcrumbSet(name)));
             }
         });
     }
 
     fn handle_song_play(&mut self, id: u64) {
-        if let Some(current) = &self.playback.state.current_song
-            && current.id == id
-            && self.playback.state.playing
-        {
+        if self.playback.is_currently_playing(id) {
             self.playback.toggle_pause();
             return;
         }
@@ -589,9 +613,9 @@ impl App {
     fn handle_playback_started(&mut self) {
         self.playback.on_playback_started();
 
-        if let Some(song) = &self.playback.state.current_song {
+        if let Some(song) = self.playback.current_song() {
             let song_id = song.id;
-            let cache = self.playback.source.cache.clone();
+            let cache = self.playback.cache().clone();
             let api = self.api.clone();
             let sender = self.state.events.sender();
 
@@ -613,7 +637,13 @@ impl App {
             tokio::spawn(async move {
                 match api.song_lyric(song_id).await {
                     Ok(lyrics) => {
-                        cache.save_lyrics_cache(song_id, &lyrics);
+                        let cache_clone = cache.clone();
+                        let lyrics_clone = lyrics.clone();
+                        tokio::task::spawn_blocking(move || {
+                            cache_clone.save_lyrics_cache(song_id, &lyrics_clone);
+                        })
+                        .await
+                        .ok();
                         let lyric_lines = parse_lyric_lines(&lyrics.lyric);
                         let tlyric_lines = parse_lyric_lines(&lyrics.tlyric);
                         send_event(
@@ -723,7 +753,7 @@ impl App {
         if nav.search.filter_queue_only {
             nav.search.filter_queue_only = false;
             if let Some(songs) = nav.search.unfiltered_songs.take() {
-                self.playback.queue.songs = songs;
+                self.playback.set_queue_songs(songs);
             }
             nav.search.unfiltered_songs_lower = None;
         } else if let Some(prev) = nav.previous_content.take() {

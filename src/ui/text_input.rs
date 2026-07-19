@@ -109,7 +109,7 @@ impl TextInput {
         &self,
         f: &mut Frame,
         area: Rect,
-        colors: &crate::theme::Theme,
+        colors: &crate::config::Theme,
         focused: bool,
         password: bool,
     ) {

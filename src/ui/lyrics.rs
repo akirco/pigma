@@ -7,15 +7,15 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Padding, Paragraph};
 
 use super::create_block;
+use crate::config::Theme;
 use crate::state::PlaybackState;
-use crate::theme::Theme;
 
 thread_local! {
     static LAST_CUR: Cell<usize> = const { Cell::new(0) };
 }
 
 /// Find the current lyric index — incremental forward scan, O(1) amortized.
-fn find_current_line(lyrics: &[crate::state::PlaybackLyricLine], cur_ms: f64) -> usize {
+fn find_current_line(lyrics: &[crate::playback::types::LyricLine], cur_ms: f64) -> usize {
     LAST_CUR.with(|last| {
         let mut cur = last.get();
         // Reset if lyrics changed (new song)

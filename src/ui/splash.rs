@@ -6,9 +6,9 @@ use ratatui::{
     widgets::Paragraph,
 };
 
+use crate::config::Theme;
 use crate::layout::SplashLayout;
 use crate::state::{LogLevel, SplashState};
-use crate::theme::Theme;
 
 const LOGO: &[&str] = &[
     "█▀▀▀▄ ▀█▀ ▄▀▀▀▀ █▄ ▄█ ▄▀▀▀▄",

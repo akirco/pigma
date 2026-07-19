@@ -44,12 +44,14 @@ rodio = { version = "0.22.2", default-features = false, features = [
   "flac",
   "wav",
   "vorbis",
+  "mp4"
 ] }
 qrcode = "0.14.1"
 stream-download = { version = "0.24.1", features = ["async-read"] }
 rand = "0.10.2"
 libc = "0.2.186"
 time = { version = "0.3", features = ["local-offset", "macros", "formatting"] }
+toml_edit = { version = "0.25.13", features = ["serde"] }
 
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
