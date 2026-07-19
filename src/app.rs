@@ -1,13 +1,13 @@
 use std::future::Future;
 use std::sync::Arc;
 
+use crate::playback::types::parse_lyric_lines;
 use crate::{
     api::ApiEndpoint,
     event::{AppEvent, CommandPanelAction, Event},
     input,
     state::{App, ContentState, LoginMethod, Page, TableMode},
 };
-use crate::playback::types::parse_lyric_lines;
 use crossterm::event::Event as CrosstermEvent;
 use ratatui::{DefaultTerminal, Frame};
 use tokio::sync::mpsc;
@@ -111,11 +111,10 @@ impl App {
                 &format!("Scanning local music: {}", music_dir.display()),
                 LogLevel::Info,
             );
-            let local_songs = tokio::task::spawn_blocking(move || {
-                crate::playback::scan_local_music(&music_dir)
-            })
-            .await
-            .unwrap_or_default();
+            let local_songs =
+                tokio::task::spawn_blocking(move || crate::playback::scan_local_music(&music_dir))
+                    .await
+                    .unwrap_or_default();
             let count = local_songs.len();
             send(
                 0.80,
@@ -570,8 +569,7 @@ impl App {
             .get(self.state.navigation.nav.focus_section)
             .and_then(|st| st.selected())
             .and_then(|i| {
-                self.state.navigation.nav.sections
-                    [self.state.navigation.nav.focus_section]
+                self.state.navigation.nav.sections[self.state.navigation.nav.focus_section]
                     .items
                     .get(i)
             })
@@ -617,7 +615,7 @@ impl App {
 
         if let Some(song) = self.playback.current_song() {
             let song_id = song.id;
-        let cache = self.playback.cache().clone();
+            let cache = self.playback.cache().clone();
             let api = self.api.clone();
             let sender = self.state.events.sender();
 

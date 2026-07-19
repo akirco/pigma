@@ -5,8 +5,8 @@ mod search;
 mod table;
 
 use crate::event::{AppEvent, CommandPanelAction};
-use crate::state::{App, Page};
 use crate::state::TableMode;
+use crate::state::{App, Page};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
 
 use self::content::{
@@ -65,9 +65,7 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> color_eyre::Resu
         return Ok(());
     }
 
-    if app.state.navigation.search.active
-        && handle_search_key(app, key_event)
-    {
+    if app.state.navigation.search.active && handle_search_key(app, key_event) {
         return Ok(());
     }
 

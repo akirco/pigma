@@ -5,8 +5,8 @@ use ratatui::{
     widgets::{Cell, Row, Table, TableState},
 };
 
-use crate::config::Theme;
 use crate::config::ColumnDef;
+use crate::config::Theme;
 use crate::state::TableMode;
 use crate::ui::render_scrollbar;
 

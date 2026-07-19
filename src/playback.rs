@@ -419,7 +419,6 @@ impl PlaybackEngine {
             controller.request(input, seek_time);
         });
     }
-
 }
 
 pub use self::scan::scan_local_music;

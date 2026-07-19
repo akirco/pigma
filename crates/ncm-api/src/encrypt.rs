@@ -2,7 +2,7 @@ use aes::Aes128;
 use aes::cipher::{BlockCipherEncrypt, KeyInit};
 use base64::{Engine, engine::general_purpose};
 use md5::{Digest, Md5};
-use percent_encoding::{NON_ALPHANUMERIC, AsciiSet};
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC};
 use rsa::BigUint;
 use rsa::RsaPublicKey;
 use rsa::pkcs8::DecodePublicKey;
@@ -150,7 +150,11 @@ fn rsa_encrypt(data: &[u8]) -> String {
 fn md5_hex(data: &str) -> String {
     let mut hasher = Md5::new();
     hasher.update(data.as_bytes());
-    hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect()
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect()
 }
 
 fn random_key_16() -> Vec<u8> {

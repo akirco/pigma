@@ -8,9 +8,9 @@ use ratatui::{
 };
 
 use super::block::CornerBlock;
+use crate::config::Theme;
 use crate::layout::LoginLayout;
 use crate::state::{LoginField, LoginMethod, LoginState};
-use crate::config::Theme;
 
 pub fn draw(
     f: &mut Frame,

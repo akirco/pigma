@@ -4,8 +4,8 @@ use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Cell, Paragraph, Row, Table};
 
 use super::create_block;
-use crate::playback::PlaybackEngine;
 use crate::config::Theme;
+use crate::playback::PlaybackEngine;
 use crate::ui::{calc_scroll_offset, render_scrollbar};
 use crate::utils::format_duration;
 

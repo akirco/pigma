@@ -1,14 +1,14 @@
 use std::time::Duration;
 
-use crossterm::event::Event as CrosstermEvent;
 use color_eyre::eyre::OptionExt;
+use crossterm::event::Event as CrosstermEvent;
 use futures::{FutureExt, StreamExt};
 use ncm_api::{LoginInfo, SongInfo};
 use tokio::sync::mpsc;
 
 use crate::playback::types::LyricLine;
-use crate::state::{CommandAction, Page, SplashLogEntry};
 use crate::state::ContentState;
+use crate::state::{CommandAction, Page, SplashLogEntry};
 
 #[derive(Clone, Debug)]
 pub enum Event {
@@ -34,7 +34,10 @@ pub enum AppEvent {
     QRStatus(String),
     NavSelect(String),
     ContentLoaded(ContentState),
-    PlaylistSelect { id: u64, name: Option<String> },
+    PlaylistSelect {
+        id: u64,
+        name: Option<String>,
+    },
     BreadcrumbSet(String),
     SongPlay(u64),
     PlaybackStarted,

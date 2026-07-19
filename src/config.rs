@@ -1,20 +1,19 @@
 mod column;
 mod navigation;
 mod playerbar;
-mod titles;
 pub mod theme;
+mod titles;
 
 pub use column::*;
 pub use navigation::*;
 pub use playerbar::*;
-pub use titles::*;
 pub use theme::{Theme, ThemeRegistry};
+pub use titles::*;
 
 use serde::{Deserialize, Serialize};
 use std::fs;
 
 use crate::logger::Logger;
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -165,8 +164,11 @@ impl Config {
     }
 
     fn to_toml(&self) -> String {
-        let pretty = toml::to_string_pretty(self).expect("Config should always serialize to valid TOML");
-        let mut doc: toml_edit::DocumentMut = pretty.parse().expect("toml::to_string_pretty should produce valid TOML");
+        let pretty =
+            toml::to_string_pretty(self).expect("Config should always serialize to valid TOML");
+        let mut doc: toml_edit::DocumentMut = pretty
+            .parse()
+            .expect("toml::to_string_pretty should produce valid TOML");
         convert_aot_to_inline(doc.as_item_mut());
         doc.fmt();
         fix_spacing(&doc.to_string())

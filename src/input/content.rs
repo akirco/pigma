@@ -52,12 +52,18 @@ pub(super) fn row_enter_action(app: &mut App) {
     match &app.state.navigation.content {
         ContentState::SongLists(lists) => {
             if let Some(list) = lists.get(sel) {
-                app.state.events.send(AppEvent::PlaylistSelect { id: list.id, name: Some(list.name.clone()) });
+                app.state.events.send(AppEvent::PlaylistSelect {
+                    id: list.id,
+                    name: Some(list.name.clone()),
+                });
             }
         }
         ContentState::TopLists(lists) => {
             if let Some(list) = lists.get(sel) {
-                app.state.events.send(AppEvent::PlaylistSelect { id: list.id, name: Some(list.name.clone()) });
+                app.state.events.send(AppEvent::PlaylistSelect {
+                    id: list.id,
+                    name: Some(list.name.clone()),
+                });
             }
         }
         ContentState::Songs(songs) => {

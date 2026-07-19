@@ -10,10 +10,10 @@ use ratatui::{
 };
 
 use super::table;
-use crate::config::ColumnsConfig;
-use crate::field::ToFieldMap;
-use crate::config::Theme;
 use crate::config::ColumnDef;
+use crate::config::ColumnsConfig;
+use crate::config::Theme;
+use crate::field::ToFieldMap;
 use crate::state::{ContentState, TableMode};
 
 fn compute_rows(content: &ContentState, columns: &[ColumnDef]) -> Vec<Vec<String>> {

@@ -7,8 +7,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Padding, Paragraph};
 
 use super::create_block;
-use crate::state::PlaybackState;
 use crate::config::Theme;
+use crate::state::PlaybackState;
 
 thread_local! {
     static LAST_CUR: Cell<usize> = const { Cell::new(0) };

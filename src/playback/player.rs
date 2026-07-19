@@ -51,7 +51,6 @@ pub async fn run(
     event_tx: mpsc::UnboundedSender<Event>,
     control_rx: std::sync::mpsc::Receiver<ControlCmd>,
 ) {
-
     let decoder = match tokio::task::spawn_blocking(move || rodio::Decoder::new(reader)).await {
         Ok(Ok(d)) => d,
         Err(e) => {

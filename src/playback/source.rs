@@ -26,11 +26,13 @@ impl AudioSource {
             let path = std::path::Path::new(&song.album).to_path_buf();
             let file = tokio::task::spawn_blocking(move || std::fs::File::open(path))
                 .await
-                .map_err(|e| format!("\u{65e0}\u{6cd5}\u{6253}\u{5f00}\u{672c}\u{5730}\u{6587}\u{4ef6}: {e}"))?
-                .map_err(|e| format!("\u{65e0}\u{6cd5}\u{6253}\u{5f00}\u{672c}\u{5730}\u{6587}\u{4ef6}: {e}"))?;
-            return Ok(SharedReader(Arc::new(Mutex::new(Box::new(
-                file,
-            )))));
+                .map_err(|e| {
+                    format!("\u{65e0}\u{6cd5}\u{6253}\u{5f00}\u{672c}\u{5730}\u{6587}\u{4ef6}: {e}")
+                })?
+                .map_err(|e| {
+                    format!("\u{65e0}\u{6cd5}\u{6253}\u{5f00}\u{672c}\u{5730}\u{6587}\u{4ef6}: {e}")
+                })?;
+            return Ok(SharedReader(Arc::new(Mutex::new(Box::new(file)))));
         }
 
         let ext = "mp3";
@@ -40,11 +42,13 @@ impl AudioSource {
             let song_id = song.id;
             let file = tokio::task::spawn_blocking(move || cache.open_cached(song_id, ext))
                 .await
-                .map_err(|e| format!("\u{65e0}\u{6cd5}\u{6253}\u{5f00}\u{7f13}\u{5b58}\u{6587}\u{4ef6}: {e}"))?
-                .map_err(|e| format!("\u{65e0}\u{6cd5}\u{6253}\u{5f00}\u{7f13}\u{5b58}\u{6587}\u{4ef6}: {e}"))?;
-            return Ok(SharedReader(Arc::new(Mutex::new(Box::new(
-                file,
-            )))));
+                .map_err(|e| {
+                    format!("\u{65e0}\u{6cd5}\u{6253}\u{5f00}\u{7f13}\u{5b58}\u{6587}\u{4ef6}: {e}")
+                })?
+                .map_err(|e| {
+                    format!("\u{65e0}\u{6cd5}\u{6253}\u{5f00}\u{7f13}\u{5b58}\u{6587}\u{4ef6}: {e}")
+                })?;
+            return Ok(SharedReader(Arc::new(Mutex::new(Box::new(file)))));
         }
 
         let urls = self

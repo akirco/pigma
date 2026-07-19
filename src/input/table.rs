@@ -1,5 +1,5 @@
-use crate::state::App;
 use crate::config::ColumnDef;
+use crate::state::App;
 use crate::state::{ContentState, TableMode};
 
 fn is_selectable_field(content: &ContentState, field: &str) -> bool {

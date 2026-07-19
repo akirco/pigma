@@ -27,9 +27,9 @@ use ratatui::{
 use self::block::CornerBlock;
 
 use crate::{
+    config::Theme,
     layout,
     state::{App, Page},
-    config::Theme,
 };
 
 pub fn calc_scroll_offset(selected: usize, visible_height: usize, total: usize) -> usize {

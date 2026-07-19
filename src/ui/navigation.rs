@@ -7,8 +7,8 @@ use ratatui::{
 };
 
 use super::{create_block, styled_text};
-use crate::state::NavState;
 use crate::config::Theme;
+use crate::state::NavState;
 
 pub fn draw(
     f: &mut Frame,
