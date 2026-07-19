@@ -6,7 +6,7 @@ use ratatui::widgets::Paragraph;
 
 use super::create_block;
 use crate::state::SearchState;
-use crate::theme::Theme;
+use crate::config::Theme;
 use ncm_api::LoginInfo;
 
 pub fn draw(

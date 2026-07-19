@@ -1,16 +1,20 @@
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::fs;
-use std::sync::OnceLock;
+mod column;
+mod navigation;
+mod playerbar;
+mod titles;
+pub mod theme;
 
-use crate::{
-    logger::Logger,
-    theme::Theme,
-    types::{
-        ApiEndpoint, ColumnDef, ContentState, default_hotsearch_columns, default_singer_columns,
-        default_song_columns, default_songlist_columns, default_toplist_columns,
-    },
-};
+pub use column::*;
+pub use navigation::*;
+pub use playerbar::*;
+pub use titles::*;
+pub use theme::{Theme, ThemeRegistry};
+
+use serde::{Deserialize, Serialize};
+use std::fs;
+
+use crate::logger::Logger;
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -36,148 +40,6 @@ pub struct Config {
     /// 未知值回退到 warm。
     #[serde(default = "default_lyric_gradient")]
     pub lyric_gradient: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TitlesConfig {
-    #[serde(default = "default_title_sidebar")]
-    pub sidebar: String,
-    #[serde(default = "default_title_playlist")]
-    pub playlist: String,
-    #[serde(default = "default_title_lyrics")]
-    pub lyrics: String,
-}
-
-fn default_title_sidebar() -> String {
-    "NAVIGATION".into()
-}
-fn default_title_playlist() -> String {
-    "\u{266a} QUEUE ({count})".into()
-}
-fn default_title_lyrics() -> String {
-    "\u{266a} LYRICS".into()
-}
-
-impl Default for TitlesConfig {
-    fn default() -> Self {
-        Self {
-            sidebar: default_title_sidebar(),
-            playlist: default_title_playlist(),
-            lyrics: default_title_lyrics(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ColumnsConfig {
-    #[serde(default = "default_song_columns")]
-    pub songs: Vec<ColumnDef>,
-    #[serde(default = "default_songlist_columns")]
-    pub songlist: Vec<ColumnDef>,
-    /// Per-API overrides. Key is the API endpoint string (e.g. "toplist", "search").
-    /// If set, these columns are used instead of the type-based defaults.
-    #[serde(default)]
-    pub overrides: HashMap<String, Vec<ColumnDef>>,
-}
-
-impl Default for ColumnsConfig {
-    fn default() -> Self {
-        let mut overrides = HashMap::new();
-        overrides.insert("toplist".into(), default_toplist_columns());
-        overrides.insert("search".into(), default_hotsearch_columns());
-        Self {
-            songs: default_song_columns(),
-            songlist: default_songlist_columns(),
-            overrides,
-        }
-    }
-}
-
-impl ColumnsConfig {
-    pub fn for_content(&self, content: &ContentState, api: Option<&str>) -> &[ColumnDef] {
-        match content {
-            ContentState::Songs(_) => &self.songs,
-            ContentState::SongLists(_) | ContentState::TopLists(_) => {
-                if let Some(api) = api
-                    && let Some(cols) = self.overrides.get(api)
-                {
-                    return cols;
-                }
-                &self.songlist
-            }
-            ContentState::HotSearch(_) => {
-                if let Some(api) = api
-                    && let Some(cols) = self.overrides.get(api)
-                {
-                    return cols;
-                }
-                // Built-in fallback for HotSearch when no override configured
-                HOTSEARCH_FALLBACK.get_or_init(|| {
-                    vec![ColumnDef {
-                        header: "HOT SEARCH".into(),
-                        field: "keyword".into(),
-                        width: None,
-                        min_width: Some(1),
-                        ratio: None,
-                    }]
-                })
-            }
-            ContentState::Singers(_) => {
-                if let Some(api) = api
-                    && let Some(cols) = self.overrides.get(api)
-                {
-                    return cols;
-                }
-                SINGER_FALLBACK.get_or_init(default_singer_columns)
-            }
-            _ => &[],
-        }
-    }
-}
-
-static HOTSEARCH_FALLBACK: OnceLock<Vec<ColumnDef>> = OnceLock::new();
-static SINGER_FALLBACK: OnceLock<Vec<ColumnDef>> = OnceLock::new();
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PlayerbarConfig {
-    #[serde(default = "default_pb_filled_symbol")]
-    pub filled_symbol: String,
-    #[serde(default = "default_pb_unfilled_symbol")]
-    pub unfilled_symbol: String,
-    #[serde(default = "default_pb_filled_color")]
-    pub filled_color: String,
-    #[serde(default = "default_pb_unfilled_color")]
-    pub unfilled_color: String,
-    #[serde(default = "default_pb_unfilled_color_cached")]
-    pub unfilled_color_cached: String,
-}
-
-fn default_pb_filled_symbol() -> String {
-    "━".into()
-}
-fn default_pb_unfilled_symbol() -> String {
-    "─".into()
-}
-fn default_pb_filled_color() -> String {
-    "accent".into()
-}
-fn default_pb_unfilled_color() -> String {
-    "text".into()
-}
-fn default_pb_unfilled_color_cached() -> String {
-    "muted".into()
-}
-
-impl Default for PlayerbarConfig {
-    fn default() -> Self {
-        Self {
-            filled_symbol: default_pb_filled_symbol(),
-            unfilled_symbol: default_pb_unfilled_symbol(),
-            filled_color: default_pb_filled_color(),
-            unfilled_color: default_pb_unfilled_color(),
-            unfilled_color_cached: default_pb_unfilled_color_cached(),
-        }
-    }
 }
 
 fn default_content_cache_ttl() -> u64 {
@@ -207,116 +69,45 @@ impl Default for Config {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NavConfig {
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub sections: Vec<NavSectionConfig>,
+fn fix_spacing(s: &str) -> String {
+    s.lines()
+        .map(|line| {
+            if let Some(idx) = line.find("= ") {
+                let key = &line[..idx];
+                if !key.ends_with(' ') && !key.is_empty() {
+                    return format!("{} = {}", key, &line[idx + 2..]);
+                }
+            }
+            line.to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
-impl Default for NavConfig {
-    fn default() -> Self {
-        Self {
-            sections: vec![
-                NavSectionConfig {
-                    title: "<accent>▎</accent> <b>DISCOVER</b>".into(),
-                    items: vec![
-                        NavItemConfig {
-                            name: "每日推荐".into(),
-                            api: Some("recommend_songs".into()),
-                            title_template: None,
-                        },
-                        NavItemConfig {
-                            name: "推荐歌单".into(),
-                            api: Some("recommend_resource".into()),
-                            title_template: None,
-                        },
-                        NavItemConfig {
-                            name: "排行榜".into(),
-                            api: Some("toplist".into()),
-                            title_template: None,
-                        },
-                        NavItemConfig {
-                            name: "歌单".into(),
-                            api: Some("top_song_list".into()),
-                            title_template: None,
-                        },
-                        NavItemConfig {
-                            name: "电台".into(),
-                            api: Some("user_radio_sublist".into()),
-                            title_template: None,
-                        },
-                        NavItemConfig {
-                            name: "搜索".into(),
-                            api: Some("search".into()),
-                            title_template: None,
-                        },
-                        NavItemConfig {
-                            name: "热门歌手".into(),
-                            api: Some("top_singers".into()),
-                            title_template: None,
-                        },
-                    ],
-                },
-                NavSectionConfig {
-                    title: "<accent>▎</accent> <b>MY MUSIC</b>".into(),
-                    items: vec![
-                        NavItemConfig {
-                            name: "我的音乐云盘".into(),
-                            api: Some("user_cloud_disk".into()),
-                            title_template: None,
-                        },
-                        NavItemConfig {
-                            name: "我喜欢的音乐".into(),
-                            api: Some("__liked__".into()),
-                            title_template: None,
-                        },
-                        NavItemConfig {
-                            name: "我的歌单".into(),
-                            api: Some("user_song_list".into()),
-                            title_template: None,
-                        },
-                        NavItemConfig {
-                            name: "下载管理".into(),
-                            api: Some("__download__".into()),
-                            title_template: None,
-                        },
-                        NavItemConfig {
-                            name: "本地音乐".into(),
-                            api: Some("__local_music__".into()),
-                            title_template: None,
-                        },
-                        NavItemConfig {
-                            name: "最近播放".into(),
-                            api: Some("__recent__".into()),
-                            title_template: None,
-                        },
-                    ],
-                },
-            ],
+fn convert_aot_to_inline(item: &mut toml_edit::Item) {
+    use toml_edit::{Item, Value};
+    match item {
+        Item::ArrayOfTables(aot) => {
+            let mut arr = toml_edit::Array::new();
+            for table in aot.iter() {
+                let mut inline = toml_edit::InlineTable::new();
+                for (k, v) in table.iter() {
+                    let mut child = v.clone();
+                    convert_aot_to_inline(&mut child);
+                    if let Item::Value(val) = child {
+                        inline.insert(k, val);
+                    }
+                }
+                arr.push(Value::InlineTable(inline));
+            }
+            *item = Item::Value(Value::Array(arr));
         }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NavSectionConfig {
-    pub title: String,
-    pub items: Vec<NavItemConfig>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NavItemConfig {
-    pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub api: Option<String>,
-    /// Optional title template. Supports `{name}` (item name), `{count}` (item count).
-    /// If None, defaults to `"{name} ({count})"`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title_template: Option<String>,
-}
-
-impl NavItemConfig {
-    pub fn endpoint(&self) -> Option<ApiEndpoint> {
-        self.api.as_deref().and_then(ApiEndpoint::parse)
+        Item::Table(table) => {
+            for (_, child) in table.iter_mut() {
+                convert_aot_to_inline(child);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -374,6 +165,10 @@ impl Config {
     }
 
     fn to_toml(&self) -> String {
-        toml::to_string_pretty(self).expect("Config should always serialize to valid TOML")
+        let pretty = toml::to_string_pretty(self).expect("Config should always serialize to valid TOML");
+        let mut doc: toml_edit::DocumentMut = pretty.parse().expect("toml::to_string_pretty should produce valid TOML");
+        convert_aot_to_inline(doc.as_item_mut());
+        doc.fmt();
+        fix_spacing(&doc.to_string())
     }
 }

@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::layout::SplashLayout;
 use crate::state::{LogLevel, SplashState};
-use crate::theme::Theme;
+use crate::config::Theme;
 
 const LOGO: &[&str] = &[
     "█▀▀▀▄ ▀█▀ ▄▀▀▀▀ █▄ ▄█ ▄▀▀▀▄",

@@ -12,8 +12,9 @@ use ratatui::{
 use super::table;
 use crate::config::ColumnsConfig;
 use crate::field::ToFieldMap;
-use crate::theme::Theme;
-use crate::types::{ColumnDef, ContentState, TableMode};
+use crate::config::Theme;
+use crate::config::ColumnDef;
+use crate::state::{ContentState, TableMode};
 
 fn compute_rows(content: &ContentState, columns: &[ColumnDef]) -> Vec<Vec<String>> {
     match content {

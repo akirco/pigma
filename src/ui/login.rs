@@ -10,7 +10,7 @@ use ratatui::{
 use super::block::CornerBlock;
 use crate::layout::LoginLayout;
 use crate::state::{LoginField, LoginMethod, LoginState};
-use crate::theme::Theme;
+use crate::config::Theme;
 
 pub fn draw(
     f: &mut Frame,

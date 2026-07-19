@@ -8,7 +8,7 @@ use ratatui::{
 
 use super::{create_block, styled_text};
 use crate::state::NavState;
-use crate::theme::Theme;
+use crate::config::Theme;
 
 pub fn render_breadcrumb(
     f: &mut Frame,

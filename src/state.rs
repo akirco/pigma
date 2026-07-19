@@ -2,24 +2,55 @@ use std::cell::RefCell;
 use std::sync::{Arc, OnceLock};
 
 use ratatui::widgets::{ListState, TableState};
+use serde::{Deserialize, Serialize};
 
 pub use crate::config::{NavItemConfig as NavItem, NavSectionConfig as NavSection};
-use ncm_api::SongInfo;
+use ncm_api::{LoginInfo, NcmClient, SingerInfo, SongInfo, SongList, TopList};
 
 use crate::{
-    config::{Config, NavConfig},
+    config::{Config, NavConfig, Theme, ThemeRegistry},
     event::EventHandler,
-    theme::{Theme, ThemeRegistry},
-    types::{ContentState, TableMode},
     ui::text_input::TextInput,
 };
-use ncm_api::{LoginInfo, NcmClient};
 
 use crate::playback::PlaybackEngine;
 
-pub use crate::playback::{
-    EnginePlayMode, EngineState as PlaybackState, PlaybackLyricLine, parse_lyric_lines,
-};
+pub use crate::playback::{EnginePlayMode, EngineState as PlaybackState};
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ContentState {
+    Empty,
+    Loading,
+    Error(String),
+    Songs(Vec<SongInfo>),
+    SongLists(Vec<SongList>),
+    TopLists(Vec<TopList>),
+    HotSearch(Vec<String>),
+    Singers(Vec<SingerInfo>),
+}
+
+impl ContentState {
+    pub fn len(&self) -> usize {
+        match self {
+            ContentState::Songs(s) => s.len(),
+            ContentState::SongLists(l) => l.len(),
+            ContentState::TopLists(l) => l.len(),
+            ContentState::HotSearch(kw) => kw.len(),
+            ContentState::Singers(s) => s.len(),
+            _ => 0,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TableMode {
+    Row,
+    Cell,
+}
 
 fn theme_fallback() -> &'static Theme {
     static FALLBACK: OnceLock<Theme> = OnceLock::new();

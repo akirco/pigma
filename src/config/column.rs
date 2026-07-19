@@ -1,184 +1,9 @@
-use crossterm::event::Event as CrosstermEvent;
-use ncm_api::{LoginInfo, SingerInfo, SongInfo, SongList, TopList};
+use std::collections::HashMap;
+use std::sync::OnceLock;
+
 use serde::{Deserialize, Serialize};
 
-use std::time::Duration;
-
-use crate::state::{CommandAction, Page, PlaybackLyricLine as LyricLine, SplashLogEntry};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ApiEndpoint {
-    RecommendSongs,
-    RecommendResource,
-    Toplist,
-    TopSongList,
-    UserRadioSublist,
-    UserCloudDisk,
-    LikedSongs,
-    UserSongList,
-    Download,
-    LocalMusic,
-    Recent,
-    Search,
-    TopSingers,
-}
-
-impl ApiEndpoint {
-    pub const ALL: &'static [ApiEndpoint] = &[
-        ApiEndpoint::RecommendSongs,
-        ApiEndpoint::RecommendResource,
-        ApiEndpoint::Toplist,
-        ApiEndpoint::TopSongList,
-        ApiEndpoint::UserRadioSublist,
-        ApiEndpoint::UserCloudDisk,
-        ApiEndpoint::LikedSongs,
-        ApiEndpoint::UserSongList,
-        ApiEndpoint::Download,
-        ApiEndpoint::LocalMusic,
-        ApiEndpoint::Recent,
-        ApiEndpoint::Search,
-        ApiEndpoint::TopSingers,
-    ];
-
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            ApiEndpoint::RecommendSongs => "recommend_songs",
-            ApiEndpoint::RecommendResource => "recommend_resource",
-            ApiEndpoint::Toplist => "toplist",
-            ApiEndpoint::TopSongList => "top_song_list",
-            ApiEndpoint::UserRadioSublist => "user_radio_sublist",
-            ApiEndpoint::UserCloudDisk => "user_cloud_disk",
-            ApiEndpoint::LikedSongs => "__liked__",
-            ApiEndpoint::UserSongList => "user_song_list",
-            ApiEndpoint::Download => "__download__",
-            ApiEndpoint::LocalMusic => "__local_music__",
-            ApiEndpoint::Recent => "__recent__",
-            ApiEndpoint::Search => "search",
-            ApiEndpoint::TopSingers => "top_singers",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "recommend_songs" => Some(ApiEndpoint::RecommendSongs),
-            "recommend_resource" => Some(ApiEndpoint::RecommendResource),
-            "toplist" => Some(ApiEndpoint::Toplist),
-            "top_song_list" => Some(ApiEndpoint::TopSongList),
-            "user_radio_sublist" => Some(ApiEndpoint::UserRadioSublist),
-            "user_cloud_disk" => Some(ApiEndpoint::UserCloudDisk),
-            "__liked__" => Some(ApiEndpoint::LikedSongs),
-            "user_song_list" => Some(ApiEndpoint::UserSongList),
-            "__download__" => Some(ApiEndpoint::Download),
-            "__local_music__" => Some(ApiEndpoint::LocalMusic),
-            "__recent__" => Some(ApiEndpoint::Recent),
-            "search" => Some(ApiEndpoint::Search),
-            "top_singers" => Some(ApiEndpoint::TopSingers),
-            _ => None,
-        }
-    }
-
-    pub fn needs_login(&self) -> bool {
-        matches!(self, ApiEndpoint::LikedSongs | ApiEndpoint::UserSongList)
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum ContentState {
-    Empty,
-    Loading,
-    Error(String),
-    Songs(Vec<SongInfo>),
-    SongLists(Vec<SongList>),
-    TopLists(Vec<TopList>),
-    HotSearch(Vec<String>),
-    Singers(Vec<SingerInfo>),
-}
-
-impl ContentState {
-    pub fn len(&self) -> usize {
-        match self {
-            ContentState::Songs(s) => s.len(),
-            ContentState::SongLists(l) => l.len(),
-            ContentState::TopLists(l) => l.len(),
-            ContentState::HotSearch(kw) => kw.len(),
-            ContentState::Singers(s) => s.len(),
-            _ => 0,
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TableMode {
-    Row,
-    Cell,
-}
-
-#[derive(Clone, Debug)]
-pub enum Event {
-    Crossterm(CrosstermEvent),
-    App(AppEvent),
-}
-
-#[derive(Clone, Debug)]
-pub enum AppEvent {
-    Quit,
-    SplashTick {
-        progress: f64,
-        log: Option<SplashLogEntry>,
-    },
-    Login,
-    LoginSuccess(LoginInfo),
-    LoginError(String),
-    CaptchaSent,
-    QRCreated {
-        url: String,
-        key: String,
-    },
-    QRStatus(String),
-    NavSelect(String),
-    ContentLoaded(ContentState),
-    PlaylistSelect(u64),
-    BreadcrumbSet(String),
-    SongPlay(u64),
-    PlaybackStarted,
-    PlaybackProgress {
-        position: Duration,
-        total: Option<Duration>,
-    },
-    PlaybackFinished,
-    PlaybackError(String),
-    LyricsLoaded {
-        song_id: u64,
-        lyrics: Vec<LyricLine>,
-        translated_lyrics: Vec<LyricLine>,
-    },
-    HeartbeatSong(SongInfo),
-    HeartbeatFallback,
-    SearchSong(String),
-    LocalMusicLoaded(Vec<SongInfo>),
-    SetOffline,
-    Navigate(Page),
-    CommandPanel(CommandPanelAction),
-    SearchActivated,
-    SearchDeactivated,
-    ToggleBordered,
-    ExecuteCommand(CommandAction),
-    ContentRestore,
-    CellAction(usize, usize),
-}
-
-#[derive(Clone, Debug)]
-pub enum CommandPanelAction {
-    Open,
-    Close,
-    Previous,
-    Next,
-    Select,
-}
+use crate::state::ContentState;
 
 /// Defines a single table column for config-driven rendering.
 ///
@@ -411,3 +236,72 @@ pub fn default_singer_columns() -> Vec<ColumnDef> {
         },
     ]
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ColumnsConfig {
+    #[serde(default = "default_song_columns")]
+    pub songs: Vec<ColumnDef>,
+    #[serde(default = "default_songlist_columns")]
+    pub songlist: Vec<ColumnDef>,
+    /// Per-API overrides. Key is the API endpoint string (e.g. "toplist", "search").
+    /// If set, these columns are used instead of the type-based defaults.
+    #[serde(default)]
+    pub overrides: HashMap<String, Vec<ColumnDef>>,
+}
+
+impl Default for ColumnsConfig {
+    fn default() -> Self {
+        let mut overrides = HashMap::new();
+        overrides.insert("toplist".into(), default_toplist_columns());
+        overrides.insert("search".into(), default_hotsearch_columns());
+        Self {
+            songs: default_song_columns(),
+            songlist: default_songlist_columns(),
+            overrides,
+        }
+    }
+}
+
+impl ColumnsConfig {
+    pub fn for_content(&self, content: &ContentState, api: Option<&str>) -> &[ColumnDef] {
+        match content {
+            ContentState::Songs(_) => &self.songs,
+            ContentState::SongLists(_) | ContentState::TopLists(_) => {
+                if let Some(api) = api
+                    && let Some(cols) = self.overrides.get(api)
+                {
+                    return cols;
+                }
+                &self.songlist
+            }
+            ContentState::HotSearch(_) => {
+                if let Some(api) = api
+                    && let Some(cols) = self.overrides.get(api)
+                {
+                    return cols;
+                }
+                HOTSEARCH_FALLBACK.get_or_init(|| {
+                    vec![ColumnDef {
+                        header: "HOT SEARCH".into(),
+                        field: "keyword".into(),
+                        width: None,
+                        min_width: Some(1),
+                        ratio: None,
+                    }]
+                })
+            }
+            ContentState::Singers(_) => {
+                if let Some(api) = api
+                    && let Some(cols) = self.overrides.get(api)
+                {
+                    return cols;
+                }
+                SINGER_FALLBACK.get_or_init(default_singer_columns)
+            }
+            _ => &[],
+        }
+    }
+}
+
+static HOTSEARCH_FALLBACK: OnceLock<Vec<ColumnDef>> = OnceLock::new();
+static SINGER_FALLBACK: OnceLock<Vec<ColumnDef>> = OnceLock::new();

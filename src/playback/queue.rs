@@ -1,5 +1,7 @@
 use ncm_api::SongInfo;
 
+use super::mode::PlayStrategy;
+
 #[derive(Debug, Clone)]
 pub struct PlaylistQueue {
     pub songs: Vec<SongInfo>,
@@ -36,15 +38,6 @@ impl PlaylistQueue {
         self.current_index.and_then(|i| self.songs.get(i))
     }
 
-    pub fn set_current(&mut self, index: usize) -> Option<&SongInfo> {
-        if index < self.songs.len() {
-            self.current_index = Some(index);
-            self.songs.get(index)
-        } else {
-            None
-        }
-    }
-
     pub fn push_to_history(&mut self) {
         if let Some(i) = self.current_index
             && let Some(song) = self.songs.get(i)
@@ -63,26 +56,22 @@ impl PlaylistQueue {
         offset
     }
 
-    pub fn remove(&mut self, index: usize) -> Option<SongInfo> {
-        if index >= self.songs.len() {
-            return None;
-        }
-        let removed = self.songs.remove(index);
-        self.current_index = match self.current_index {
-            Some(i) if i == index && self.songs.is_empty() => None,
-            Some(i) if i == index => Some(i.min(self.songs.len() - 1)),
-            Some(i) if i > index => Some(i - 1),
-            other => other,
-        };
-        Some(removed)
-    }
-
-    pub fn clear(&mut self) {
-        self.songs.clear();
-        self.current_index = None;
-    }
-
     pub fn find_song_index(&self, song_id: u64) -> Option<usize> {
         self.songs.iter().position(|s| s.id == song_id)
+    }
+
+    pub fn next_index(&self, strategy: &mut dyn PlayStrategy) -> Option<usize> {
+        strategy.next(self.current_index, &self.songs)
+    }
+
+    pub fn prev_index(&self, strategy: &mut dyn PlayStrategy) -> Option<usize> {
+        strategy.prev(self.current_index, &self.songs)
+    }
+
+    pub fn advance_to(&mut self, index: usize) {
+        if Some(index) != self.current_index {
+            self.push_to_history();
+        }
+        self.current_index = Some(index);
     }
 }

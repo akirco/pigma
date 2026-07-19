@@ -12,7 +12,7 @@ use super::create_block;
 use crate::config::PlayerbarConfig;
 use crate::playback::types::PlayMode;
 use crate::state::PlaybackState;
-use crate::theme::Theme;
+use crate::config::Theme;
 
 fn fmt_secs(total_secs: f64) -> String {
     let m = (total_secs as u64) / 60;
