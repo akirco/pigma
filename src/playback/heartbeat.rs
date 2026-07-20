@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use ncm_api::SongInfo;
 
 use crate::event::{AppEvent, Event};
@@ -52,9 +54,10 @@ impl PlaybackEngine {
     }
 
     pub fn play_heartbeat_song(&mut self, song: SongInfo) {
+        self.snapshot_report();
         self.controller.stop();
         self.queue.push_to_history();
-        self.queue.songs.push(song);
+        self.queue.songs.push(Arc::new(song));
         self.queue.current_index = Some(self.queue.len() - 1);
         self.start_current_song(None);
     }

@@ -1,63 +1,79 @@
-# [workspace]
-# members = ["crates/ncm-api"]
-
 [package]
 name = "pigma"
 version = "0.1.0"
-description = "A netease cloud music client"
-license = "AGPL-3.0"
 edition = "2024"
+description = "A netease cloud music client"
+repository = "https://github.com/akirco/pigma.git"
+license = "Apache-2.0"
 # authors = ["akirco <earlfx@163.com>"]
 
-
 [dependencies]
-crossterm = { version = "0.29.0", features = ["event-stream"] }
-futures = { version = "0.3", default-features = false, features = [
-  "std",
-  "async-await",
-] }
-ratatui = { version = "0.30.2", default-features = false, features = [
-  "crossterm",
-  "layout-cache",
-  "macros",
-  "underline-color",
-  "serde",
-] }
-tokio = { version = "1.53.0", features = [
-  "macros",
-  "rt-multi-thread",
-  "sync",
-  "time",
-] }
 color-eyre = "0.6.5"
-log = { version = "0.4.33", features = ["std", "serde"] }
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1"
-toml = "0.9.8"
+crossterm = { version = "0.29.0", features = ["event-stream"] }
 dirs = "6.0.0"
-unicode-width = "0.2"
+futures = {
+  version = "0.3.33",
+  default-features = false,
+  features = [
+    "async-await",
+    "std",
+  ]
+}
+log = { version = "0.4.33", features = ["serde", "std"] }
 ncm-api = { path = "crates/ncm-api" }
-url = "2.5"
-rodio = { version = "0.22.2", default-features = false, features = [
-  "playback",
-  "mp3",
-  "flac",
-  "wav",
-  "vorbis",
-  "mp4"
-] }
 qrcode = "0.14.1"
-stream-download = { version = "0.24.1", features = ["async-read"] }
 rand = "0.10.2"
-libc = "0.2.186"
-time = { version = "0.3", features = ["local-offset", "macros", "formatting"] }
-toml_edit = { version = "0.25.13", features = ["serde"] }
+ratatui = {
+  version = "0.30.2",
+  default-features = false,
+  features = [
+    "crossterm",
+    "layout-cache",
+    "macros",
+    "serde",
+    "underline-color",
+  ]
+}
+rodio = {
+  version = "0.22.2",
+  default-features = false,
+  features = ["flac", "mp3", "mp4", "playback", "vorbis", "wav"]
+}
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.150"
+stream-download = { version = "0.24.2", features = ["async-read"] }
+time = {
+  version = "0.3.53",
+  features = ["formatting", "local-offset", "macros"]
+}
+tokio = {
+  version = "1.53.0",
+  features = [
+    "macros",
+    "rt-multi-thread",
+    "sync",
+    "time",
+  ]
+}
+toml = "1.1.3"
+toml_edit = "0.25.13"
+unicode-width = "0.2.2"
+url = "2.5.8"
 
+[dev-dependencies]
+image = "0.25"
+ratatui-image = "11.0"
+regex = "1.13.1"
+reqwest = { version = "0.13.4", features = ["blocking", "query"] }
+y7dl = "0.1.1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2.186"
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
 [profile.release]
-codegen-units = 1
-lto = true
 opt-level = "s"
 strip = true
+lto = true
 panic = "abort"
+codegen-units = 1

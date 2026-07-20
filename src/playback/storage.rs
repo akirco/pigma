@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use ncm_api::SongInfo;
 use serde::{Deserialize, Serialize};
@@ -61,16 +62,18 @@ impl PlaylistStorage {
 
     pub fn save_auto(
         &self,
-        queue: &[SongInfo],
-        history: &[SongInfo],
+        queue: &[Arc<SongInfo>],
+        history: &[Arc<SongInfo>],
         current_index: Option<usize>,
         mode: &PlayMode,
         volume: f64,
         progress: f64,
     ) {
+        let owned_queue: Vec<SongInfo> = queue.iter().map(|s| (**s).clone()).collect();
+        let owned_history: Vec<SongInfo> = history.iter().map(|s| (**s).clone()).collect();
         let saved = SavedQueueRef {
-            queue,
-            history,
+            queue: &owned_queue,
+            history: &owned_history,
             current_index,
             mode,
             volume,
@@ -90,9 +93,10 @@ impl PlaylistStorage {
         serde_json::from_str(&content).ok()
     }
 
-    pub fn save_playlist(&self, name: &str, songs: &[SongInfo]) -> bool {
+    pub fn save_playlist(&self, name: &str, songs: &[Arc<SongInfo>]) -> bool {
         let path = self.base_dir.join(format!("{}.json", name));
-        if let Ok(json) = serde_json::to_string_pretty(songs) {
+        let owned: Vec<SongInfo> = songs.iter().map(|s| (**s).clone()).collect();
+        if let Ok(json) = serde_json::to_string_pretty(&owned) {
             fs::write(path, json).is_ok()
         } else {
             false

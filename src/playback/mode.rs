@@ -1,24 +1,23 @@
-use ncm_api::SongInfo;
 use rand::seq::SliceRandom;
 
 use super::types::PlayMode;
 
 pub trait PlayStrategy: Send {
-    fn next(&mut self, current_index: Option<usize>, queue: &[SongInfo]) -> Option<usize>;
-    fn prev(&mut self, current_index: Option<usize>, queue: &[SongInfo]) -> Option<usize>;
+    fn next(&mut self, current_index: Option<usize>, queue_len: usize) -> Option<usize>;
+    fn prev(&mut self, current_index: Option<usize>, queue_len: usize) -> Option<usize>;
 }
 
 pub struct Sequential;
 
 impl PlayStrategy for Sequential {
-    fn next(&mut self, ci: Option<usize>, queue: &[SongInfo]) -> Option<usize> {
+    fn next(&mut self, ci: Option<usize>, queue_len: usize) -> Option<usize> {
         match ci {
-            Some(i) if i + 1 < queue.len() => Some(i + 1),
+            Some(i) if i + 1 < queue_len => Some(i + 1),
             _ => None,
         }
     }
 
-    fn prev(&mut self, ci: Option<usize>, _queue: &[SongInfo]) -> Option<usize> {
+    fn prev(&mut self, ci: Option<usize>, _queue_len: usize) -> Option<usize> {
         match ci {
             Some(i) if i > 0 => Some(i - 1),
             _ => None,
@@ -29,11 +28,11 @@ impl PlayStrategy for Sequential {
 pub struct RepeatOne;
 
 impl PlayStrategy for RepeatOne {
-    fn next(&mut self, ci: Option<usize>, _queue: &[SongInfo]) -> Option<usize> {
+    fn next(&mut self, ci: Option<usize>, _queue_len: usize) -> Option<usize> {
         ci
     }
 
-    fn prev(&mut self, ci: Option<usize>, _queue: &[SongInfo]) -> Option<usize> {
+    fn prev(&mut self, ci: Option<usize>, _queue_len: usize) -> Option<usize> {
         ci
     }
 }
@@ -41,20 +40,20 @@ impl PlayStrategy for RepeatOne {
 pub struct RepeatAll;
 
 impl PlayStrategy for RepeatAll {
-    fn next(&mut self, ci: Option<usize>, queue: &[SongInfo]) -> Option<usize> {
-        if queue.is_empty() {
+    fn next(&mut self, ci: Option<usize>, queue_len: usize) -> Option<usize> {
+        if queue_len == 0 {
             return None;
         }
         let i = ci.unwrap_or(0);
-        Some((i + 1) % queue.len())
+        Some((i + 1) % queue_len)
     }
 
-    fn prev(&mut self, ci: Option<usize>, queue: &[SongInfo]) -> Option<usize> {
-        if queue.is_empty() {
+    fn prev(&mut self, ci: Option<usize>, queue_len: usize) -> Option<usize> {
+        if queue_len == 0 {
             return None;
         }
         let i = ci.unwrap_or(0);
-        Some((i + queue.len() - 1) % queue.len())
+        Some((i + queue_len - 1) % queue_len)
     }
 }
 
@@ -81,15 +80,15 @@ impl ShuffleMode {
 }
 
 impl PlayStrategy for ShuffleMode {
-    fn next(&mut self, _ci: Option<usize>, queue: &[SongInfo]) -> Option<usize> {
-        if self.order.is_empty() || queue.is_empty() {
+    fn next(&mut self, _ci: Option<usize>, queue_len: usize) -> Option<usize> {
+        if self.order.is_empty() || queue_len == 0 {
             return None;
         }
         self.pos = (self.pos + 1) % self.order.len();
         Some(self.order[self.pos])
     }
 
-    fn prev(&mut self, _ci: Option<usize>, _queue: &[SongInfo]) -> Option<usize> {
+    fn prev(&mut self, _ci: Option<usize>, _queue_len: usize) -> Option<usize> {
         if self.order.is_empty() {
             return None;
         }
@@ -107,11 +106,11 @@ impl HeartbeatMode {
 }
 
 impl PlayStrategy for HeartbeatMode {
-    fn next(&mut self, _ci: Option<usize>, _queue: &[SongInfo]) -> Option<usize> {
+    fn next(&mut self, _ci: Option<usize>, _queue_len: usize) -> Option<usize> {
         None
     }
 
-    fn prev(&mut self, _ci: Option<usize>, _queue: &[SongInfo]) -> Option<usize> {
+    fn prev(&mut self, _ci: Option<usize>, _queue_len: usize) -> Option<usize> {
         None
     }
 }

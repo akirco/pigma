@@ -11,7 +11,7 @@ pub struct TitlesConfig {
 }
 
 fn default_title_sidebar() -> String {
-    "NAVIGATION".into()
+    " NAVIGATION".into()
 }
 fn default_title_playlist() -> String {
     "\u{266a} QUEUE ({count})".into()

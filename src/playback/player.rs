@@ -166,12 +166,12 @@ pub async fn run(
 
 /// RAII guard that redirects stderr to /dev/null while alive, restoring it on drop.
 /// Used to suppress ALSA noise during audio device initialization.
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 struct StderrGuard {
     saved_fd: std::os::fd::RawFd,
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 impl StderrGuard {
     fn new() -> std::io::Result<Self> {
         use std::os::fd::AsRawFd;
@@ -193,7 +193,7 @@ impl StderrGuard {
     }
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 impl Drop for StderrGuard {
     fn drop(&mut self) {
         let stderr_fd = 2;
@@ -206,7 +206,7 @@ impl Drop for StderrGuard {
 
 /// Open rodio default sink while suppressing ALSA stderr noise.
 fn open_sink_silent() -> Result<rodio::MixerDeviceSink, rodio::DeviceSinkError> {
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     {
         let _guard = StderrGuard::new().map_err(|e| {
             log::warn!("Failed to create stderr guard: {e}");
@@ -214,7 +214,7 @@ fn open_sink_silent() -> Result<rodio::MixerDeviceSink, rodio::DeviceSinkError> 
         })?;
         open_sink_impl()
     }
-    #[cfg(not(unix))]
+    #[cfg(not(target_os = "linux"))]
     {
         open_sink_impl()
     }

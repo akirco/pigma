@@ -36,7 +36,9 @@ pub(super) fn handle_search_key(app: &mut App, key_event: KeyEvent) -> bool {
                 if !keyword.is_empty() {
                     app.state.navigation.search.active = false;
                     app.state.events.send(AppEvent::SearchSong(keyword));
-                } else if let ContentState::HotSearch(keywords) = &app.state.navigation.content {
+                } else if let ContentState::HotSearch(keywords) =
+                    app.state.navigation.content.as_ref()
+                {
                     let sel = app.state.navigation.content_selected;
                     if let Some(kw) = keywords.get(sel) {
                         app.state.navigation.search.active = false;
@@ -80,15 +82,16 @@ pub(super) fn apply_filter_queue_only(app: &mut App) {
         &app.state.navigation.search.unfiltered_songs_lower,
     ) {
         if keyword.is_empty() {
-            app.playback.set_queue_songs(full.clone());
+            let all: Vec<usize> = (0..full.len()).collect();
+            app.playback.set_queue_indices(full, &all);
         } else {
-            let filtered: Vec<_> = full
+            let indices: Vec<usize> = lower
                 .iter()
-                .zip(lower.iter())
-                .filter(|(_s, (ln, ls))| ln.contains(&keyword) || ls.contains(&keyword))
-                .map(|(s, _)| s.clone())
+                .enumerate()
+                .filter(|(_i, (ln, ls))| ln.contains(&keyword) || ls.contains(&keyword))
+                .map(|(i, _)| i)
                 .collect();
-            app.playback.set_queue_songs(filtered);
+            app.playback.set_queue_indices(full, &indices);
         }
         app.state.navigation.playlist_selected = 0;
     }

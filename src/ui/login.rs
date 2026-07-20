@@ -25,14 +25,19 @@ pub fn draw(
 
 fn render_status(f: &mut Frame, colors: &Theme, area: Rect) {
     let line = Line::from(vec![
-        Span::styled("● ", Style::default().fg(colors.highlight)),
+        Span::styled(
+            "● ",
+            Style::default()
+                .fg(colors.highlight)
+                .add_modifier(Modifier::SLOW_BLINK),
+        ),
         Span::styled("ONLINE // RTT 36ms", Style::default().fg(colors.muted)),
     ]);
     f.render_widget(Paragraph::new(line).alignment(Alignment::Right), area);
 }
 
 fn render_box(f: &mut Frame, login: &LoginState, colors: &Theme, bordered: bool, area: Rect) {
-    let box_width = area.width.saturating_sub(8).min(64);
+    let box_width = area.width.saturating_sub(10).min(64);
     let box_x = area.x + (area.width.saturating_sub(box_width)) / 2;
 
     let content_rows: u16 = match login.selected_method {
@@ -211,7 +216,9 @@ fn render_qr_content(f: &mut Frame, login: &LoginState, colors: &Theme, area: Re
     if login.qr_url.is_empty() {
         let msg = Line::from(Span::styled(
             "  Press ENTER to generate QR code  ",
-            Style::default().fg(colors.muted),
+            Style::default()
+                .fg(colors.muted)
+                .add_modifier(Modifier::SLOW_BLINK),
         ));
         f.render_widget(Paragraph::new(msg).alignment(Alignment::Center), area);
         return;

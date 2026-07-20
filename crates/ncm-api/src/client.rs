@@ -307,14 +307,9 @@ impl NcmClient {
     }
 
     fn check_api_code(value: &Value) -> Result<(), NcmError> {
-        let code = value["code"].as_i64().unwrap_or(0) as i32;
+        let code = value.get("code").and_then(|c| c.as_i64()).unwrap_or(0) as i32;
         if code != 200 {
-            let message = value["msg"]
-                .as_str()
-                .or_else(|| value["message"].as_str())
-                .unwrap_or("unknown error")
-                .to_string();
-            return Err(NcmError::Api { code, message });
+            return Err(NcmError::api(value.clone()));
         }
         Ok(())
     }
@@ -348,10 +343,7 @@ impl NcmClient {
         }
         let result = self.request_weapi(path, &params).await?;
         let value: Value = serde_json::from_str(&result)?;
-        parse_login_info(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_login_info(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 手机验证码登录
@@ -375,10 +367,7 @@ impl NcmClient {
             .request_weapi("/weapi/login/cellphone", &params)
             .await?;
         let value: Value = serde_json::from_str(&result)?;
-        parse_login_info(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_login_info(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 发送短信验证码
@@ -402,10 +391,7 @@ impl NcmClient {
             .await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        let unikey = parse_unikey(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })?;
+        let unikey = parse_unikey(&value).map_err(|e| NcmError::parse(e, &value))?;
         let qr_url = format!("https://music.163.com/login?codekey={}", &unikey);
         Ok((qr_url, unikey))
     }
@@ -419,30 +405,21 @@ impl NcmClient {
             .request_weapi("/weapi/login/qrcode/client/login", &params)
             .await?;
         let value: Value = serde_json::from_str(&result)?;
-        parse_msg(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_msg(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取当前登录状态
     pub async fn login_status(&self) -> Result<LoginInfo, NcmError> {
         let result = self.request_weapi("/api/nuser/account/get", &[]).await?;
         let value: Value = serde_json::from_str(&result)?;
-        parse_login_info(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_login_info(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 退出登录
     pub async fn logout(&self) -> Result<Msg, NcmError> {
         let result = self.request_weapi("/weapi/logout", &[]).await?;
         let value: Value = serde_json::from_str(&result)?;
-        parse_msg(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_msg(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取歌曲详情
@@ -459,10 +436,7 @@ impl NcmClient {
         let result = self.request_weapi("/weapi/v3/song/detail", &params).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_info_array(&value, &["songs"], SongContext::Usl).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_song_info_array(&value, &["songs"], SongContext::Usl).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取歌曲播放 URL（基于码率）
@@ -477,10 +451,7 @@ impl NcmClient {
             .await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_url(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_song_url(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取歌曲播放 URL（基于音质等级）
@@ -510,10 +481,7 @@ impl NcmClient {
         log::debug!("songs_url_v1 raw response (first 300): {:?}", preview_300);
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_url(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_song_url(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取歌词
@@ -525,10 +493,7 @@ impl NcmClient {
         let result = self.request_weapi("/weapi/song/lyric", &params).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_lyrics(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_lyrics(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取歌单详情（含歌曲列表）
@@ -548,10 +513,7 @@ impl NcmClient {
             .await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_playlist_detail(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_playlist_detail(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取我喜欢的歌曲
@@ -562,10 +524,7 @@ impl NcmClient {
             .await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        let ids: Vec<u64> = parse_song_id_list(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })?;
+        let ids: Vec<u64> = parse_song_id_list(&value).map_err(|e| NcmError::parse(e, &value))?;
         if ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -594,10 +553,7 @@ impl NcmClient {
         let result = self.request_weapi("/weapi/user/playlist", &params).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_list(&value, &["playlist"]).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_song_list(&value, &["playlist"]).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取用户喜欢的歌曲 ID 列表
@@ -609,10 +565,7 @@ impl NcmClient {
         let result = self.request_weapi("/weapi/song/like/get", &params).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_id_list(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_song_id_list(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取用户收藏的专辑列表
@@ -630,10 +583,7 @@ impl NcmClient {
         let result = self.request_weapi("/weapi/album/sublist", &params).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_list(&value, &["data"]).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_song_list(&value, &["data"]).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 搜索单曲
@@ -661,10 +611,7 @@ impl NcmClient {
 
         let total = value["result"]["songCount"].as_u64().unwrap_or(0) as u32;
         let songs = parse_song_info_array(&value, &["result", "songs"], SongContext::Search)
-            .map_err(|e| NcmError::Api {
-                code: 0,
-                message: e,
-            })?;
+            .map_err(|e| NcmError::parse(e, &value))?;
 
         Ok(SearchResult { songs, total })
     }
@@ -691,10 +638,7 @@ impl NcmClient {
         let result = self.request_weapi("/weapi/search/get", &params).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_list(&value, &["result", "playlists"]).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_song_list(&value, &["result", "playlists"]).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 搜索歌手
@@ -719,10 +663,7 @@ impl NcmClient {
         let result = self.request_weapi("/weapi/search/get", &params).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_singer_info(&value, &["result", "artists"]).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_singer_info(&value, &["result", "artists"]).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 搜索专辑
@@ -747,10 +688,7 @@ impl NcmClient {
         let result = self.request_weapi("/weapi/search/get", &params).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_list(&value, &["result", "albums"]).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_song_list(&value, &["result", "albums"]).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取热搜榜
@@ -758,10 +696,7 @@ impl NcmClient {
         let result = self.request_weapi("/api/hotsearchlist/get", &[]).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_hot_search(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_hot_search(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取每日推荐歌单
@@ -771,10 +706,7 @@ impl NcmClient {
             .await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_list(&value, &["recommend"]).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_song_list(&value, &["recommend"]).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取每日推荐歌曲
@@ -785,12 +717,7 @@ impl NcmClient {
             .await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_info_array(&value, &["data", "dailySongs"], SongContext::Rmds).map_err(|e| {
-            NcmError::Api {
-                code: 0,
-                message: e,
-            }
-        })
+        parse_song_info_array(&value, &["data", "dailySongs"], SongContext::Rmds).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取私人 FM 歌曲
@@ -798,10 +725,7 @@ impl NcmClient {
         let result = self.request_weapi("/weapi/v1/radio/get", &[]).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_info_array(&value, &["data"], SongContext::Rmd).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_song_info_array(&value, &["data"], SongContext::Rmd).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取所有排行榜列表
@@ -809,10 +733,7 @@ impl NcmClient {
         let result = self.request_weapi("/api/toplist", &[]).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_toplist(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_toplist(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取排行榜歌曲（等同于 `song_list_detail`）
@@ -847,10 +768,7 @@ impl NcmClient {
         let result = self.request_weapi("/weapi/playlist/list", &params).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_list(&value, &["playlists"]).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_song_list(&value, &["playlists"]).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取首页轮播图
@@ -859,10 +777,7 @@ impl NcmClient {
         let result = self.request_weapi("/weapi/v2/banner/get", &params).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_banners(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_banners(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取歌手热门歌曲
@@ -873,12 +788,7 @@ impl NcmClient {
         let result = self.request_weapi(&path, &[]).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_info_array(&value, &["hotSongs"], SongContext::Singer).map_err(|e| {
-            NcmError::Api {
-                code: 0,
-                message: e,
-            }
-        })
+        parse_song_info_array(&value, &["hotSongs"], SongContext::Singer).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取歌手全部歌曲
@@ -910,12 +820,7 @@ impl NcmClient {
             .await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_info_array(&value, &["songs"], SongContext::SingerSongs).map_err(|e| {
-            NcmError::Api {
-                code: 0,
-                message: e,
-            }
-        })
+        parse_song_info_array(&value, &["songs"], SongContext::SingerSongs).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取热门歌手
@@ -930,10 +835,7 @@ impl NcmClient {
         let result = self.request_weapi("/api/artist/top", &params).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_singer_info(&value, &["artists"]).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_singer_info(&value, &["artists"]).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取歌手榜（排行榜）
@@ -953,14 +855,8 @@ impl NcmClient {
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
         // Response: { code: 200, list: { artists: [...] } }
-        let list = value.get("list").ok_or_else(|| NcmError::Api {
-            code: 0,
-            message: "list not found".into(),
-        })?;
-        parse_singer_info(list, &["artists"]).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        let list = value.get("list").ok_or_else(|| NcmError::parse(String::from("list not found"), &value))?;
+        parse_singer_info(list, &["artists"]).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取专辑详情
@@ -971,10 +867,7 @@ impl NcmClient {
         let result = self.request_weapi(&path, &[]).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_album_detail(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_album_detail(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取新碟上架
@@ -999,10 +892,7 @@ impl NcmClient {
         let result = self.request_weapi("/weapi/album/new", &params).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_list(&value, &["albums"]).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_song_list(&value, &["albums"]).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 喜欢/取消喜欢歌曲
@@ -1020,10 +910,7 @@ impl NcmClient {
         ];
         let result = self.request_weapi("/weapi/radio/like", &params).await?;
         let value: Value = serde_json::from_str(&result)?;
-        parse_msg(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_msg(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// FM 垃圾桶（不喜欢当前 FM 歌曲）
@@ -1036,10 +923,7 @@ impl NcmClient {
             .request_weapi("/weapi/radio/trash/add", &params)
             .await?;
         let value: Value = serde_json::from_str(&result)?;
-        parse_msg(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_msg(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 收藏/取消收藏歌单
@@ -1056,10 +940,7 @@ impl NcmClient {
         let params = vec![("id", id_str.as_str())];
         let result = self.request_weapi(path, &params).await?;
         let value: Value = serde_json::from_str(&result)?;
-        parse_msg(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_msg(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 收藏/取消收藏专辑
@@ -1076,10 +957,7 @@ impl NcmClient {
         let params = vec![("id", id_str.as_str())];
         let result = self.request_weapi(path, &params).await?;
         let value: Value = serde_json::from_str(&result)?;
-        parse_msg(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_msg(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     // ===== 动态信息 =====
@@ -1098,10 +976,7 @@ impl NcmClient {
             .await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_playlist_detail_dynamic(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_playlist_detail_dynamic(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取专辑动态信息（收藏/评论数）
@@ -1115,10 +990,7 @@ impl NcmClient {
             .await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_album_detail_dynamic(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_album_detail_dynamic(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     // ===== 每日任务 =====
@@ -1132,10 +1004,7 @@ impl NcmClient {
             .request_weapi("/weapi/point/dailyTask", &params)
             .await?;
         let value: Value = serde_json::from_str(&result)?;
-        parse_msg(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_msg(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     // ===== 上报播放记录 =====
@@ -1184,35 +1053,33 @@ impl NcmClient {
         Self::check_api_code(&value)?;
         let array = value["data"]["list"]
             .as_array()
-            .ok_or_else(|| NcmError::Api {
-                code: 0,
-                message: "list not found".into(),
-            })?;
+            .ok_or_else(|| NcmError::parse(String::from("list not found"), &value))?;
         let mut songs = Vec::new();
         for v in array {
             let song_data = &v["data"];
             if !song_data.is_null() {
-                songs.push(parse_song_info(song_data, SongContext::Usl).map_err(|e| {
-                    NcmError::Api {
-                        code: 0,
-                        message: e,
-                    }
-                })?);
+                songs.push(parse_song_info(song_data, SongContext::Usl).map_err(|e| NcmError::parse(e, &value))?);
             }
         }
         Ok(songs)
     }
 
     /// 获取用户云盘歌曲
-    pub async fn user_cloud_disk(&self) -> Result<Vec<SongInfo>, NcmError> {
-        let params = vec![("offset", "0"), ("limit", "10000")];
+    pub async fn user_cloud_disk(
+        &self,
+        offset: u32,
+        limit: u32,
+    ) -> Result<CloudDiskResult, NcmError> {
+        let offset_s = offset.to_string();
+        let limit_s = limit.to_string();
+        let params = vec![
+            ("offset", offset_s.as_str()),
+            ("limit", limit_s.as_str()),
+        ];
         let result = self.request_weapi("/weapi/v1/cloud/get", &params).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_cloud_disk_songs(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_cloud_disk_songs(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     // ===== 搜索歌词 =====
@@ -1239,12 +1106,7 @@ impl NcmClient {
         let result = self.request_weapi("/weapi/search/get", &params).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_info_array(&value, &["result", "songs"], SongContext::Search).map_err(|e| {
-            NcmError::Api {
-                code: 0,
-                message: e,
-            }
-        })
+        parse_song_info_array(&value, &["result", "songs"], SongContext::Search).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取精品歌单
@@ -1271,10 +1133,7 @@ impl NcmClient {
             .await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_list(&value, &["playlists"]).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_song_list(&value, &["playlists"]).map_err(|e| NcmError::parse(e, &value))
     }
 
     // ===== 首页 =====
@@ -1307,10 +1166,7 @@ impl NcmClient {
             .await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_list(&value, &["djRadios"]).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_song_list(&value, &["djRadios"]).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取电台节目列表
@@ -1338,10 +1194,7 @@ impl NcmClient {
             .await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_radio_programs(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_radio_programs(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 心动模式 / 智能播放
@@ -1367,10 +1220,7 @@ impl NcmClient {
             .await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_intelligence_songs(&value).map_err(|e| NcmError::Api {
-            code: 0,
-            message: e,
-        })
+        parse_intelligence_songs(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 从网络下载图片到本地
@@ -1416,5 +1266,356 @@ impl NcmClient {
         }
         std::fs::write(&path, &bytes)?;
         Ok(())
+    }
+
+    // ===== 云盘上传 =====
+
+    /// 上传本地音频文件到网易云音乐云盘（完整流程，对齐 NeteaseCloudMusicApi/cloud.js）
+    ///
+    /// 1. `/api/cloud/upload/check` 检查是否需要上传
+    /// 2. 解析音频标签拿到歌名/歌手/专辑
+    /// 3. `/api/nos/token/alloc` 申请 NOS 上传凭证
+    /// 4. 若 `needUpload`，把原始字节上传到 NOS（`wanproxy.127.net`）
+    /// 5. `/api/upload/cloud/info/v2` 提交元数据
+    /// 6. `/api/cloud/pub/v2` 发布到云盘
+    pub async fn upload_song(&self, path: &std::path::Path) -> Result<CloudUploadResult, NcmError> {
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| NcmError::Session("invalid file path".into()))?
+            .to_string();
+
+        let ext = file_name
+            .rsplit('.')
+            .next()
+            .filter(|_| file_name.contains('.'))
+            .unwrap_or("mp3")
+            .to_string();
+        let mime = match ext.as_str() {
+            "flac" => "audio/flac",
+            "wav" => "audio/wav",
+            "m4a" => "audio/mp4",
+            "ogg" => "audio/ogg",
+            _ => "audio/mpeg",
+        };
+
+        // 流式计算 MD5 与文件大小（不把整文件读入内存）
+        let (md5, size) = stream_file_digest(path)?;
+        let bitrate = 999000u32;
+
+        // 步骤 1：上传前检查
+        let check = self
+            .request_weapi(
+                "/api/cloud/upload/check",
+                &[
+                    ("bitrate", &bitrate.to_string()),
+                    ("ext", ""),
+                    ("length", &size.to_string()),
+                    ("md5", &md5),
+                    ("songId", "0"),
+                    ("version", "1"),
+                ],
+            )
+            .await?;
+        let check_value: Value = serde_json::from_str(&check)?;
+        Self::check_api_code(&check_value)?;
+        let need_upload = check_value
+            .get("needUpload")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        let check_song_id = check_value
+            .get("songId")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
+        // 步骤 2：解析音频元数据（用独立文件句柄，按需 seek 读取标签，不占满内存）
+        let meta_file = std::fs::File::open(path)
+            .map_err(|e| NcmError::Session(format!("failed to open {}: {e}", path.display())))?;
+        let (song_name, album, artist) = parse_audio_meta(meta_file, mime);
+
+        // 文件名归一化（对齐参考实现）
+        let raw_name = file_name
+            .trim_end_matches(&format!(".{ext}"))
+            .replace(' ', "")
+            .replace('.', "_");
+
+        // 步骤 3：申请 NOS token
+        let token_res = self
+            .request_weapi(
+                "/api/nos/token/alloc",
+                &[
+                    ("bucket", ""),
+                    ("ext", &ext),
+                    ("filename", &raw_name),
+                    ("local", "false"),
+                    ("nos_product", "3"),
+                    ("type", "audio"),
+                    ("md5", &md5),
+                ],
+            )
+            .await?;
+        let token_value: Value = serde_json::from_str(&token_res)?;
+        Self::check_api_code(&token_value)?;
+        let token_result = token_value
+            .get("result")
+            .ok_or_else(|| NcmError::parse("nos token alloc: result not found", &token_value))?;
+        let object_key = token_result
+            .get("objectKey")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| NcmError::parse("nos token alloc: objectKey missing", &token_value))?
+            .replace('/', "%2F");
+        let nos_token = token_result
+            .get("token")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| NcmError::parse("nos token alloc: token missing", &token_value))?
+            .to_string();
+        let resource_id = token_result
+            .get("resourceId")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
+        // 步骤 4：上传原始字节到 NOS（以文件作为请求体，流式上传）
+        if need_upload {
+            self.upload_to_nos(path, &object_key, &nos_token, &md5, size)
+                .await?;
+        }
+
+        // 步骤 5：提交云盘信息
+        let info = self
+            .request_weapi(
+                "/api/upload/cloud/info/v2",
+                &[
+                    ("md5", &md5),
+                    ("songid", &check_song_id.to_string()),
+                    ("filename", &file_name),
+                    ("song", &song_name),
+                    ("album", &album),
+                    ("artist", &artist),
+                    ("bitrate", &bitrate.to_string()),
+                    ("resourceId", &resource_id.to_string()),
+                ],
+            )
+            .await?;
+        let info_value: Value = serde_json::from_str(&info)?;
+        Self::check_api_code(&info_value)?;
+        let info_song_id = info_value
+            .get("songId")
+            .and_then(|v| v.as_u64())
+            .or(Some(check_song_id))
+            .unwrap_or(0);
+
+        // 步骤 6：发布到云盘
+        let pub_res = self
+            .request_weapi("/api/cloud/pub/v2", &[("songid", &info_song_id.to_string())])
+            .await?;
+        let pub_value: Value = serde_json::from_str(&pub_res)?;
+        Self::check_api_code(&pub_value)?;
+
+        // 合并 step1 + step6 响应（对齐参考实现返回）
+        let mut merged = check_value.clone();
+        if let Some(obj) = merged.as_object_mut()
+            && let Some(p) = pub_value.as_object()
+        {
+            for (k, v) in p {
+                obj.insert(k.clone(), v.clone());
+            }
+        }
+        parse_cloud_upload(&merged).map_err(|e| NcmError::parse(e, &merged))
+    }
+
+    /// 把音频文件流式上传到网易云 NOS 对象存储（以文件作为请求体，不占满内存）
+    async fn upload_to_nos(
+        &self,
+        path: &std::path::Path,
+        object_key: &str,
+        nos_token: &str,
+        md5: &str,
+        size: u64,
+    ) -> Result<(), NcmError> {
+        const BUCKET: &str = "jd-musicrep-privatecloud-audio-public";
+
+        // 1. 获取上传节点
+        let lbs_url = format!("https://wanproxy.127.net/lbs?version=1.0&bucketname={BUCKET}");
+        let lbs: Value = self
+            .http
+            .get(&lbs_url)
+            .header("User-Agent", &self.ua)
+            .send()
+            .await?
+            .json()
+            .await?;
+
+        let upload_host = lbs
+            .get("upload")
+            .and_then(|u| u.as_array())
+            .and_then(|a| a.first())
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                NcmError::Session(format!("nos lbs returned no upload node: {lbs}"))
+            })?
+            .to_string();
+
+        // 2. 以文件作为请求体流式上传（reqwest 自动按文件大小设置 Content-Length）
+        let file = tokio::fs::File::open(path)
+            .await
+            .map_err(|e| NcmError::Session(format!("failed to open {}: {e}", path.display())))?;
+        let url = format!(
+            "{}/{}/{}?offset=0&complete=true&version=1.0",
+            upload_host, BUCKET, object_key
+        );
+        let resp = self
+            .http
+            .post(&url)
+            .header("x-nos-token", nos_token)
+            .header("Content-MD5", md5)
+            .header("Content-Type", "audio/mpeg")
+            .header("Content-Length", size.to_string())
+            .body(reqwest::Body::from(file))
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(NcmError::Session(format!(
+                "nos upload failed: status={status}, body={body}"
+            )));
+        }
+        Ok(())
+    }
+}
+
+/// 从音频文件（seekable reader）解析基础标签（歌名/专辑/歌手）。解析失败返回空串。
+fn parse_audio_meta<R: std::io::Read + std::io::Seek>(
+    reader: R,
+    mime: &str,
+) -> (String, String, String) {
+    use lofty::file::TaggedFileExt;
+    use lofty::tag::ItemKey;
+    let file_type = match mime {
+        "audio/flac" => Some(lofty::file::FileType::Flac),
+        "audio/wav" => Some(lofty::file::FileType::Wav),
+        "audio/mp4" => Some(lofty::file::FileType::Mp4),
+        "audio/ogg" => Some(lofty::file::FileType::Vorbis),
+        _ => Some(lofty::file::FileType::Mpeg),
+    };
+    let mut probe = lofty::probe::Probe::new(reader)
+        .options(lofty::config::ParseOptions::new().read_tags(true));
+    if let Some(ft) = file_type {
+        probe = probe.set_file_type(ft);
+    }
+    let guessed = match probe.guess_file_type() {
+        Ok(g) => g,
+        Err(_) => return (String::new(), String::new(), String::new()),
+    };
+    let parsed = match guessed.read() {
+        Ok(t) => t,
+        Err(_) => return (String::new(), String::new(), String::new()),
+    };
+    let tag = match parsed.tags().first() {
+        Some(t) => t,
+        None => return (String::new(), String::new(), String::new()),
+    };
+    let song = tag
+        .get_string(&ItemKey::TrackTitle)
+        .unwrap_or("")
+        .to_string();
+    let album = tag
+        .get_string(&ItemKey::AlbumTitle)
+        .unwrap_or("")
+        .to_string();
+    let artist = tag
+        .get_string(&ItemKey::TrackArtist)
+        .or_else(|| tag.get_string(&ItemKey::AlbumArtist))
+        .unwrap_or("")
+        .to_string();
+    (song, album, artist)
+}
+
+/// 流式读取文件：分块计算 MD5 并统计字节数（不把整文件读入内存）。
+fn stream_file_digest(path: &std::path::Path) -> Result<(String, u64), NcmError> {
+    use md5::Digest;
+    use std::io::Read;
+
+    let mut file = std::fs::File::open(path)
+        .map_err(|e| NcmError::Session(format!("failed to open {}: {e}", path.display())))?;
+    let mut hasher = md5::Md5::new();
+    let mut buf = [0u8; 64 * 1024];
+    let mut total: u64 = 0;
+    loop {
+        let n = file
+            .read(&mut buf)
+            .map_err(|e| NcmError::Session(format!("failed to read {}: {e}", path.display())))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+        total += n as u64;
+    }
+    let out = hasher.finalize();
+    let mut s = String::with_capacity(out.len() * 2);
+    for b in out {
+        s.push_str(&format!("{:02x}", b));
+    }
+    Ok((s, total))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_stream_file_digest_known_vector() {
+        let dir = std::env::temp_dir().join("ncm_md5_test");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("abc.bin");
+        std::fs::write(&path, b"abc").unwrap();
+        let (md5, size) = stream_file_digest(&path).unwrap();
+        // MD5("abc") == 900150983cd24fb0d6963f7d28e17f72
+        assert_eq!(md5, "900150983cd24fb0d6963f7d28e17f72");
+        assert_eq!(size, 3);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_parse_cloud_upload_song_id_and_name() {
+        let v = json!({
+            "songId": 123456,
+            "songName": "My Song",
+            "needUpload": true,
+        });
+        let r = parse_cloud_upload(&v).unwrap();
+        assert_eq!(r.song_id, 123456);
+        assert_eq!(r.song_name, "My Song");
+    }
+
+    #[test]
+    fn test_parse_cloud_upload_from_private_cloud() {
+        let v = json!({
+            "privateCloud": { "songId": 999, "songName": "Hidden" },
+        });
+        let r = parse_cloud_upload(&v).unwrap();
+        assert_eq!(r.song_id, 999);
+        assert_eq!(r.song_name, "Hidden");
+    }
+
+    #[test]
+    fn test_parse_audio_meta_graceful_on_garbage() {
+        // 非音频字节应优雅返回空串，而非 panic
+        let (song, album, artist) =
+            parse_audio_meta(std::io::Cursor::new(b"not an audio file at all".to_vec()), "audio/mpeg");
+        assert_eq!(song, "");
+        assert_eq!(album, "");
+        assert_eq!(artist, "");
+    }
+
+    #[test]
+    fn test_upload_song_rejects_missing_path() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let client = NcmClient::new().unwrap();
+        // 不存在的路径应返回 Session 错误而非 panic
+        let err = rt.block_on(client.upload_song(std::path::Path::new("/nonexistent/file.mp3")));
+        assert!(err.is_err());
     }
 }

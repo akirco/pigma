@@ -2,28 +2,36 @@
 name = "ncm-api"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
 
 [dependencies]
-reqwest = { version = "0.13.4", default-features = false, features = [
-  "default-tls",
-  "json",
-  "gzip",
-  "charset",
-] }
 aes = "0.9.1"
-rsa = { version = "0.9.10", features = ["pem"] }
-md-5 = "0.11.0"
 base64 = "0.22.1"
+lofty = "0.22.2"
+md-5 = "0.11.0"
 percent-encoding = "2.3"
 rand = "0.10.2"
+reqwest = {
+  version = "0.13.4",
+  default-features = false,
+  features = [
+    "default-tls",
+    "charset",
+    "gzip",
+    "json",
+    "stream",
+  ]
+}
+rsa = { version = "0.9.10", features = ["pem"] }
+tokio = { version = "1.52.3", features = ["fs"] }
 
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 
-thiserror = "2.0.18"
 dirs = "6.0.0"
 log = "0.4.33"
+thiserror = "2.0.18"
 
 [dev-dependencies]
-tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros"] }
 qrcode = "0.14.1"
+tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread"] }

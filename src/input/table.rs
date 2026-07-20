@@ -29,7 +29,11 @@ pub(super) fn toggle_table_mode(app: &mut App) {
     match nav.table_mode {
         TableMode::Row => {
             nav.table_mode = TableMode::Cell;
-            let columns = app.config.columns.for_content(&nav.content, None).to_vec();
+            let columns = app
+                .config
+                .columns
+                .for_content(nav.content.content_type(), None)
+                .to_vec();
             let col = next_selectable_column(0, &columns, &nav.content);
             if let Some(c) = col {
                 nav.content_column_selected = c;
@@ -51,7 +55,10 @@ pub(super) fn toggle_table_mode(app: &mut App) {
 
 pub(super) fn cell_select_prev_column(app: &mut App) {
     let nav = &mut app.state.navigation;
-    let columns = app.config.columns.for_content(&nav.content, None);
+    let columns = app
+        .config
+        .columns
+        .for_content(nav.content.content_type(), None);
     let n = columns.len();
     if n == 0 {
         return;
@@ -72,7 +79,10 @@ pub(super) fn cell_select_prev_column(app: &mut App) {
 
 pub(super) fn cell_select_next_column(app: &mut App) {
     let nav = &mut app.state.navigation;
-    let columns = app.config.columns.for_content(&nav.content, None);
+    let columns = app
+        .config
+        .columns
+        .for_content(nav.content.content_type(), None);
     let n = columns.len();
     if n == 0 {
         return;

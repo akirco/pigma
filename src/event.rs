@@ -7,8 +7,7 @@ use ncm_api::{LoginInfo, SongInfo};
 use tokio::sync::mpsc;
 
 use crate::playback::types::LyricLine;
-use crate::state::ContentState;
-use crate::state::{CommandAction, Page, SplashLogEntry};
+use crate::state::{CommandAction, ContentState, Page, PaginationInfo, SplashLogEntry};
 
 #[derive(Clone, Debug)]
 pub enum Event {
@@ -65,6 +64,11 @@ pub enum AppEvent {
     ExecuteCommand(CommandAction),
     ContentRestore,
     CellAction(usize, usize),
+    LoadMore,
+    ContentLoadedPaged {
+        content: ContentState,
+        pagination: PaginationInfo,
+    },
 }
 
 #[derive(Clone, Debug)]
