@@ -51,9 +51,18 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 
 ### From releases
 
+
+
 ```sh
 # https://github.com/marcosnils/bin
 bin install https://github.com/akirco/pigma
+```
+
+`windows(scoop)`
+
+```
+scoop bucket add aki 'https://github.com/akirco/aki-apps.git'
+scoop install aki/pigma
 ```
 
 ### From source (cargo)
