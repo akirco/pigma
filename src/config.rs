@@ -95,7 +95,10 @@ fn inline_items(table: &mut toml_edit::Table) {
             }
             arr.push(toml_edit::Value::InlineTable(inline));
         }
-        table.insert("items", toml_edit::Item::Value(toml_edit::Value::Array(arr)));
+        table.insert(
+            "items",
+            toml_edit::Item::Value(toml_edit::Value::Array(arr)),
+        );
     }
 }
 

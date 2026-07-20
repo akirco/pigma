@@ -75,22 +75,19 @@ impl App {
                     .map(|c| (ContentState::Songs(c), None)),
                 ApiEndpoint::UserCloudDisk => {
                     let api_str_clone = api_str.clone();
-                    api_client
-                        .user_cloud_disk(0, 50)
-                        .await
-                        .map(move |result| {
-                            (
-                                ContentState::Songs(result.songs),
-                                Some(PaginationInfo {
-                                    api: api_str_clone,
-                                    offset: 0,
-                                    limit: 50,
-                                    has_more: result.has_more,
-                                    total: result.count,
-                                    loading: false,
-                                }),
-                            )
-                        })
+                    api_client.user_cloud_disk(0, 50).await.map(move |result| {
+                        (
+                            ContentState::Songs(result.songs),
+                            Some(PaginationInfo {
+                                api: api_str_clone,
+                                offset: 0,
+                                limit: 50,
+                                has_more: result.has_more,
+                                total: result.count,
+                                loading: false,
+                            }),
+                        )
+                    })
                 }
                 ApiEndpoint::Recent => api_client
                     .recent_songs(100)

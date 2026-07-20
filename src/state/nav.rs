@@ -1,7 +1,7 @@
 use ratatui::widgets::ListState;
 
-pub use crate::config::{NavItemConfig as NavItem, NavSectionConfig as NavSection};
 use crate::config::NavConfig;
+pub use crate::config::{NavItemConfig as NavItem, NavSectionConfig as NavSection};
 
 pub struct NavState {
     pub sections: Vec<NavSection>,

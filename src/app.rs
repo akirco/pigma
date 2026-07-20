@@ -167,9 +167,10 @@ impl App {
             AppEvent::ContentRestore => self.handle_content_restore(),
             AppEvent::CellAction(row, col) => self.handle_cell_action(row, col)?,
             AppEvent::LoadMore => self.handle_load_more(),
-            AppEvent::ContentLoadedPaged { content, pagination } => {
-                self.handle_content_loaded_paged(content, pagination)
-            }
+            AppEvent::ContentLoadedPaged {
+                content,
+                pagination,
+            } => self.handle_content_loaded_paged(content, pagination),
         }
         Ok(())
     }

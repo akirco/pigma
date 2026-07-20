@@ -52,9 +52,10 @@ impl App {
         content: ContentState,
         pagination: PaginationInfo,
     ) {
-        if let (ContentState::Songs(new_songs), ContentState::Songs(existing)) =
-            (&content, std::sync::Arc::make_mut(&mut self.state.navigation.content))
-        {
+        if let (ContentState::Songs(new_songs), ContentState::Songs(existing)) = (
+            &content,
+            std::sync::Arc::make_mut(&mut self.state.navigation.content),
+        ) {
             existing.extend(new_songs.iter().cloned());
             self.state.navigation.pagination = Some(pagination.clone());
             *self.state.navigation.content_rows_cache.borrow_mut() = None;

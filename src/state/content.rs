@@ -39,7 +39,9 @@ impl ContentState {
             ContentState::TopLists(_) => ContentType::TopLists,
             ContentState::HotSearch(_) => ContentType::HotSearch,
             ContentState::Singers(_) => ContentType::Singers,
-            ContentState::Empty | ContentState::Loading | ContentState::Error(_) => ContentType::Empty,
+            ContentState::Empty | ContentState::Loading | ContentState::Error(_) => {
+                ContentType::Empty
+            }
         }
     }
 }

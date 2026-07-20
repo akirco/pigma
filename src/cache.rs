@@ -106,7 +106,10 @@ impl CacheManager {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        let entry = ContentCacheEntry { data: content, cached_at };
+        let entry = ContentCacheEntry {
+            data: content,
+            cached_at,
+        };
         match serde_json::to_string(&entry) {
             Ok(json) => {
                 if let Err(e) = fs::write(self.content_path(api), json) {

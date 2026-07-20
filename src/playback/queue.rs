@@ -54,8 +54,7 @@ impl PlaylistQueue {
 
     pub fn append(&mut self, songs: &[SongInfo]) -> usize {
         let offset = self.songs.len();
-        self.songs
-            .extend(songs.iter().map(|s| Arc::new(s.clone())));
+        self.songs.extend(songs.iter().map(|s| Arc::new(s.clone())));
         offset
     }
 

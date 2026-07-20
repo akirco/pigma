@@ -36,7 +36,9 @@ pub(super) fn handle_search_key(app: &mut App, key_event: KeyEvent) -> bool {
                 if !keyword.is_empty() {
                     app.state.navigation.search.active = false;
                     app.state.events.send(AppEvent::SearchSong(keyword));
-                } else if let ContentState::HotSearch(keywords) = app.state.navigation.content.as_ref() {
+                } else if let ContentState::HotSearch(keywords) =
+                    app.state.navigation.content.as_ref()
+                {
                     let sel = app.state.navigation.content_selected;
                     if let Some(kw) = keywords.get(sel) {
                         app.state.navigation.search.active = false;
