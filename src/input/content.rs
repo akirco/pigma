@@ -14,6 +14,7 @@ pub(super) fn content_select_prev(app: &mut App) {
     let sel = &mut app.state.navigation.content_selected;
     *sel = (*sel + count - 1) % count;
     app.state.navigation.table_state.select(Some(*sel));
+    check_load_more(app, count);
 }
 
 pub(super) fn content_select_next(app: &mut App) {
@@ -24,6 +25,17 @@ pub(super) fn content_select_next(app: &mut App) {
     let sel = &mut app.state.navigation.content_selected;
     *sel = (*sel + 1) % count;
     app.state.navigation.table_state.select(Some(*sel));
+    check_load_more(app, count);
+}
+
+fn check_load_more(app: &mut App, count: usize) {
+    if let Some(ref mut pg) = app.state.navigation.pagination {
+        let sel = app.state.navigation.content_selected;
+        if !pg.loading && pg.has_more && count >= 5 && sel >= count.saturating_sub(5) {
+            pg.loading = true;
+            app.state.events.send(AppEvent::LoadMore);
+        }
+    }
 }
 
 pub(super) fn playlist_select_prev(app: &mut App) {
@@ -49,7 +61,7 @@ pub(super) fn playlist_play_selected(app: &mut App) {
 
 pub(super) fn row_enter_action(app: &mut App) {
     let sel = app.state.navigation.content_selected;
-    match &app.state.navigation.content {
+    match app.state.navigation.content.as_ref() {
         ContentState::SongLists(lists) => {
             if let Some(list) = lists.get(sel) {
                 app.state.events.send(AppEvent::PlaylistSelect {

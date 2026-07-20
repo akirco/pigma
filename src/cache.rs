@@ -97,7 +97,7 @@ impl CacheManager {
         Some(entry.data)
     }
 
-    pub fn save_content_cache(&self, api: &str, content: &ContentState) {
+    pub fn save_content_cache(&self, api: &str, content: ContentState) {
         if let Err(e) = fs::create_dir_all(&self.content_dir) {
             log::warn!("Failed to create content cache dir: {e}");
             return;
@@ -106,10 +106,7 @@ impl CacheManager {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        let entry = ContentCacheEntry {
-            data: content.clone(),
-            cached_at,
-        };
+        let entry = ContentCacheEntry { data: content, cached_at };
         match serde_json::to_string(&entry) {
             Ok(json) => {
                 if let Err(e) = fs::write(self.content_path(api), json) {

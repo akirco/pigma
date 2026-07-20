@@ -37,6 +37,7 @@ pub struct PlaybackEngine {
     pub(super) api: Arc<NcmClient>,
     playlist_id: Option<u64>,
     consecutive_errors: u32,
+    pending_report: Option<(u64, u64)>,
 }
 
 impl PlaybackEngine {
@@ -58,13 +59,14 @@ impl PlaybackEngine {
             api,
             playlist_id: None,
             consecutive_errors: 0,
+            pending_report: None,
         };
         this.restore_session();
         this
     }
 
-    pub fn current_song(&self) -> Option<SongInfo> {
-        self.queue.current_song().cloned()
+    pub fn current_song(&self) -> Option<Arc<SongInfo>> {
+        self.state.current_song.clone()
     }
 
     pub fn is_currently_playing(&self, song_id: u64) -> bool {
@@ -85,7 +87,23 @@ impl PlaybackEngine {
         info
     }
 
-    pub fn song_at(&self, index: usize) -> Option<&SongInfo> {
+    fn snapshot_report(&mut self) {
+        if let Some((song_id, duration, progress)) = self.state.current_song.as_ref().map(|s| {
+            let progress = self.state.progress;
+            (s.id, s.duration, progress)
+        }) {
+            let time_ms = (duration as f64 * progress) as u64;
+            if time_ms > 0 {
+                self.pending_report = Some((song_id, time_ms));
+            }
+        }
+    }
+
+    pub fn take_pending_report(&mut self) -> Option<(u64, u64)> {
+        self.pending_report.take()
+    }
+
+    pub fn song_at(&self, index: usize) -> Option<&Arc<SongInfo>> {
         self.queue.songs.get(index)
     }
 
@@ -93,11 +111,11 @@ impl PlaybackEngine {
         self.queue.len()
     }
 
-    pub fn queue_songs(&self) -> &[SongInfo] {
+    pub fn queue_songs(&self) -> &[Arc<SongInfo>] {
         &self.queue.songs
     }
 
-    pub fn queue_history(&self) -> &[SongInfo] {
+    pub fn queue_history(&self) -> &[Arc<SongInfo>] {
         &self.queue.history
     }
 
@@ -105,8 +123,18 @@ impl PlaybackEngine {
         self.queue.current_index
     }
 
-    pub fn set_queue_songs(&mut self, songs: Vec<SongInfo>) {
+    pub fn set_queue_songs(&mut self, songs: Vec<Arc<SongInfo>>) {
         self.queue.songs = songs;
+    }
+
+    /// Replace the queue with a subset of `full` selected by `indices`, cloning
+    /// only the selected songs (avoids cloning the whole list on every filter
+    /// keystroke).
+    pub fn set_queue_indices(&mut self, full: &[Arc<SongInfo>], indices: &[usize]) {
+        self.queue.songs = indices
+            .iter()
+            .filter_map(|&i| full.get(i).map(Arc::clone))
+            .collect();
     }
 
     pub fn cache(&self) -> &crate::cache::CacheManager {
@@ -117,7 +145,9 @@ impl PlaybackEngine {
         if songs.is_empty() || index >= songs.len() {
             return;
         }
+        self.snapshot_report();
         self.controller.stop();
+        let songs: Vec<Arc<SongInfo>> = songs.into_iter().map(Arc::new).collect();
         self.queue = PlaylistQueue::from_songs(songs, index);
         self.strategy =
             mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);
@@ -128,6 +158,7 @@ impl PlaybackEngine {
         if songs.is_empty() || index >= songs.len() {
             return;
         }
+        self.snapshot_report();
         self.controller.stop();
         let offset = self.queue.append(songs);
         self.queue.current_index = Some(offset + index);
@@ -140,6 +171,7 @@ impl PlaybackEngine {
         if index >= self.queue.len() {
             return;
         }
+        self.snapshot_report();
         self.controller.stop();
         self.queue.advance_to(index);
         self.strategy =
@@ -151,6 +183,8 @@ impl PlaybackEngine {
         if self.queue.is_empty() {
             return;
         }
+
+        self.snapshot_report();
 
         if matches!(self.state.mode, PlayMode::Heartbeat { .. }) {
             self.next_heartbeat();
@@ -173,6 +207,8 @@ impl PlaybackEngine {
             return;
         }
 
+        self.snapshot_report();
+
         if let Some(prev_song) = self.queue.pop_history()
             && let Some(pos) = self.queue.find_song_index(prev_song.id)
         {
@@ -189,6 +225,7 @@ impl PlaybackEngine {
 
     pub fn toggle_pause(&mut self) {
         if !self.state.playing && self.queue.current_index.is_some() {
+            self.snapshot_report();
             let seek_time = if self.state.progress > 0.0 {
                 self.queue.current_song().and_then(|s| {
                     let secs = self.state.progress * (s.duration as f64 / 1000.0);
@@ -209,12 +246,25 @@ impl PlaybackEngine {
     }
 
     pub fn stop(&mut self) {
+        self.snapshot_report();
         self.controller.stop();
         self.queue.current_index = None;
         self.state.playing = false;
         self.state.paused = false;
         self.state.current_song = None;
         self.state.progress = 0.0;
+    }
+
+    pub fn clear_queue(&mut self) {
+        self.snapshot_report();
+        self.controller.stop();
+        self.queue = PlaylistQueue::new();
+        self.strategy = mode::create_strategy(&self.state.mode, 0, None);
+        self.state.playing = false;
+        self.state.paused = false;
+        self.state.current_song = None;
+        self.state.progress = 0.0;
+        self.save_session();
     }
 
     pub fn seek_relative(&mut self, delta_secs: f64) {
@@ -298,6 +348,7 @@ impl PlaybackEngine {
     }
 
     pub fn on_playback_error(&mut self, err: String) {
+        self.snapshot_report();
         self.state.on_error(err);
         self.consecutive_errors += 1;
         if self.consecutive_errors >= 3 {
@@ -355,8 +406,8 @@ impl PlaybackEngine {
             && !saved.queue.is_empty()
         {
             self.queue = PlaylistQueue {
-                songs: saved.queue,
-                history: saved.history,
+                songs: saved.queue.into_iter().map(Arc::new).collect(),
+                history: saved.history.into_iter().map(Arc::new).collect(),
                 current_index: saved.current_index,
             };
             self.state.mode = saved.mode.clone();
@@ -366,7 +417,7 @@ impl PlaybackEngine {
             self.controller.set_volume(saved.volume as f32);
 
             if saved.current_index.is_some() {
-                self.state.current_song = self.queue.current_song().cloned().map(Arc::new);
+                self.state.current_song = self.queue.current_song().cloned();
                 self.state.progress = saved.progress;
             }
         }
@@ -374,7 +425,7 @@ impl PlaybackEngine {
 
     pub(super) fn start_current_song(&mut self, seek_time: Option<Duration>) {
         let song = match self.queue.current_song() {
-            Some(s) => Arc::new(s.clone()),
+            Some(s) => s.clone(),
             None => return,
         };
 

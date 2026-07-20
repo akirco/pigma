@@ -21,6 +21,7 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 - [ ] 心动模式
 - [ ] 云盘源作为fallback
 - [ ] 云盘上传
+- [ ] 数据分页加载
 - [ ] 歌手信息
 - [ ] 更多layout支持
 - [ ] 重写playerbar(支持歌曲封面)
@@ -86,7 +87,7 @@ cargo build --release
 | shift + left /right |              上一首/下一首               |
 | ctrl+p              |              command panel               |
 | p                   |          切换表格为cell/row模式          |
-| r                   | 切换播放模式（心动模式存在问题，需重写） |
+| m                   | 切换播放模式（心动模式存在问题，需重写） |
 
 
 

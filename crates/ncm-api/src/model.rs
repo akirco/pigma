@@ -196,6 +196,46 @@ pub struct Msg {
     pub msg: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CloudUploadResult {
+    pub song_id: u64,
+    pub song_name: String,
+    /// 服务端返回的原始合并响应，便于调试 / UI 取私有云字段
+    pub raw: serde_json::Value,
+}
+
+pub(crate) fn parse_cloud_upload(value: &Value) -> Result<CloudUploadResult, String> {
+    let song_id = value["songId"].as_u64().or_else(|| {
+        value
+            .get("privateCloud")
+            .and_then(|p| p.get("songId"))
+            .and_then(|v| v.as_u64())
+    });
+    let song_name = value["songName"]
+        .as_str()
+        .or_else(|| {
+            value
+                .get("privateCloud")
+                .and_then(|p| p.get("songName"))
+                .and_then(|v| v.as_str())
+        })
+        .unwrap_or("")
+        .to_string();
+
+    Ok(CloudUploadResult {
+        song_id: song_id.unwrap_or(0),
+        song_name,
+        raw: value.clone(),
+    })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CloudDiskResult {
+    pub songs: Vec<SongInfo>,
+    pub has_more: bool,
+    pub count: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopList {
     pub id: u64,
@@ -681,11 +721,11 @@ pub(crate) fn parse_album_detail_dynamic(value: &Value) -> Result<AlbumDetailDyn
     })
 }
 
-pub(crate) fn parse_cloud_disk_songs(value: &Value) -> Result<Vec<SongInfo>, String> {
+pub(crate) fn parse_cloud_disk_songs(value: &Value) -> Result<CloudDiskResult, String> {
     let array = value["data"].as_array().ok_or("data not found")?;
-    array
+    let songs = array
         .iter()
-        .map(|v| {
+        .map(|v| -> Result<SongInfo, String> {
             let simple = &v["simpleSong"];
             Ok(SongInfo {
                 id: v["songId"]
@@ -713,7 +753,14 @@ pub(crate) fn parse_cloud_disk_songs(value: &Value) -> Result<Vec<SongInfo>, Str
                 copyright: SongCopyright::Unknown,
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    let has_more = value.get("hasMore").and_then(|v| v.as_bool()).unwrap_or(false);
+    let count = value.get("count").and_then(|v| v.as_u64()).unwrap_or(0);
+    Ok(CloudDiskResult {
+        songs,
+        has_more,
+        count,
+    })
 }
 
 pub(crate) fn parse_radio_programs(value: &Value) -> Result<Vec<SongInfo>, String> {

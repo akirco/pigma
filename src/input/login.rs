@@ -1,22 +1,9 @@
-use crate::event::{AppEvent, CommandPanelAction};
+use crate::event::AppEvent;
 use crate::state::{App, LoginField, LoginMethod};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
 
 pub(super) fn handle_login_key(app: &mut App, key_event: KeyEvent) -> bool {
-    if key_event.modifiers == KeyModifiers::CONTROL
-        && matches!(key_event.code, KeyCode::Char('c' | 'C'))
-    {
-        app.state.events.send(AppEvent::Quit);
-        return true;
-    }
-    if key_event.modifiers == KeyModifiers::CONTROL
-        && matches!(key_event.code, KeyCode::Char('p' | 'P'))
-    {
-        app.state
-            .events
-            .send(AppEvent::CommandPanel(CommandPanelAction::Open));
-        return true;
-    }
+    // Ctrl+C and Ctrl+P are handled globally in input.rs
 
     let login = &mut app.state.navigation.login;
 

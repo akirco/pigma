@@ -51,7 +51,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 name,
                 action: CommandAction::SwitchTheme(n),
                 ..
-            } if n == &app.state.current_color_name => {
+            } if n == &app.config.default_theme => {
                 format!("{} *", name)
             }
             CommandItem::Action { name, .. } | CommandItem::SubMenu { name, .. } => name.clone(),

@@ -27,7 +27,7 @@ fn default_pb_unfilled_color() -> String {
     "text".into()
 }
 fn default_pb_unfilled_color_cached() -> String {
-    "muted".into()
+    "warning".into()
 }
 
 impl Default for PlayerbarConfig {

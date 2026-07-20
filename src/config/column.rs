@@ -3,7 +3,17 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
-use crate::state::ContentState;
+/// Lightweight discriminant for `ContentState`, used by `ColumnsConfig::for_content`
+/// so that the config layer does not depend on runtime state types.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContentType {
+    Songs,
+    SongLists,
+    TopLists,
+    HotSearch,
+    Singers,
+    Empty,
+}
 
 /// Defines a single table column for config-driven rendering.
 ///
@@ -263,10 +273,10 @@ impl Default for ColumnsConfig {
 }
 
 impl ColumnsConfig {
-    pub fn for_content(&self, content: &ContentState, api: Option<&str>) -> &[ColumnDef] {
-        match content {
-            ContentState::Songs(_) => &self.songs,
-            ContentState::SongLists(_) | ContentState::TopLists(_) => {
+    pub fn for_content(&self, content_type: ContentType, api: Option<&str>) -> &[ColumnDef] {
+        match content_type {
+            ContentType::Songs => &self.songs,
+            ContentType::SongLists | ContentType::TopLists => {
                 if let Some(api) = api
                     && let Some(cols) = self.overrides.get(api)
                 {
@@ -274,23 +284,15 @@ impl ColumnsConfig {
                 }
                 &self.songlist
             }
-            ContentState::HotSearch(_) => {
+            ContentType::HotSearch => {
                 if let Some(api) = api
                     && let Some(cols) = self.overrides.get(api)
                 {
                     return cols;
                 }
-                HOTSEARCH_FALLBACK.get_or_init(|| {
-                    vec![ColumnDef {
-                        header: "HOT SEARCH".into(),
-                        field: "keyword".into(),
-                        width: None,
-                        min_width: Some(1),
-                        ratio: None,
-                    }]
-                })
+                HOTSEARCH_FALLBACK.get_or_init(default_hotsearch_columns)
             }
-            ContentState::Singers(_) => {
+            ContentType::Singers => {
                 if let Some(api) = api
                     && let Some(cols) = self.overrides.get(api)
                 {

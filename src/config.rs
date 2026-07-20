@@ -83,27 +83,42 @@ fn fix_spacing(s: &str) -> String {
         .join("\n")
 }
 
-fn convert_aot_to_inline(item: &mut toml_edit::Item) {
-    use toml_edit::{Item, Value};
+fn inline_items(table: &mut toml_edit::Table) {
+    if let Some(toml_edit::Item::ArrayOfTables(aot)) = table.remove("items") {
+        let mut arr = toml_edit::Array::new();
+        for tbl in aot {
+            let mut inline = toml_edit::InlineTable::new();
+            for (k, v) in tbl.iter() {
+                if let toml_edit::Item::Value(val) = v {
+                    inline.insert(k, val.clone());
+                }
+            }
+            arr.push(toml_edit::Value::InlineTable(inline));
+        }
+        table.insert("items", toml_edit::Item::Value(toml_edit::Value::Array(arr)));
+    }
+}
+
+fn convert_items_to_inline(item: &mut toml_edit::Item) {
     match item {
-        Item::ArrayOfTables(aot) => {
-            let mut arr = toml_edit::Array::new();
-            for table in aot.iter() {
-                let mut inline = toml_edit::InlineTable::new();
-                for (k, v) in table.iter() {
-                    let mut child = v.clone();
-                    convert_aot_to_inline(&mut child);
-                    if let Item::Value(val) = child {
-                        inline.insert(k, val);
+        toml_edit::Item::Table(table) => {
+            let keys: Vec<String> = table.iter().map(|(k, _)| k.to_string()).collect();
+            for key in &keys {
+                if let Some(child) = table.get_mut(key.as_str()) {
+                    convert_items_to_inline(child);
+                }
+            }
+            inline_items(table);
+        }
+        toml_edit::Item::ArrayOfTables(aot) => {
+            for tbl in aot.iter_mut() {
+                inline_items(tbl);
+                let keys: Vec<String> = tbl.iter().map(|(k, _)| k.to_string()).collect();
+                for key in &keys {
+                    if let Some(child) = tbl.get_mut(key.as_str()) {
+                        convert_items_to_inline(child);
                     }
                 }
-                arr.push(Value::InlineTable(inline));
-            }
-            *item = Item::Value(Value::Array(arr));
-        }
-        Item::Table(table) => {
-            for (_, child) in table.iter_mut() {
-                convert_aot_to_inline(child);
             }
         }
         _ => {}
@@ -123,19 +138,19 @@ impl Config {
                         Ok(cfg) => cfg,
                         Err(e) => {
                             log::warn!("Failed to parse config.toml: {e}, using defaults");
-                            default.clone()
+                            default
                         }
                     },
                     Err(e) => {
                         log::warn!("Failed to read config.toml: {e}, using defaults");
-                        default.clone()
+                        default
                     }
                 }
             } else {
-                default.clone()
+                default
             }
         } else {
-            default.clone()
+            default
         };
 
         if let Some(dir) = &config_dir
@@ -169,8 +184,8 @@ impl Config {
         let mut doc: toml_edit::DocumentMut = pretty
             .parse()
             .expect("toml::to_string_pretty should produce valid TOML");
-        convert_aot_to_inline(doc.as_item_mut());
         doc.fmt();
+        convert_items_to_inline(doc.as_item_mut());
         fix_spacing(&doc.to_string())
     }
 }

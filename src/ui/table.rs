@@ -88,31 +88,3 @@ pub fn render_table(
 
     render_scrollbar(f, rows.len(), sel, scrollbar_area);
 }
-
-/// Build row data from a string map and column definitions.
-pub fn build_rows(
-    maps: &[std::collections::HashMap<String, String>],
-    headers: &[ColumnDef],
-) -> Vec<Vec<String>> {
-    let mut warned = std::collections::HashSet::new();
-
-    maps.iter()
-        .map(|map| {
-            headers
-                .iter()
-                .map(|col| {
-                    map.get(&col.field)
-                        .cloned()
-                        .or_else(|| {
-                            if !warned.contains(&col.field) {
-                                log::warn!("Missing field: \"{}\" — showing \"—\"", col.field);
-                                warned.insert(col.field.clone());
-                            }
-                            None
-                        })
-                        .unwrap_or_else(|| "—".to_string())
-                })
-                .collect()
-        })
-        .collect()
-}

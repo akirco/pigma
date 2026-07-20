@@ -7,7 +7,6 @@ use super::create_block;
 use crate::config::Theme;
 use crate::playback::PlaybackEngine;
 use crate::ui::{calc_scroll_offset, render_scrollbar};
-use crate::utils::format_duration;
 
 pub fn draw_queue_table(
     f: &mut Frame,
@@ -20,8 +19,8 @@ pub fn draw_queue_table(
     area: Rect,
 ) {
     let count = playback.queue_len();
-    let title = format!(" {} ", crate::ui::render_title(title_template, "", count));
-    let block = create_block(&title, colors, bordered, border_rounded, false);
+    let title = crate::ui::render_title(title_template, "", count);
+    let block = create_block(title, colors, bordered, border_rounded, false);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -79,13 +78,14 @@ pub fn draw_queue_table(
                 Style::default()
             };
 
-            let dur = format_duration(song.duration);
+            let mut dur_buf = String::with_capacity(8);
+            crate::utils::format_duration_into(song.duration, &mut dur_buf);
 
             Row::new(vec![
                 Cell::from(num).style(Style::default().fg(colors.muted)),
                 Cell::from(song.name.as_str()).style(Style::default().fg(colors.muted)),
                 Cell::from(song.singer.as_str()).style(Style::default().fg(colors.muted)),
-                Cell::from(dur).style(Style::default().fg(colors.muted)),
+                Cell::from(dur_buf).style(Style::default().fg(colors.muted)),
             ])
             .height(1)
             .style(row_style)

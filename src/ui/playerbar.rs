@@ -14,16 +14,17 @@ use crate::config::Theme;
 use crate::playback::types::PlayMode;
 use crate::state::PlaybackState;
 
-fn fmt_secs(total_secs: f64) -> String {
+fn fmt_secs_into(total_secs: f64, out: &mut String) {
     let m = (total_secs as u64) / 60;
     let s = (total_secs as u64) % 60;
-    format!("{}:{:02}", m, s)
+    use std::fmt::Write;
+    let _ = write!(out, "{}:{:02}", m, s);
 }
 
 fn mode_icon(mode: &PlayMode) -> (&str, &str) {
     match mode {
         PlayMode::Sequential => ("\u{F049E}", "顺序"),
-        PlayMode::RepeatOne => ("\u{F0578}", "单曲"),
+        PlayMode::RepeatOne => ("\u{F0458}", "单曲"),
         PlayMode::RepeatAll => ("\u{F0577}", "列表"),
         PlayMode::Shuffle => ("\u{F049F}", "随机"),
         PlayMode::Heartbeat { .. } => ("\u{F0430}", "心动"),
@@ -155,7 +156,11 @@ fn draw_gauge(
 
     let dur_secs = song.duration as f64 / 1000.0;
     let cur_secs = player.progress * dur_secs;
-    let time_str = format!("{} / {}", fmt_secs(cur_secs), fmt_secs(dur_secs));
+    let mut time_buf = String::with_capacity(16);
+    fmt_secs_into(cur_secs, &mut time_buf);
+    time_buf.push_str(" / ");
+    fmt_secs_into(dur_secs, &mut time_buf);
+    let time_str = time_buf;
 
     let unfilled_color = if player.cached {
         pb.unfilled_color_cached.as_str()

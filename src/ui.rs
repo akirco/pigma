@@ -11,18 +11,18 @@ mod spinner;
 mod splash;
 pub mod styled_text;
 pub mod table;
-pub mod text_input;
 mod topbar;
-
-use std::sync::OnceLock;
 
 use ratatui::{
     Frame,
+    layout::{Alignment, Rect},
     style::Style,
     widgets::{
-        Block, BorderType, Borders, Padding, Scrollbar, ScrollbarOrientation, ScrollbarState,
+        Block, BorderType, Borders, Clear, Padding, Paragraph, Scrollbar, ScrollbarOrientation,
+        ScrollbarState,
     },
 };
+use std::time::Duration;
 
 use self::block::CornerBlock;
 
@@ -64,12 +64,13 @@ pub fn render_title<'a>(template: &'a str, name: &str, count: usize) -> std::bor
         if ch == '{' {
             if template[i..].starts_with("{name}") {
                 result.push_str(name);
-                for _ in 0..5 {
+                for _ in 0..("{name}".len() - 1) {
                     chars.next();
                 }
             } else if template[i..].starts_with("{count}") {
-                result.push_str(&count.to_string());
-                for _ in 0..6 {
+                use std::fmt::Write;
+                let _ = write!(result, "{count}");
+                for _ in 0..("{count}".len() - 1) {
                     chars.next();
                 }
             } else {
@@ -82,16 +83,17 @@ pub fn render_title<'a>(template: &'a str, name: &str, count: usize) -> std::bor
     std::borrow::Cow::Owned(result)
 }
 
-fn theme_fallback() -> &'static Theme {
-    static FALLBACK: OnceLock<Theme> = OnceLock::new();
-    FALLBACK.get_or_init(Theme::default)
-}
-
 pub fn draw(f: &mut Frame, app: &mut App) {
     let now = std::time::Instant::now();
     let steps = (now.duration_since(app.state.last_tick).as_millis() / 80).max(1) as u64;
     app.state.last_tick = now;
     app.state.tick = app.state.tick.wrapping_add(steps);
+
+    if let Some(t) = app.state.toast_time
+        && t.elapsed() > Duration::from_secs(2)
+    {
+        app.state.toast_time = None;
+    }
 
     let area = f.area();
     let bordered = app.state.bordered;
@@ -99,11 +101,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     let colors = app
         .theme_registry
-        .get(&app.state.current_color_name)
+        .get(&app.config.default_theme)
         .or_else(|| app.theme_registry.get("default"))
         .unwrap_or_else(|| {
             log::error!("No theme found, using fallback");
-            theme_fallback()
+            crate::state::theme_fallback()
         });
 
     match app.state.navigation.page {
@@ -174,9 +176,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         let template = current_item
                             .and_then(|item| item.title_template.as_deref())
                             .unwrap_or("{name} ({count})");
-                        format!(" {} ", render_title(template, name, count))
+                        render_title(template, name, count)
                     };
-                    let block = create_block(&title, colors, bordered, border_rounded, false);
+                    let block = create_block(title, colors, bordered, border_rounded, false);
                     let inner = block.inner(lay.content);
                     f.render_widget(block, lay.content);
 
@@ -226,10 +228,49 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if app.state.command_panel.open {
         command_panel::draw(f, app, area);
     }
+
+    draw_toast(f, app, colors);
+}
+
+fn draw_toast(f: &mut Frame, app: &App, colors: &Theme) {
+    let Some(time) = app.state.toast_time else {
+        return;
+    };
+    if time.elapsed() > Duration::from_secs(2) {
+        return;
+    }
+
+    let area = f.area();
+    let char_count = app.state.toast_msg.chars().count();
+    let w = (char_count + 6).min(area.width as usize) as u16;
+    let h = 3u16;
+    let x = area.x + (area.width.saturating_sub(w)) / 2;
+    let y = area.y + area.height.saturating_sub(10);
+
+    let toast_area = Rect {
+        x,
+        y,
+        width: w,
+        height: h,
+    };
+
+    f.render_widget(Clear, toast_area);
+
+    let block = Block::default()
+        .borders(Borders::TOP)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(colors.accent))
+        .style(Style::default().bg(colors.surface));
+
+    let p = Paragraph::new(format!(" {} ", app.state.toast_msg))
+        .style(Style::default().fg(colors.text))
+        .block(block)
+        .alignment(Alignment::Center);
+    f.render_widget(p, toast_area);
 }
 
 pub(crate) fn create_block<'a>(
-    title: &'a str,
+    title: impl Into<ratatui::text::Line<'a>>,
     colors: &'a Theme,
     bordered: bool,
     border_rounded: bool,
@@ -246,7 +287,7 @@ pub(crate) fn create_block<'a>(
             .borders(Borders::ALL)
             .border_type(border_type)
             .border_style(Style::default().fg(border_color))
-            .title(title.to_string())
+            .title(title)
             .title_style(Style::default().fg(border_color))
     } else {
         Block::default()
@@ -257,7 +298,7 @@ pub(crate) fn create_block<'a>(
                 colors.surface
             }))
             .style(Style::default().bg(colors.bg))
-            .title(format!(" {} ", title))
+            .title(title)
             .title_style(Style::default().fg(border_color))
             .padding(Padding::horizontal(1))
     };
@@ -265,4 +306,32 @@ pub(crate) fn create_block<'a>(
     CornerBlock::new(block)
         .corner_color(corner)
         .corner_sizes(2, 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_title;
+
+    #[test]
+    fn title_with_count_suffix() {
+        assert_eq!(
+            render_title("每日推荐 ({count})", "每日推荐", 12),
+            "每日推荐 (12)"
+        );
+    }
+
+    #[test]
+    fn title_name_then_count() {
+        assert_eq!(render_title("{name} ({count})", "歌单", 3), "歌单 (3)");
+    }
+
+    #[test]
+    fn title_no_placeholder() {
+        assert_eq!(render_title("SONGS", "x", 0), "SONGS");
+    }
+
+    #[test]
+    fn title_adjacent_placeholders() {
+        assert_eq!(render_title("{name}{count}", "A", 5), "A5");
+    }
 }
