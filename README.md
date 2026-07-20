@@ -2,9 +2,13 @@
 
 [![CI](https://github.com/akirco/pigma/actions/workflows/ci.yml/badge.svg)](https://github.com/akirco/pigma/actions/workflows/ci.yml)
 [![Release](https://github.com/akirco/pigma/actions/workflows/release.yml/badge.svg)](https://github.com/akirco/pigma/actions/workflows/release.yml)
-[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built with [Ratatui](https://ratatui.rs).
+
+**注意：**
+
+> 该项目仅供学习与研究使用.
 
 ## Features
 
@@ -401,8 +405,6 @@ cargo run
 ```
 
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the project structure.
-
 ## License
 
-Licensed under the [AGPL-3.0](LICENSE) license.
+Licensed under the [Apach-2.0](LICENSE) license.
