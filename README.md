@@ -19,13 +19,20 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 - [x] 自定义渲染列
 - [x] 歌词渐变逐字高亮
 - [x] table标题自定义
+- [x] 最近播放上报
+- [x] 心动模式
+- [x] 数据分页加载(目前仅支持云盘)
+- [x] youtube源fallback(音源评分重写)
+- [ ] 音量控制
+- [ ] landing page
+- [ ] 重构进入程序流程
+- [ ] 歌曲操作(like,dislike,fav .etc)
+- [ ] 重构播放队列
+- [ ] 引入数据库，内存优化
 - [ ] 本地音频歌词，元数据重写
 - [ ] 下载管理（重合边听边存）
-- [ ] 最近播放上报
-- [ ] 心动模式
 - [ ] 云盘源作为fallback
 - [ ] 云盘上传
-- [ ] 数据分页加载
 - [ ] 歌手信息
 - [ ] 更多layout支持
 - [ ] 重写playerbar(支持歌曲封面)

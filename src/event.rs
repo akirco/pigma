@@ -53,6 +53,7 @@ pub enum AppEvent {
     },
     HeartbeatSong(SongInfo),
     HeartbeatFallback,
+    SetPlaylistId(u64),
     SearchSong(String),
     LocalMusicLoaded(Vec<SongInfo>),
     SetOffline,

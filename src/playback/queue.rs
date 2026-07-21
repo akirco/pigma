@@ -4,6 +4,8 @@ use ncm_api::SongInfo;
 
 use super::mode::PlayStrategy;
 
+const MAX_HISTORY: usize = 200;
+
 #[derive(Debug, Clone)]
 pub struct PlaylistQueue {
     pub songs: Vec<Arc<SongInfo>>,
@@ -45,6 +47,10 @@ impl PlaylistQueue {
             && let Some(song) = self.songs.get(i)
         {
             self.history.push(Arc::clone(song));
+            if self.history.len() > MAX_HISTORY {
+                let drain = self.history.len() - MAX_HISTORY;
+                self.history.drain(..drain);
+            }
         }
     }
 

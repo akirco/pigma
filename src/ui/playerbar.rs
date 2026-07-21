@@ -111,10 +111,7 @@ fn draw_left(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) 
         ];
         f.render_widget(Paragraph::new(info_lines), area);
     } else {
-        let idle = Line::from(Span::styled(
-            "\u{672a}\u{5728}\u{64ad}\u{653e}",
-            Style::default().fg(colors.muted),
-        ));
+        let idle = Line::from(Span::styled("未在播放", Style::default().fg(colors.muted)));
         f.render_widget(Paragraph::new(idle), area);
     }
 }

@@ -66,8 +66,13 @@ impl Default for NavConfig {
                             title_template: None,
                         },
                         NavItemConfig {
-                            name: " 我的歌单".into(),
-                            api: Some("user_song_list".into()),
+                            name: " 我创建的歌单".into(),
+                            api: Some("user_created_song_list".into()),
+                            title_template: None,
+                        },
+                        NavItemConfig {
+                            name: " 我收藏的歌单".into(),
+                            api: Some("user_subscribed_song_list".into()),
                             title_template: None,
                         },
                         NavItemConfig {

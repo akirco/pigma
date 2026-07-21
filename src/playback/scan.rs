@@ -1,4 +1,5 @@
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::io::BufReader;
 
 use ncm_api::SongInfo;
@@ -34,8 +35,11 @@ pub fn scan_local_music(dir: &std::path::Path) -> Vec<SongInfo> {
             .and_then(|d| d.total_duration())
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        path.to_string_lossy().hash(&mut hasher);
+        let id = hasher.finish();
         songs.push(SongInfo {
-            id: 0,
+            id,
             name,
             singer: "本地".into(),
             artist_id: 0,

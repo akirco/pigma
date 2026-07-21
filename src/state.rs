@@ -60,7 +60,7 @@ impl Default for PaginationInfo {
 
 #[derive(Clone)]
 pub struct BreadcrumbEntry {
-    pub content: std::sync::Arc<ContentState>,
+    pub content: Arc<ContentState>,
     pub api: Option<String>,
     pub subtitle: Option<String>,
     pub content_selected: usize,
@@ -74,7 +74,7 @@ pub struct NavigationState {
     pub login: LoginState,
     pub user: Option<LoginInfo>,
     pub nav: NavState,
-    pub content: std::sync::Arc<ContentState>,
+    pub content: Arc<ContentState>,
     pub history: Vec<BreadcrumbEntry>,
     pub content_selected: usize,
     pub content_column_selected: usize,
@@ -90,7 +90,7 @@ pub struct NavigationState {
 
 impl NavigationState {
     pub fn set_content(&mut self, content: ContentState) {
-        self.content = std::sync::Arc::new(content);
+        self.content = Arc::new(content);
         self.content_selected = 0;
         self.content_column_selected = 0;
         self.table_state = TableState::default();
@@ -108,7 +108,7 @@ impl NavigationState {
             .and_then(|i| self.nav.sections[self.nav.focus_section].items.get(i))
             .and_then(|item| item.api.clone());
         self.history.push(BreadcrumbEntry {
-            content: std::sync::Arc::clone(&self.content),
+            content: Arc::clone(&self.content),
             api,
             subtitle: self.nav.subtitle.clone(),
             content_selected: self.content_selected,
@@ -146,7 +146,7 @@ pub struct SearchState {
     pub active: bool,
     pub input: TextInput,
     pub filter_queue_only: bool,
-    pub unfiltered_songs: Option<Vec<std::sync::Arc<ncm_api::SongInfo>>>,
+    pub unfiltered_songs: Option<Vec<Arc<ncm_api::SongInfo>>>,
     pub unfiltered_songs_lower: Option<Vec<(String, String)>>,
 }
 
@@ -220,11 +220,38 @@ impl App {
         let api = Arc::new(ncm_api::NcmClient::new()?);
 
         let nav_config = config.navigation.clone();
+        let quality = ncm_api::SongQuality::from_level(&config.quality)
+            .unwrap_or(ncm_api::SongQuality::Higher);
+
+        let cache_dir = {
+            let path = std::path::Path::new(&config.cache_dir);
+            if path.is_absolute() {
+                std::path::PathBuf::from(&config.cache_dir)
+            } else {
+                dirs::cache_dir()
+                    .unwrap_or_else(|| std::path::PathBuf::from("."))
+                    .join("pigma")
+                    .join(&config.cache_dir)
+            }
+        };
+        let base_dir = dirs::cache_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("pigma");
+        let cache_template = config.cache_template.clone();
+        let proxy = config.proxy.clone();
 
         Ok(Self {
             config,
             api: api.clone(),
-            playback: PlaybackEngine::new(tx, api.clone()),
+            playback: PlaybackEngine::new(
+                tx,
+                api.clone(),
+                cache_dir,
+                base_dir,
+                quality,
+                cache_template,
+                proxy,
+            ),
             state: State {
                 running: true,
                 events,
@@ -236,7 +263,7 @@ impl App {
                     login: LoginState::default(),
                     user: None,
                     nav: NavState::from_config(&nav_config),
-                    content: std::sync::Arc::new(ContentState::Empty),
+                    content: Arc::new(ContentState::Empty),
                     history: Vec::new(),
                     content_selected: 0,
                     content_column_selected: 0,

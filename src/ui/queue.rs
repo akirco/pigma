@@ -25,7 +25,7 @@ pub fn draw_queue_table(
     f.render_widget(block, area);
 
     if playback.queue_len() == 0 {
-        let empty = Paragraph::new("\u{64ad}\u{653e}\u{5217}\u{8868}\u{4e3a}\u{7a7a}")
+        let empty = Paragraph::new("播放列表为空")
             .style(Style::default().fg(colors.muted))
             .alignment(Alignment::Center);
         f.render_widget(empty, inner);

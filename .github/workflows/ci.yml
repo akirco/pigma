@@ -28,6 +28,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 0
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -45,6 +48,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 0
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -72,7 +78,11 @@ jobs:
       #   if: runner.os == 'Windows'
       # - run: vcpkg install openssl:x64-windows-static-md
       #   if: runner.os == 'Windows'
-      - uses: actions/checkout@v7
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 0
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       # enable this ci template to run regardless of whether the lockfile is checked in or not

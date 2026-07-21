@@ -228,6 +228,25 @@ pub fn default_hotsearch_columns() -> Vec<ColumnDef> {
     }]
 }
 
+pub fn default_download_columns() -> Vec<ColumnDef> {
+    vec![
+        ColumnDef {
+            header: "TITLE".into(),
+            field: "name".into(),
+            width: None,
+            min_width: Some(18),
+            ratio: None,
+        },
+        ColumnDef {
+            header: "ARTIST".into(),
+            field: "singer".into(),
+            width: Some(16),
+            min_width: None,
+            ratio: None,
+        },
+    ]
+}
+
 pub fn default_singer_columns() -> Vec<ColumnDef> {
     vec![
         ColumnDef {
@@ -263,7 +282,8 @@ impl Default for ColumnsConfig {
     fn default() -> Self {
         let mut overrides = HashMap::new();
         overrides.insert("toplist".into(), default_toplist_columns());
-        overrides.insert("search".into(), default_hotsearch_columns());
+        overrides.insert("hotsearch".into(), default_hotsearch_columns());
+        overrides.insert("__download__".into(), default_download_columns());
         Self {
             songs: default_song_columns(),
             songlist: default_songlist_columns(),
@@ -275,7 +295,14 @@ impl Default for ColumnsConfig {
 impl ColumnsConfig {
     pub fn for_content(&self, content_type: ContentType, api: Option<&str>) -> &[ColumnDef] {
         match content_type {
-            ContentType::Songs => &self.songs,
+            ContentType::Songs => {
+                if let Some(api) = api
+                    && let Some(cols) = self.overrides.get(api)
+                {
+                    return cols;
+                }
+                &self.songs
+            }
             ContentType::SongLists | ContentType::TopLists => {
                 if let Some(api) = api
                     && let Some(cols) = self.overrides.get(api)
