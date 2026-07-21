@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use ncm_api::{NcmClient, SongInfo};
+use ncm_api::{NcmClient, SongInfo, SongQuality};
 use tokio::sync::mpsc;
 
 use crate::event::{AppEvent, Event};
@@ -41,19 +41,29 @@ pub struct PlaybackEngine {
 }
 
 impl PlaybackEngine {
-    pub fn new(event_tx: mpsc::UnboundedSender<Event>, api: Arc<NcmClient>) -> Self {
-        let cache_dir = dirs::cache_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("pigma")
-            .join("songs");
-
+    pub fn new(
+        event_tx: mpsc::UnboundedSender<Event>,
+        api: Arc<NcmClient>,
+        downloads_dir: PathBuf,
+        base_dir: PathBuf,
+        quality: SongQuality,
+        cache_template: String,
+        proxy: String,
+    ) -> Self {
         let storage = PlaylistStorage::new();
         let mut this = Self {
             state: PlaybackState::default(),
             queue: PlaylistQueue::new(),
             strategy: Box::new(mode::Sequential),
             storage,
-            source: AudioSource::new(api.clone(), cache_dir),
+            source: AudioSource::new(
+                api.clone(),
+                downloads_dir,
+                base_dir,
+                quality,
+                cache_template,
+                proxy,
+            ),
             controller: PlaybackHandle::new(event_tx.clone()),
             event_tx: event_tx.clone(),
             api,
@@ -349,13 +359,26 @@ impl PlaybackEngine {
 
     pub fn on_playback_error(&mut self, err: String) {
         self.snapshot_report();
-        self.state.on_error(err);
+        self.state.on_error(err.clone());
         self.consecutive_errors += 1;
         if self.consecutive_errors >= 3 {
             self.stop();
-        } else {
-            self.next();
+            return;
         }
+        // If error is from cached file, delete cache and retry same song
+        if (err.starts_with("无法打开缓存文件") || err.starts_with("decode:"))
+            && let Some(song) = self.state.current_song.as_ref()
+        {
+            let song_id = song.id;
+            let cache = self.source.cache.clone();
+            tokio::task::spawn_blocking(move || {
+                let _ = std::fs::remove_file(cache.cache_path(song_id, "mp3"));
+                cache.remove_from_index(song_id);
+            });
+            self.start_current_song(None);
+            return;
+        }
+        self.next();
     }
 
     pub fn on_lyrics_loaded(

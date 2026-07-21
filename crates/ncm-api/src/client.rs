@@ -477,8 +477,8 @@ impl NcmClient {
         let result = self
             .request_eapi("/api/song/enhance/player/url/v1", &params)
             .await?;
-        let preview_300 = result.chars().take(300).collect::<String>();
-        log::debug!("songs_url_v1 raw response (first 300): {:?}", preview_300);
+        let preview_300 = result.chars().take(500).collect::<String>();
+        log::debug!("songs_url_v1 raw response (first 500): {:?}", preview_300);
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
         parse_song_url(&value).map_err(|e| NcmError::parse(e, &value))
@@ -554,6 +554,56 @@ impl NcmClient {
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
         parse_song_list(&value, &["playlist"]).map_err(|e| NcmError::parse(e, &value))
+    }
+
+    /// 获取用户创建的歌单列表
+    pub async fn user_created_playlist(
+        &self,
+        uid: u64,
+        offset: u16,
+        limit: u16,
+    ) -> Result<Vec<SongList>, NcmError> {
+        let uid_str = uid.to_string();
+        let offset_str = offset.to_string();
+        let limit_str = limit.to_string();
+        let params = vec![
+            ("userId", uid_str.as_str()),
+            ("offset", offset_str.as_str()),
+            ("limit", limit_str.as_str()),
+            ("isWebview", "true"),
+            ("includeRedHeart", "true"),
+            ("includeTop", "true"),
+        ];
+        let result = self.request_weapi("/api/user/playlist/create", &params).await?;
+        log::debug!("user_created_playlist response: {}", &result[..result.len().min(500)]);
+        let value: Value = serde_json::from_str(&result)?;
+        Self::check_api_code(&value)?;
+        parse_song_list(&value, &["data", "playlist"]).map_err(|e| NcmError::parse(e, &value))
+    }
+
+    /// 获取用户收藏的歌单列表
+    pub async fn user_collected_playlist(
+        &self,
+        uid: u64,
+        offset: u16,
+        limit: u16,
+    ) -> Result<Vec<SongList>, NcmError> {
+        let uid_str = uid.to_string();
+        let offset_str = offset.to_string();
+        let limit_str = limit.to_string();
+        let params = vec![
+            ("userId", uid_str.as_str()),
+            ("offset", offset_str.as_str()),
+            ("limit", limit_str.as_str()),
+            ("isWebview", "true"),
+            ("includeRedHeart", "true"),
+            ("includeTop", "true"),
+        ];
+        let result = self.request_weapi("/api/user/playlist/collect", &params).await?;
+        log::debug!("user_collected_playlist response: {}", &result[..result.len().min(500)]);
+        let value: Value = serde_json::from_str(&result)?;
+        Self::check_api_code(&value)?;
+        parse_song_list(&value, &["data", "playlist"]).map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取用户喜欢的歌曲 ID 列表
@@ -1218,9 +1268,17 @@ impl NcmClient {
         let result = self
             .request_weapi("/weapi/playmode/intelligence/list", &params)
             .await?;
+        log::debug!(
+            "intelligence list response: song_id={}, playlist_id={}, response={}",
+            song_id,
+            playlist_id,
+            &result[..result.len().min(2000)]
+        );
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_intelligence_songs(&value).map_err(|e| NcmError::parse(e, &value))
+        let songs = parse_intelligence_songs(&value).map_err(|e| NcmError::parse(e, &value))?;
+        log::debug!("intelligence list parsed: {} songs", songs.len());
+        Ok(songs)
     }
 
     /// 从网络下载图片到本地

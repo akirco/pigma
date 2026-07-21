@@ -26,7 +26,11 @@ impl App {
             return Ok(());
         }
         if api == ApiEndpoint::Download {
-            self.state.navigation.set_content(ContentState::Empty);
+            let cache = self.playback.cache().clone();
+            let songs = cache.list_cached_songs();
+            self.state
+                .navigation
+                .set_content(ContentState::Songs(songs));
             self.state.navigation.content_selected = 0;
             return Ok(());
         }
@@ -52,6 +56,31 @@ impl App {
         let uid = self.state.navigation.user.as_ref().map(|u| u.uid);
 
         tokio::spawn(async move {
+            // Handle LikedSongs separately: also fetch playlist ID for heartbeat mode
+            if api == ApiEndpoint::LikedSongs
+                && let Some(uid) = uid
+            {
+                let songs_result = api_client.liked_songs(uid).await;
+                match songs_result {
+                    Ok(songs) => {
+                        let state = ContentState::Songs(songs);
+                        send_event(&sender, Event::App(AppEvent::ContentLoaded(state)));
+                        if let Ok(lists) = api_client.user_song_list(uid, 0, 50).await
+                            && let Some(liked) = lists.iter().find(|l| l.name == "我喜欢的音乐")
+                        {
+                            send_event(&sender, Event::App(AppEvent::SetPlaylistId(liked.id)));
+                        }
+                    }
+                    Err(e) => {
+                        send_event(
+                            &sender,
+                            Event::App(AppEvent::ContentLoaded(ContentState::Error(e.to_string()))),
+                        );
+                    }
+                }
+                return;
+            }
+
             let result = match api {
                 ApiEndpoint::RecommendResource => api_client
                     .recommend_resource()
@@ -93,20 +122,30 @@ impl App {
                     .recent_songs(100)
                     .await
                     .map(|c| (ContentState::Songs(c), None)),
-                ApiEndpoint::LikedSongs => {
-                    if let Some(uid) = uid {
-                        api_client
-                            .liked_songs(uid)
-                            .await
-                            .map(|c| (ContentState::Songs(c), None))
-                    } else {
-                        Ok((ContentState::Error("未登录".into()), None))
-                    }
-                }
                 ApiEndpoint::UserSongList => {
                     if let Some(uid) = uid {
                         api_client
                             .user_song_list(uid, 0, 50)
+                            .await
+                            .map(|c| (ContentState::SongLists(c), None))
+                    } else {
+                        Ok((ContentState::Error("未登录".into()), None))
+                    }
+                }
+                ApiEndpoint::UserCreatedSongList => {
+                    if let Some(uid) = uid {
+                        api_client
+                            .user_created_playlist(uid, 0, 50)
+                            .await
+                            .map(|c| (ContentState::SongLists(c), None))
+                    } else {
+                        Ok((ContentState::Error("未登录".into()), None))
+                    }
+                }
+                ApiEndpoint::UserSubscribedSongList => {
+                    if let Some(uid) = uid {
+                        api_client
+                            .user_collected_playlist(uid, 0, 50)
                             .await
                             .map(|c| (ContentState::SongLists(c), None))
                     } else {
@@ -119,12 +158,13 @@ impl App {
                         None,
                     )
                 }),
-                ApiEndpoint::Download => Ok((ContentState::Empty, None)),
+                ApiEndpoint::Download => unreachable!(),
                 ApiEndpoint::LocalMusic => unreachable!(),
                 ApiEndpoint::TopSingers => api_client
                     .top_artists(0, 50)
                     .await
                     .map(|c| (ContentState::Singers(c), None)),
+                ApiEndpoint::LikedSongs => unreachable!(),
             };
 
             let (state, pagination) = match result {

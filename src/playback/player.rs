@@ -208,7 +208,7 @@ impl Drop for StderrGuard {
 fn open_sink_silent() -> Result<rodio::MixerDeviceSink, rodio::DeviceSinkError> {
     #[cfg(target_os = "linux")]
     {
-        let _guard = StderrGuard::new().map_err(|e| {
+        let _ = StderrGuard::new().map_err(|e| {
             log::warn!("Failed to create stderr guard: {e}");
             rodio::DeviceSinkError::NoDevice
         })?;
@@ -235,11 +235,12 @@ fn open_sink_impl() -> Result<rodio::MixerDeviceSink, rodio::DeviceSinkError> {
         if let Ok(devices) = host.devices() {
             let list: Vec<_> = devices.collect();
 
-            for d in &list {
-                if let Ok(id) = d.id() {
-                    log::debug!("cpal device: {}", id.1);
-                }
-            }
+            // ! linux debug
+            // for d in &list {
+            //     if let Ok(id) = d.id() {
+            //         log::debug!("cpal device: {}", id.1);
+            //     }
+            // }
 
             for name in ["pipewire", "pulse"] {
                 if let Some(device) = list

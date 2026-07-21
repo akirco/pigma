@@ -1,6 +1,6 @@
 [package]
 name = "pigma"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "A netease cloud music client"
 repository = "https://github.com/akirco/pigma.git"
@@ -40,14 +40,14 @@ rodio = {
   features = ["flac", "mp3", "mp4", "playback", "vorbis", "wav"]
 }
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.150"
+serde_json = "1.0.151"
 stream-download = { version = "0.24.2", features = ["async-read"] }
 time = {
-  version = "0.3.53",
+  version = "0.3.54",
   features = ["formatting", "local-offset", "macros"]
 }
 tokio = {
-  version = "1.53.0",
+  version = "1.53.1",
   features = [
     "macros",
     "rt-multi-thread",
@@ -59,16 +59,16 @@ toml = "1.1.3"
 toml_edit = "0.25.13"
 unicode-width = "0.2.2"
 url = "2.5.8"
+y7dl = { path = "crates/y7dl" }
 
 [dev-dependencies]
 image = "0.25"
 ratatui-image = "11.0"
 regex = "1.13.1"
 reqwest = { version = "0.13.4", features = ["blocking", "query"] }
-y7dl = "0.1.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-libc = "0.2.186"
+libc = "0.2.187"
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
 [profile.release]

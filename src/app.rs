@@ -125,6 +125,7 @@ impl App {
             AppEvent::BreadcrumbSet(name) => self.handle_breadcrumb(name),
             AppEvent::ContentLoaded(content) => self.handle_content_loaded(content),
             AppEvent::PlaylistSelect { id, name } => self.handle_playlist_select(id, name),
+            AppEvent::SetPlaylistId(id) => self.playback.set_playlist_id(id),
             AppEvent::SongPlay(id) => self.handle_song_play(id),
             AppEvent::PlaybackStarted => self.handle_playback_started(),
             AppEvent::PlaybackProgress { position, total } => {
@@ -211,6 +212,7 @@ impl App {
         if let Some((song_id, time_ms)) = self.playback.take_pending_report() {
             let api = self.api.clone();
             tokio::spawn(async move {
+                log::info!("上报播放记录: song_id={song_id}, time_ms={time_ms}");
                 if let Err(e) = api.report_play(song_id, time_ms, None).await {
                     log::error!("Failed to report play for {song_id}: {e}");
                 }

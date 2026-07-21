@@ -9,8 +9,9 @@ impl App {
         self.state.navigation.content_selected = 0;
         let api = self.api.clone();
         let sender = self.state.events.sender();
+        let limit = self.config.search_limit;
         tokio::spawn(async move {
-            let result = api.search_song(&keyword, 0, 50).await;
+            let result = api.search_song(&keyword, 0, limit).await;
             let state = match result {
                 Ok(r) => ContentState::Songs(r.songs),
                 Err(e) => ContentState::Error(e.to_string()),

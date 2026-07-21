@@ -39,6 +39,22 @@ pub struct Config {
     /// 未知值回退到 warm。
     #[serde(default = "default_lyric_gradient")]
     pub lyric_gradient: String,
+    /// 边听边存缓存目录（绝对路径或相对于 ~/.cache/pigma/ 的路径）。
+    #[serde(default = "default_cache_dir")]
+    pub cache_dir: String,
+    /// 边听边存音质等级：standard / higher / exhigh / lossless / hires。
+    #[serde(default = "default_quality")]
+    pub quality: String,
+    /// 缓存文件命名模板。变量：{id} {name} {singer} {album}。
+    /// 例："{name}-{singer}"
+    #[serde(default = "default_cache_template")]
+    pub cache_template: String,
+    /// YouTube fallback 代理地址（留空则不使用代理）。
+    #[serde(default = "default_proxy")]
+    pub proxy: String,
+    /// 搜索结果数量上限。
+    #[serde(default = "default_search_limit")]
+    pub search_limit: u16,
 }
 
 fn default_content_cache_ttl() -> u64 {
@@ -47,6 +63,26 @@ fn default_content_cache_ttl() -> u64 {
 
 fn default_lyric_gradient() -> String {
     "rainbow".into()
+}
+
+fn default_quality() -> String {
+    "standard".into()
+}
+
+fn default_cache_dir() -> String {
+    "downloads".into()
+}
+
+fn default_cache_template() -> String {
+    "{name}-{singer}".into()
+}
+
+fn default_proxy() -> String {
+    "http://127.0.0.1:7890".into()
+}
+
+fn default_search_limit() -> u16 {
+    100
 }
 
 impl Default for Config {
@@ -64,6 +100,11 @@ impl Default for Config {
             titles: TitlesConfig::default(),
             columns: ColumnsConfig::default(),
             lyric_gradient: default_lyric_gradient(),
+            cache_dir: default_cache_dir(),
+            quality: default_quality(),
+            cache_template: default_cache_template(),
+            proxy: default_proxy(),
+            search_limit: default_search_limit(),
         }
     }
 }

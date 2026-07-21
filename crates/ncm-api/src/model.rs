@@ -141,6 +141,7 @@ pub struct SongList {
     pub name: String,
     pub cover_img_url: String,
     pub author: String,
+    pub subscribed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -569,6 +570,7 @@ pub(crate) fn parse_song_list(value: &Value, path: &[&str]) -> Result<Vec<SongLi
                 .and_then(|n| n.as_str())
                 .unwrap_or("unknown")
                 .to_string(),
+            subscribed: v["subscribed"].as_bool().unwrap_or(false),
         })
         .collect())
 }

@@ -146,6 +146,11 @@ impl App {
         self.playback.on_playback_started();
 
         if let Some(song) = self.playback.current_song() {
+            if let ContentState::Songs(songs) = self.state.navigation.content.as_ref()
+                && let Some(pos) = songs.iter().position(|s| s.id == song.id)
+            {
+                self.state.navigation.content_selected = pos;
+            }
             self.toast(format!("▶  {}", song.name));
             let song_id = song.id;
             let cache = self.playback.cache().clone();
