@@ -11,7 +11,10 @@ use tokio::time::Duration;
 pub use crate::state::App;
 
 use crate::{
-    event::{AppEvent, CommandPanelAction, Event},
+    event::{
+        AppEvent, AuthEvent, CommandEvent, CommandPanelAction, Event, NavigationEvent,
+        PlaybackEvent, SplashEvent,
+    },
     input,
     state::Page,
 };
@@ -40,10 +43,7 @@ impl App {
                     tokio::spawn(async move {
                         match api.login_status().await {
                             Ok(info) => {
-                                if sender
-                                    .send(Event::App(AppEvent::LoginSuccess(info)))
-                                    .is_err()
-                                {
+                                if sender.send(AuthEvent::Success(info).into()).is_err() {
                                     log::error!("Failed to send LoginSuccess: receiver dropped");
                                 }
                             }
@@ -88,7 +88,7 @@ impl App {
             .and_then(|i| i.api.clone());
         if let Some(api) = api {
             let sender = self.state.events.sender();
-            send_event(&sender, Event::App(AppEvent::NavSelect(api)));
+            send_event(&sender, NavigationEvent::NavSelect(api).into());
         }
     }
 
@@ -105,75 +105,107 @@ impl App {
             },
             Event::App(app_event) => match app_event {
                 AppEvent::Quit => self.quit(),
-                e => self.handle_app_event(e)?,
+                AppEvent::Splash(e) => self.handle_splash_event(e),
+                AppEvent::Auth(e) => self.handle_auth_event(e),
+                AppEvent::Playback(e) => self.handle_playback_event(e),
+                AppEvent::Navigation(e) => self.handle_navigation_event(e),
+                AppEvent::Command(e) => self.handle_command_event(e),
             },
         }
         Ok(())
     }
 
-    fn handle_app_event(&mut self, event: AppEvent) -> color_eyre::Result<()> {
+    fn handle_splash_event(&mut self, event: SplashEvent) {
         match event {
-            AppEvent::Quit => self.quit(),
-            AppEvent::SplashTick { progress, log } => self.handle_splash_tick(progress, log),
-            AppEvent::Login => self.handle_login(),
-            AppEvent::LoginSuccess(info) => self.handle_login_success(info),
-            AppEvent::LoginError(e) => self.handle_login_error(e),
-            AppEvent::CaptchaSent => self.handle_captcha_sent(),
-            AppEvent::QRCreated { url, key } => self.handle_qr_created(url, key),
-            AppEvent::QRStatus(text) => self.handle_qr_status(text),
-            AppEvent::NavSelect(api_str) => self.handle_nav_select(api_str)?,
-            AppEvent::BreadcrumbSet(name) => self.handle_breadcrumb(name),
-            AppEvent::ContentLoaded(content) => self.handle_content_loaded(content),
-            AppEvent::PlaylistSelect { id, name } => self.handle_playlist_select(id, name),
-            AppEvent::SetPlaylistId(id) => self.playback.set_playlist_id(id),
-            AppEvent::SongPlay(id) => self.handle_song_play(id),
-            AppEvent::PlaybackStarted => self.handle_playback_started(),
-            AppEvent::PlaybackProgress { position, total } => {
+            SplashEvent::Tick { progress, log } => self.handle_splash_tick(progress, log),
+            SplashEvent::LocalMusicLoaded(songs) => {
+                self.state.local_music = crate::state::ContentState::Songs(songs);
+            }
+            SplashEvent::SetOffline => self.state.offline = true,
+        }
+    }
+
+    fn handle_auth_event(&mut self, event: AuthEvent) {
+        match event {
+            AuthEvent::Login => self.handle_login(),
+            AuthEvent::Success(info) => self.handle_login_success(info),
+            AuthEvent::Error(e) => self.handle_login_error(e),
+            AuthEvent::CaptchaSent => self.handle_captcha_sent(),
+            AuthEvent::QRCreated { url, key } => self.handle_qr_created(url, key),
+            AuthEvent::QRStatus(text) => self.handle_qr_status(text),
+        }
+    }
+
+    fn handle_playback_event(&mut self, event: PlaybackEvent) {
+        match event {
+            PlaybackEvent::SongPlay(id) => self.handle_song_play(id),
+            PlaybackEvent::Started => self.handle_playback_started(),
+            PlaybackEvent::Progress { position, total } => {
                 self.playback.on_playback_progress(position, total);
             }
-            AppEvent::PlaybackFinished => {
+            PlaybackEvent::Finished => {
                 self.playback.finish_and_snapshot();
                 self.report_pending_play();
             }
-            AppEvent::PlaybackError(e) => {
+            PlaybackEvent::Error(e) => {
                 self.playback.on_playback_error(e);
                 self.report_pending_play();
             }
-            AppEvent::LyricsLoaded {
+            PlaybackEvent::LyricsLoaded {
                 song_id,
                 lyrics,
                 translated_lyrics,
             } => self
                 .playback
                 .on_lyrics_loaded(song_id, lyrics, translated_lyrics),
-            AppEvent::HeartbeatSong(song) => {
+            PlaybackEvent::HeartbeatSong(song) => {
                 self.playback.play_heartbeat_song(song);
                 self.report_pending_play();
             }
-            AppEvent::HeartbeatFallback => {
+            PlaybackEvent::HeartbeatFallback => {
                 self.playback.on_heartbeat_fallback();
                 self.report_pending_play();
             }
-            AppEvent::SearchSong(keyword) => self.handle_search_song(keyword),
-            AppEvent::LocalMusicLoaded(songs) => {
-                self.state.local_music = crate::state::ContentState::Songs(songs);
+            PlaybackEvent::SetPlaylistId(id) => self.playback.set_playlist_id(id),
+        }
+    }
+
+    fn handle_navigation_event(&mut self, event: NavigationEvent) {
+        match event {
+            NavigationEvent::NavSelect(api_str) => {
+                if let Err(e) = self.handle_nav_select(api_str) {
+                    log::error!("NavSelect error: {e}");
+                }
             }
-            AppEvent::SetOffline => self.state.offline = true,
-            AppEvent::Navigate(page) => self.state.navigation.page = page,
-            AppEvent::CommandPanel(action) => self.handle_command_panel(action),
-            AppEvent::SearchActivated => self.handle_search_activate(),
-            AppEvent::SearchDeactivated => self.handle_search_deactivate(),
-            AppEvent::ToggleBordered => self.state.bordered = !self.state.bordered,
-            AppEvent::ExecuteCommand(action) => self.execute_command(action),
-            AppEvent::ContentRestore => self.handle_content_restore(),
-            AppEvent::CellAction(row, col) => self.handle_cell_action(row, col)?,
-            AppEvent::LoadMore => self.handle_load_more(),
-            AppEvent::ContentLoadedPaged {
+            NavigationEvent::ContentLoaded(content) => self.handle_content_loaded(content),
+            NavigationEvent::ContentLoadedPaged {
                 content,
                 pagination,
-            } => self.handle_content_loaded_paged(content, pagination),
+            } => {
+                self.handle_content_loaded_paged(content, pagination);
+            }
+            NavigationEvent::PlaylistSelect { id, name } => self.handle_playlist_select(id, name),
+            NavigationEvent::BreadcrumbSet(name) => self.handle_breadcrumb(name),
+            NavigationEvent::SearchSong(keyword) => self.handle_search_song(keyword),
+            NavigationEvent::Navigate(page) => self.state.navigation.page = page,
+            NavigationEvent::SearchActivated => self.handle_search_activate(),
+            NavigationEvent::SearchDeactivated => self.handle_search_deactivate(),
+            NavigationEvent::ContentRestore => self.handle_content_restore(),
+            NavigationEvent::CellAction(row, col) => {
+                if let Err(e) = self.handle_cell_action(row, col) {
+                    log::error!("CellAction error: {e}");
+                }
+            }
+            NavigationEvent::LoadMore => self.handle_load_more(),
         }
-        Ok(())
+    }
+
+    fn handle_command_event(&mut self, event: CommandEvent) {
+        match event {
+            CommandEvent::Panel(action) => self.handle_command_panel(action),
+            CommandEvent::Execute(action) => self.execute_command(action),
+            CommandEvent::ToggleBordered => self.state.border.enabled = !self.state.border.enabled,
+        }
     }
 
     fn handle_command_panel(&mut self, action: CommandPanelAction) {

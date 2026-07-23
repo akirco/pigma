@@ -6,6 +6,7 @@ use ratatui::{
     widgets::{Clear, Paragraph},
 };
 
+use super::BlockStyle;
 use crate::state::{App, CommandAction, CommandItem};
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
@@ -24,13 +25,11 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         Constraint::Length(inner_height),
     );
 
-    let block = super::create_block(
-        title,
+    let style = BlockStyle {
         colors,
-        app.state.bordered,
-        app.state.border_rounded,
-        true,
-    );
+        border: &app.state.border,
+    };
+    let block = super::create_block(title, &style, true);
     let inner = block.inner(popup_area);
 
     f.render_widget(Clear, popup_area);

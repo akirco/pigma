@@ -6,18 +6,13 @@ use ratatui::{
     widgets::Paragraph,
 };
 
+use super::BlockStyle;
 use super::{create_block, styled_text};
-use crate::config::Theme;
 use crate::state::NavState;
 
-pub fn render_breadcrumb(
-    f: &mut Frame,
-    nav: &NavState,
-    colors: &Theme,
-    bordered: bool,
-    border_rounded: bool,
-    area: Rect,
-) {
+pub fn render_breadcrumb(f: &mut Frame, nav: &NavState, bs: &BlockStyle<'_>, area: Rect) {
+    let colors = bs.colors;
+
     let (section, item) = if nav.sections.is_empty() {
         ("", "")
     } else {
@@ -62,7 +57,7 @@ pub fn render_breadcrumb(
         Line::from(parts)
     };
 
-    let block = create_block("", colors, bordered, border_rounded, false);
+    let block = create_block("", bs, false);
     let inner = block.inner(area);
     f.render_widget(block, area);
     f.render_widget(Paragraph::new(line), inner);

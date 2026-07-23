@@ -3,8 +3,9 @@ use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Cell, Paragraph, Row, Table};
 
+use super::BlockStyle;
 use super::create_block;
-use crate::config::Theme;
+
 use crate::playback::PlaybackEngine;
 use crate::ui::{calc_scroll_offset, render_scrollbar};
 
@@ -12,15 +13,14 @@ pub fn draw_queue_table(
     f: &mut Frame,
     playback: &PlaybackEngine,
     selected: usize,
-    colors: &Theme,
-    bordered: bool,
-    border_rounded: bool,
+    bs: &BlockStyle<'_>,
     title_template: &str,
     area: Rect,
 ) {
+    let colors = bs.colors;
     let count = playback.queue_len();
     let title = crate::ui::render_title(title_template, "", count);
-    let block = create_block(title, colors, bordered, border_rounded, false);
+    let block = create_block(title, bs, false);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -46,7 +46,7 @@ pub fn draw_queue_table(
         Cell::from("ARTIST").style(Style::default().fg(colors.muted)),
         Cell::from("DURATION").style(Style::default().fg(colors.muted)),
     ])
-    .style(Style::default().add_modifier(Modifier::UNDERLINED))
+    .style(Style::default().add_modifier(Modifier::BOLD))
     .height(1);
 
     let current_idx = playback.queue_current_index();

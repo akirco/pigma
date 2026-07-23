@@ -1,4 +1,4 @@
-use crate::event::AppEvent;
+use crate::event::NavigationEvent;
 use crate::state::App;
 
 pub(super) fn navigate_nav_up(app: &mut App) {
@@ -65,6 +65,8 @@ pub(super) fn emit_nav_select(app: &mut App) {
             .get(selected)
             .and_then(|i| i.api.as_ref())
     {
-        app.state.events.send(AppEvent::NavSelect(api.clone()));
+        app.state
+            .events
+            .send(NavigationEvent::NavSelect(api.clone()));
     }
 }

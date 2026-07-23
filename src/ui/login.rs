@@ -7,20 +7,16 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Padding, Paragraph, Tabs},
 };
 
+use super::BlockStyle;
 use super::block::CornerBlock;
 use crate::config::Theme;
 use crate::layout::LoginLayout;
 use crate::state::{LoginField, LoginMethod, LoginState};
 
-pub fn draw(
-    f: &mut Frame,
-    login: &LoginState,
-    colors: &Theme,
-    bordered: bool,
-    layout: &LoginLayout,
-) {
+pub fn draw(f: &mut Frame, login: &LoginState, bs: &BlockStyle<'_>, layout: &LoginLayout) {
+    let colors = bs.colors;
     render_status(f, colors, layout.status);
-    render_box(f, login, colors, bordered, layout.login_box);
+    render_box(f, login, colors, bs.border.enabled, layout.login_box);
 }
 
 fn render_status(f: &mut Frame, colors: &Theme, area: Rect) {
@@ -36,7 +32,7 @@ fn render_status(f: &mut Frame, colors: &Theme, area: Rect) {
     f.render_widget(Paragraph::new(line).alignment(Alignment::Right), area);
 }
 
-fn render_box(f: &mut Frame, login: &LoginState, colors: &Theme, bordered: bool, area: Rect) {
+fn render_box(f: &mut Frame, login: &LoginState, colors: &Theme, enabled: bool, area: Rect) {
     let box_width = area.width.saturating_sub(10).min(64);
     let box_x = area.x + (area.width.saturating_sub(box_width)) / 2;
 
@@ -47,7 +43,7 @@ fn render_box(f: &mut Frame, login: &LoginState, colors: &Theme, bordered: bool,
     let box_height = (8 + content_rows).min(area.height);
     let box_y = area.y + (area.height.saturating_sub(box_height)) / 2;
 
-    let block = if bordered {
+    let block = if enabled {
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(colors.muted))

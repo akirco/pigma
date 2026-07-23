@@ -6,6 +6,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Padding, Paragraph};
 
+use super::BlockStyle;
 use super::create_block;
 use crate::config::Theme;
 use crate::state::PlaybackState;
@@ -41,14 +42,13 @@ fn find_current_line(lyrics: &[crate::playback::types::LyricLine], cur_ms: f64) 
 pub fn draw(
     f: &mut Frame,
     player: &PlaybackState,
-    colors: &Theme,
-    bordered: bool,
-    border_rounded: bool,
+    bs: &BlockStyle<'_>,
     gradient: &str,
     title: &str,
     area: Rect,
 ) {
-    let block = create_block(title, colors, bordered, border_rounded, false);
+    let colors = bs.colors;
+    let block = create_block(title, bs, false);
     let inner = block.inner(area);
     f.render_widget(block.block_padding(Padding::vertical(1)), area);
 

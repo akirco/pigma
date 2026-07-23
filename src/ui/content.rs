@@ -7,10 +7,10 @@ use ratatui::{
     widgets::{Paragraph, TableState},
 };
 
+use super::BlockStyle;
 use super::table;
 use crate::config::ColumnDef;
 use crate::config::ColumnsConfig;
-use crate::config::Theme;
 use crate::state::{ContentState, TableMode};
 
 /// Look up a field value for a table row by its column field name.
@@ -96,17 +96,19 @@ fn compute_rows(content: &ContentState, columns: &[ColumnDef]) -> Vec<Vec<String
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_content(
     f: &mut Frame,
     content: &ContentState,
     columns: &ColumnsConfig,
     api: Option<&str>,
     cache: &std::cell::RefCell<Option<Vec<Vec<String>>>>,
-    colors: &Theme,
+    bs: &BlockStyle<'_>,
     table_state: &mut TableState,
     table_mode: TableMode,
     area: Rect,
 ) {
+    let colors = bs.colors;
     match content {
         ContentState::Empty => {
             let text = Line::from(Span::styled("", Style::default().fg(colors.muted)));

@@ -1,4 +1,4 @@
-use crate::event::AppEvent;
+use crate::event::{CommandEvent, NavigationEvent};
 use crate::state::{App, Page, TableMode};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
 
@@ -13,9 +13,9 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
     // Ctrl+C and Ctrl+P are handled globally in input.rs
     match key_event.code {
         KeyCode::Esc => {
-            app.state.events.send(AppEvent::ContentRestore);
+            app.state.events.send(NavigationEvent::ContentRestore);
         }
-        KeyCode::Char('q') => app.state.events.send(AppEvent::Quit),
+        KeyCode::Char('q') => app.state.events.send(crate::event::AppEvent::Quit),
         KeyCode::Tab => navigate_nav_down(app),
         KeyCode::BackTab => navigate_nav_up(app),
         KeyCode::Up => {
@@ -80,7 +80,7 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
                 Page::Login => Page::Main,
                 Page::Splash => Page::Splash,
             };
-            app.state.events.send(AppEvent::Navigate(next));
+            app.state.events.send(NavigationEvent::Navigate(next));
         }
         KeyCode::Char('p' | 'P') => {
             if app.state.navigation.page != Page::Playlist {
@@ -101,7 +101,7 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
                 Page::Login => Page::Main,
                 Page::Splash => Page::Splash,
             };
-            app.state.events.send(AppEvent::Navigate(next));
+            app.state.events.send(NavigationEvent::Navigate(next));
         }
         KeyCode::Char('/') => {
             if app.state.navigation.page == Page::Playlist {
@@ -117,11 +117,11 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
                 app.state.navigation.search.active = true;
                 app.state.navigation.search.input = crate::text_input::TextInput::new();
             } else {
-                app.state.events.send(AppEvent::SearchActivated);
+                app.state.events.send(NavigationEvent::SearchActivated);
             }
         }
         KeyCode::Char('b' | 'B') => {
-            app.state.events.send(AppEvent::ToggleBordered);
+            app.state.events.send(CommandEvent::ToggleBordered);
         }
         KeyCode::Char(' ') => {
             let was_paused = app.playback.state.paused;

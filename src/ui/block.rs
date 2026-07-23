@@ -13,6 +13,8 @@ pub struct CornerBlock<'a> {
     br_color: Color,
     h_size: u16,
     v_size: u16,
+    /// 横竖边框是否跟随 corner_color 的颜色
+    follow_corner_color: bool,
 }
 
 impl<'a> CornerBlock<'a> {
@@ -25,6 +27,7 @@ impl<'a> CornerBlock<'a> {
             br_color: Color::White,
             h_size: 1,
             v_size: 1,
+            follow_corner_color: false,
         }
     }
 
@@ -39,6 +42,11 @@ impl<'a> CornerBlock<'a> {
     pub fn corner_sizes(mut self, horizontal: u16, vertical: u16) -> Self {
         self.h_size = horizontal;
         self.v_size = vertical;
+        self
+    }
+
+    pub fn follow_corner_color(mut self, follow: bool) -> Self {
+        self.follow_corner_color = follow;
         self
     }
 
@@ -97,6 +105,26 @@ impl<'a> Widget for CornerBlock<'a> {
             }
             if let Some(cell) = buf.cell_mut((right, bottom - i)) {
                 cell.fg = br;
+            }
+        }
+
+        // follow_corner_color: 将横竖边框也染成 corner 色
+        if self.follow_corner_color {
+            for x in (left + max_h)..=(right - max_h) {
+                if let Some(cell) = buf.cell_mut((x, top)) {
+                    cell.fg = tl;
+                }
+                if let Some(cell) = buf.cell_mut((x, bottom)) {
+                    cell.fg = bl;
+                }
+            }
+            for y in (top + max_v)..=(bottom - max_v) {
+                if let Some(cell) = buf.cell_mut((left, y)) {
+                    cell.fg = tl;
+                }
+                if let Some(cell) = buf.cell_mut((right, y)) {
+                    cell.fg = tr;
+                }
             }
         }
     }

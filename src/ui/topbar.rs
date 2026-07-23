@@ -4,6 +4,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
+use super::BlockStyle;
 use super::create_block;
 use crate::config::Theme;
 use crate::state::SearchState;
@@ -13,12 +14,11 @@ pub fn draw(
     f: &mut Frame,
     user: Option<&LoginInfo>,
     search: &SearchState,
-    colors: &Theme,
-    bordered: bool,
-    border_rounded: bool,
+    bs: &BlockStyle<'_>,
     area: Rect,
 ) {
-    let block = create_block("", colors, bordered, border_rounded, false);
+    let colors = bs.colors;
+    let block = create_block("", bs, false);
     let inner = block.inner(area);
     f.render_widget(block, area);
 

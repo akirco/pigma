@@ -15,10 +15,10 @@ use std::time::Duration;
 use ncm_api::{NcmClient, SongInfo, SongQuality};
 use tokio::sync::mpsc;
 
-use crate::event::{AppEvent, Event};
+use crate::event::{Event, PlaybackEvent};
 
 use self::controller::PlaybackHandle;
-use self::mode::PlayStrategy;
+use self::mode::Strategy;
 use self::queue::PlaylistQueue;
 use self::source::AudioSource;
 use self::storage::PlaylistStorage;
@@ -26,10 +26,11 @@ use self::types::{LyricLine, PlayMode, PlaybackState};
 
 pub use self::types::{PlayMode as EnginePlayMode, PlaybackState as EngineState};
 
+/// Orchestrates audio playback, queue management, and player strategies.
 pub struct PlaybackEngine {
     pub state: PlaybackState,
     pub(super) queue: PlaylistQueue,
-    strategy: Box<dyn PlayStrategy>,
+    strategy: Strategy,
     storage: PlaylistStorage,
     source: AudioSource,
     pub(super) controller: PlaybackHandle,
@@ -54,7 +55,7 @@ impl PlaybackEngine {
         let mut this = Self {
             state: PlaybackState::default(),
             queue: PlaylistQueue::new(),
-            strategy: Box::new(mode::Sequential),
+            strategy: mode::Strategy::Sequential,
             storage,
             source: AudioSource::new(
                 api.clone(),
@@ -201,7 +202,7 @@ impl PlaybackEngine {
             return;
         }
 
-        match self.queue.next_index(&mut *self.strategy) {
+        match self.queue.next_index(&mut self.strategy) {
             Some(idx) => {
                 self.queue.advance_to(idx);
                 self.start_current_song(None);
@@ -227,7 +228,7 @@ impl PlaybackEngine {
             return;
         }
 
-        if let Some(idx) = self.queue.prev_index(&mut *self.strategy) {
+        if let Some(idx) = self.queue.prev_index(&mut self.strategy) {
             self.queue.current_index = Some(idx);
             self.start_current_song(None);
         }
@@ -400,6 +401,7 @@ impl PlaybackEngine {
             self.state.volume,
             self.state.progress,
         );
+        self.source.cache.flush_index();
     }
 
     pub fn save_playlist(&self, name: &str) -> bool {
@@ -470,10 +472,7 @@ impl PlaybackEngine {
         let event_tx = self.event_tx.clone();
         let controller = self.controller.clone();
 
-        if event_tx
-            .send(Event::App(AppEvent::PlaybackStarted))
-            .is_err()
-        {
+        if event_tx.send(PlaybackEvent::Started.into()).is_err() {
             log::error!("Failed to send PlaybackStarted: receiver dropped");
         }
 
@@ -481,10 +480,7 @@ impl PlaybackEngine {
             let input = match source.resolve(&song).await {
                 Ok(input) => input,
                 Err(e) => {
-                    if event_tx
-                        .send(Event::App(AppEvent::PlaybackError(e)))
-                        .is_err()
-                    {
+                    if event_tx.send(PlaybackEvent::Error(e).into()).is_err() {
                         log::error!("Failed to send PlaybackError: receiver dropped");
                     }
                     return;

@@ -1,7 +1,7 @@
 use crate::state::LogLevel;
 
 use super::App;
-use crate::event::{AppEvent, Event};
+use crate::event::{Event, SplashEvent};
 use crate::state::SplashLogEntry;
 
 pub(crate) fn send_event(tx: &tokio::sync::mpsc::UnboundedSender<Event>, event: Event) {
@@ -37,14 +37,15 @@ impl App {
             let send = |progress: f64, text: &str, level: LogLevel| {
                 send_event(
                     &sender,
-                    Event::App(AppEvent::SplashTick {
+                    SplashEvent::Tick {
                         progress,
                         log: Some(SplashLogEntry {
                             time: crate::utils::clock_time(),
                             text: text.to_string(),
                             level,
                         }),
-                    }),
+                    }
+                    .into(),
                 );
             };
 
@@ -67,7 +68,7 @@ impl App {
                     send(0.45, "Session: not logged in", LogLevel::Info);
                 }
             } else {
-                send_event(&sender, Event::App(AppEvent::SetOffline));
+                send_event(&sender, SplashEvent::SetOffline.into());
                 send(0.25, "Network: offline, offline mode", LogLevel::Warning);
             }
 
@@ -86,15 +87,16 @@ impl App {
                 &format!("Local music: {} tracks found", count),
                 LogLevel::Success,
             );
-            send_event(&sender, Event::App(AppEvent::LocalMusicLoaded(local_songs)));
+            send_event(&sender, SplashEvent::LocalMusicLoaded(local_songs).into());
 
             send(0.98, "Ready.", LogLevel::Success);
             send_event(
                 &sender,
-                Event::App(AppEvent::SplashTick {
+                SplashEvent::Tick {
                     progress: 1.0,
                     log: None,
-                }),
+                }
+                .into(),
             );
         });
     }

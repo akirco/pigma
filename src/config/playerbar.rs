@@ -12,6 +12,10 @@ pub struct PlayerbarConfig {
     pub unfilled_color: String,
     #[serde(default = "default_pb_unfilled_color_cached")]
     pub unfilled_color_cached: String,
+    #[serde(default)]
+    pub gradient_enabled: bool,
+    #[serde(default = "default_gradient_preset")]
+    pub gradient_preset: String,
 }
 
 fn default_pb_filled_symbol() -> String {
@@ -29,6 +33,9 @@ fn default_pb_unfilled_color() -> String {
 fn default_pb_unfilled_color_cached() -> String {
     "warning".into()
 }
+fn default_gradient_preset() -> String {
+    "warm".into()
+}
 
 impl Default for PlayerbarConfig {
     fn default() -> Self {
@@ -38,6 +45,8 @@ impl Default for PlayerbarConfig {
             filled_color: default_pb_filled_color(),
             unfilled_color: default_pb_unfilled_color(),
             unfilled_color_cached: default_pb_unfilled_color_cached(),
+            gradient_enabled: false,
+            gradient_preset: default_gradient_preset(),
         }
     }
 }

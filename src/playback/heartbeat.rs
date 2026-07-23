@@ -2,12 +2,13 @@ use std::sync::Arc;
 
 use ncm_api::SongInfo;
 
-use crate::event::{AppEvent, Event};
+use crate::event::PlaybackEvent;
 
 use super::PlaybackEngine;
 use super::types::PlayMode;
 
 const MAX_HEARTBEAT_SONGS: usize = 500;
+const KEEP_RECENT: usize = 100;
 
 impl PlaybackEngine {
     pub fn next_heartbeat(&mut self) {
@@ -36,7 +37,7 @@ impl PlaybackEngine {
                     );
                     if let Some(next_song) = songs.into_iter().next() {
                         if event_tx
-                            .send(Event::App(AppEvent::HeartbeatSong(next_song)))
+                            .send(PlaybackEvent::HeartbeatSong(next_song).into())
                             .is_err()
                         {
                             log::error!("Failed to send HeartbeatSong: receiver dropped");
@@ -48,7 +49,7 @@ impl PlaybackEngine {
                             playlist_id
                         );
                         if event_tx
-                            .send(Event::App(AppEvent::HeartbeatFallback))
+                            .send(PlaybackEvent::HeartbeatFallback.into())
                             .is_err()
                         {
                             log::error!("Failed to send HeartbeatFallback: receiver dropped");
@@ -58,7 +59,7 @@ impl PlaybackEngine {
                 Err(e) => {
                     log::warn!("Heartbeat failed: {e}, falling back to queue");
                     if event_tx
-                        .send(Event::App(AppEvent::HeartbeatFallback))
+                        .send(PlaybackEvent::HeartbeatFallback.into())
                         .is_err()
                     {
                         log::error!("Failed to send HeartbeatFallback: receiver dropped");
@@ -75,7 +76,9 @@ impl PlaybackEngine {
 
         if self.queue.songs.len() >= MAX_HEARTBEAT_SONGS {
             let current = self.queue.current_index.unwrap_or(0);
-            let trim_to = current.saturating_sub(MAX_HEARTBEAT_SONGS / 4);
+            // Trim songs from the front, but keep a buffer of recently played
+            // songs so that "previous" navigation still works.
+            let trim_to = current.saturating_sub(KEEP_RECENT);
             if trim_to > 0 {
                 self.queue.songs.drain(..trim_to);
                 if let Some(ref mut idx) = self.queue.current_index {

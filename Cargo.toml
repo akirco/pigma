@@ -1,6 +1,6 @@
 [package]
 name = "pigma"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "A netease cloud music client"
 repository = "https://github.com/akirco/pigma.git"
@@ -9,6 +9,7 @@ license = "Apache-2.0"
 
 [dependencies]
 color-eyre = "0.6.5"
+colorgrad = { version = "0.8.0", features = ["preset"] }
 crossterm = { version = "0.29.0", features = ["event-stream"] }
 dirs = "6.0.0"
 futures = {
@@ -61,14 +62,15 @@ unicode-width = "0.2.2"
 url = "2.5.8"
 y7dl = { path = "crates/y7dl" }
 
-[dev-dependencies]
-image = "0.25"
-ratatui-image = "11.0"
-regex = "1.13.1"
-reqwest = { version = "0.13.4", features = ["blocking", "query"] }
+# [dev-dependencies]
+# colorgrad = { version = "0.8.0", features = ["preset"] }
+# image = "0.25"
+# ratatui-image = "11.0"
+# regex = "1.13.1"
+# reqwest = { version = "0.13.4", features = ["blocking", "query"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-libc = "0.2.187"
+libc = "0.2.189"
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
 [profile.release]

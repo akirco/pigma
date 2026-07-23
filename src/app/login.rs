@@ -1,5 +1,5 @@
 use super::{App, send_event};
-use crate::event::{AppEvent, Event};
+use crate::event::AuthEvent;
 use crate::state::{LoginMethod, Page};
 
 use tokio::time::{Duration, sleep};
@@ -20,10 +20,10 @@ impl App {
                 tokio::spawn(async move {
                     match api.login(&username, &password).await {
                         Ok(info) => {
-                            send_event(&sender, Event::App(AppEvent::LoginSuccess(info)));
+                            send_event(&sender, AuthEvent::Success(info).into());
                         }
                         Err(e) => {
-                            send_event(&sender, Event::App(AppEvent::LoginError(e.to_string())));
+                            send_event(&sender, AuthEvent::Error(e.to_string()).into());
                         }
                     }
                 });
@@ -38,13 +38,10 @@ impl App {
                     tokio::spawn(async move {
                         match api.login_cellphone("86", &phone, &captcha).await {
                             Ok(info) => {
-                                send_event(&sender, Event::App(AppEvent::LoginSuccess(info)));
+                                send_event(&sender, AuthEvent::Success(info).into());
                             }
                             Err(e) => {
-                                send_event(
-                                    &sender,
-                                    Event::App(AppEvent::LoginError(e.to_string())),
-                                );
+                                send_event(&sender, AuthEvent::Error(e.to_string()).into());
                             }
                         }
                     });
@@ -56,13 +53,10 @@ impl App {
                     tokio::spawn(async move {
                         match api.captcha("86", &phone).await {
                             Ok(()) => {
-                                send_event(&sender, Event::App(AppEvent::CaptchaSent));
+                                send_event(&sender, AuthEvent::CaptchaSent.into());
                             }
                             Err(e) => {
-                                send_event(
-                                    &sender,
-                                    Event::App(AppEvent::LoginError(e.to_string())),
-                                );
+                                send_event(&sender, AuthEvent::Error(e.to_string()).into());
                             }
                         }
                     });
@@ -75,10 +69,10 @@ impl App {
                 tokio::spawn(async move {
                     match api.login_qr_create().await {
                         Ok((url, key)) => {
-                            send_event(&sender, Event::App(AppEvent::QRCreated { url, key }));
+                            send_event(&sender, AuthEvent::QRCreated { url, key }.into());
                         }
                         Err(e) => {
-                            send_event(&sender, Event::App(AppEvent::LoginError(e.to_string())));
+                            send_event(&sender, AuthEvent::Error(e.to_string()).into());
                         }
                     }
                 });
@@ -125,13 +119,10 @@ impl App {
                         803 => {
                             match api.login_status().await {
                                 Ok(info) => {
-                                    send_event(&sender, Event::App(AppEvent::LoginSuccess(info)));
+                                    send_event(&sender, AuthEvent::Success(info).into());
                                 }
                                 Err(e) => {
-                                    send_event(
-                                        &sender,
-                                        Event::App(AppEvent::LoginError(e.to_string())),
-                                    );
+                                    send_event(&sender, AuthEvent::Error(e.to_string()).into());
                                 }
                             }
                             return;
@@ -139,9 +130,7 @@ impl App {
                         800 => {
                             send_event(
                                 &sender,
-                                Event::App(AppEvent::LoginError(
-                                    "二维码已过期，请重新生成".to_string(),
-                                )),
+                                AuthEvent::Error("二维码已过期，请重新生成".to_string()).into(),
                             );
                             return;
                         }
@@ -149,24 +138,19 @@ impl App {
                             scanned = true;
                             send_event(
                                 &sender,
-                                Event::App(AppEvent::QRStatus(
-                                    "已扫码，请在手机上确认...".to_string(),
-                                )),
+                                AuthEvent::QRStatus("已扫码，请在手机上确认...".to_string()).into(),
                             );
                         }
                         802 => {}
                         _ => {}
                     },
                     Err(e) => {
-                        send_event(&sender, Event::App(AppEvent::LoginError(e.to_string())));
+                        send_event(&sender, AuthEvent::Error(e.to_string()).into());
                         return;
                     }
                 }
             }
-            send_event(
-                &sender,
-                Event::App(AppEvent::LoginError("登录超时".to_string())),
-            );
+            send_event(&sender, AuthEvent::Error("登录超时".to_string()).into());
         });
     }
 

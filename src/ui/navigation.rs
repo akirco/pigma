@@ -6,20 +6,13 @@ use ratatui::{
     widgets::{List, ListItem},
 };
 
+use super::BlockStyle;
 use super::{create_block, styled_text};
-use crate::config::Theme;
 use crate::state::NavState;
 
-pub fn draw(
-    f: &mut Frame,
-    nav: &mut NavState,
-    colors: &Theme,
-    bordered: bool,
-    border_rounded: bool,
-    title: &str,
-    area: Rect,
-) {
-    let block = create_block(title, colors, bordered, border_rounded, false);
+pub fn draw(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, title: &str, area: Rect) {
+    let colors = bs.colors;
+    let block = create_block(title, bs, false);
     let inner = block.inner(area);
     f.render_widget(block, area);
 

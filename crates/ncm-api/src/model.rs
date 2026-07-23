@@ -133,6 +133,7 @@ pub struct SongUrl {
     pub url: String,
     pub rate: u32,
     pub quality: SongQuality,
+    pub free_trial: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -590,11 +591,16 @@ pub(crate) fn parse_song_url(value: &Value) -> Result<Vec<SongUrl>, String> {
                 .and_then(|l| l.as_str())
                 .and_then(SongQuality::from_level)
                 .unwrap_or_else(|| SongQuality::from_rate(rate));
+            let free_trial = v
+                .get("freeTrialInfo")
+                .and_then(|t| t.as_object())
+                .is_some();
             Some(SongUrl {
                 id: v["id"].as_u64().unwrap_or(0),
                 url: url.to_string(),
                 rate,
                 quality,
+                free_trial,
             })
         })
         .collect())

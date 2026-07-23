@@ -1,13 +1,12 @@
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufReader};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ncm_api::SongInfo;
-use rodio::Source;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use stream_download::storage::StorageProvider;
 
 use crate::state::ContentState;
@@ -18,9 +17,59 @@ struct ContentCacheEntry {
     cached_at: u64,
 }
 
-type CacheIndex = HashMap<u64, String>;
+/// Entry in the audio cache index, mapping song ID to filename and duration.
+#[derive(Clone, Serialize, Deserialize)]
+struct CacheEntry {
+    filename: String,
+    #[serde(default)]
+    duration: u64,
+}
+
+/// Backward-compatible deserializer: accepts both the old format (plain string)
+/// and the new format (object with filename + duration).
+fn deserialize_cache_entry<'de, D>(deserializer: D) -> Result<CacheEntry, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Raw {
+        Str(String),
+        Obj(CacheEntry),
+    }
+
+    match Raw::deserialize(deserializer)? {
+        Raw::Str(filename) => Ok(CacheEntry {
+            filename,
+            duration: 0,
+        }),
+        Raw::Obj(entry) => Ok(entry),
+    }
+}
+
+type CacheIndex = HashMap<u64, CacheEntryWrapper>;
+
+#[derive(Clone, Serialize)]
+struct CacheEntryWrapper {
+    filename: String,
+    duration: u64,
+}
+
+impl<'de> Deserialize<'de> for CacheEntryWrapper {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let entry = deserialize_cache_entry(deserializer)?;
+        Ok(Self {
+            filename: entry.filename,
+            duration: entry.duration,
+        })
+    }
+}
 
 #[derive(Clone)]
+/// Manages content, lyrics, and audio caches on disk.
 pub struct CacheManager {
     downloads_dir: PathBuf,
     lyrics_dir: PathBuf,
@@ -73,6 +122,10 @@ impl CacheManager {
 
     pub fn remove_from_index(&self, song_id: u64) {
         self.index.lock().unwrap().remove(&song_id);
+    }
+
+    /// Persist the in-memory cache index to disk.
+    pub fn flush_index(&self) {
         self.save_index();
     }
 
@@ -102,8 +155,8 @@ impl CacheManager {
 
     pub fn cache_path_for(&self, song: &SongInfo, ext: &str) -> PathBuf {
         let index = self.index.lock().unwrap();
-        if let Some(filename) = index.get(&song.id) {
-            return self.downloads_dir.join(filename);
+        if let Some(entry) = index.get(&song.id) {
+            return self.downloads_dir.join(&entry.filename);
         }
         let filename = self.resolve_filename(song, ext);
         self.downloads_dir.join(filename)
@@ -111,8 +164,8 @@ impl CacheManager {
 
     pub fn cache_path(&self, id: u64, ext: &str) -> PathBuf {
         let index = self.index.lock().unwrap();
-        if let Some(filename) = index.get(&id) {
-            return self.downloads_dir.join(filename);
+        if let Some(entry) = index.get(&id) {
+            return self.downloads_dir.join(&entry.filename);
         }
         drop(index);
         self.downloads_dir.join(format!("{}.{}", id, ext))
@@ -137,9 +190,14 @@ impl CacheManager {
 
         {
             let mut index = self.index.lock().unwrap();
-            index.insert(song.id, filename);
+            index.insert(
+                song.id,
+                CacheEntryWrapper {
+                    filename,
+                    duration: song.duration,
+                },
+            );
         }
-        self.save_index();
 
         Ok(CacheFileProvider { path })
     }
@@ -156,6 +214,17 @@ impl CacheManager {
         let path = self.lyrics_path(id);
         let data = fs::read_to_string(path).ok()?;
         serde_json::from_str(&data).ok()
+    }
+
+    pub async fn load_lyrics_cache_async(&self, id: u64) -> Option<ncm_api::Lyrics> {
+        let path = self.lyrics_path(id);
+        tokio::task::spawn_blocking(move || {
+            let data = fs::read_to_string(path).ok()?;
+            serde_json::from_str(&data).ok()
+        })
+        .await
+        .ok()
+        .flatten()
     }
 
     pub fn save_lyrics_cache(&self, id: u64, lyrics: &ncm_api::Lyrics) {
@@ -186,25 +255,34 @@ impl CacheManager {
         Some(entry.data)
     }
 
+    pub async fn load_content_cache_async(&self, api: &str, ttl_secs: u64) -> Option<ContentState> {
+        let path = self.content_path(api);
+        tokio::task::spawn_blocking(move || {
+            let data = fs::read_to_string(path).ok()?;
+            let entry: ContentCacheEntry = serde_json::from_str(&data).ok()?;
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
+            if now - entry.cached_at > ttl_secs {
+                return None;
+            }
+            Some(entry.data)
+        })
+        .await
+        .ok()
+        .flatten()
+    }
+
     pub fn list_cached_songs(&self) -> Vec<SongInfo> {
         let index = self.index.lock().unwrap().clone();
         let mut songs = Vec::new();
 
-        for (id, filename) in &index {
-            let path = self.downloads_dir.join(filename);
+        for (id, entry) in &index {
+            let path = self.downloads_dir.join(&entry.filename);
             if !path.exists() {
                 continue;
             }
             let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
 
             let (name, singer) = self.parse_filename(stem, *id);
-
-            let duration = fs::File::open(&path)
-                .ok()
-                .and_then(|f| rodio::Decoder::new(BufReader::new(f)).ok())
-                .and_then(|d| d.total_duration())
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
 
             songs.push(SongInfo {
                 id: *id,
@@ -214,7 +292,7 @@ impl CacheManager {
                 album: String::new(),
                 album_id: 0,
                 pic_url: String::new(),
-                duration,
+                duration: entry.duration,
                 copyright: ncm_api::SongCopyright::Unknown,
             });
         }
@@ -222,12 +300,52 @@ impl CacheManager {
         songs
     }
 
+    pub async fn list_cached_songs_async(&self) -> Vec<SongInfo> {
+        let index = self.index.lock().unwrap().clone();
+        let downloads_dir = self.downloads_dir.clone();
+        let template = self.template.clone();
+
+        tokio::task::spawn_blocking(move || {
+            let mut songs = Vec::new();
+
+            for (id, entry) in &index {
+                let path = downloads_dir.join(&entry.filename);
+                if !path.exists() {
+                    continue;
+                }
+                let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+
+                let (name, singer) = Self::parse_filename_static(stem, *id, &template);
+
+                songs.push(SongInfo {
+                    id: *id,
+                    name,
+                    singer,
+                    artist_id: 0,
+                    album: String::new(),
+                    album_id: 0,
+                    pic_url: String::new(),
+                    duration: entry.duration,
+                    copyright: ncm_api::SongCopyright::Unknown,
+                });
+            }
+
+            songs
+        })
+        .await
+        .unwrap_or_default()
+    }
+
     /// Parse a cached filename stem into (name, singer) using the template.
     ///
     /// Extracts literal separators from the template, then splits the stem
     /// from the right to separate the last field (singer) from the rest (name).
     fn parse_filename(&self, stem: &str, id: u64) -> (String, String) {
-        if self.template == "{id}" {
+        Self::parse_filename_static(stem, id, &self.template)
+    }
+
+    fn parse_filename_static(stem: &str, id: u64, template: &str) -> (String, String) {
+        if template == "{id}" {
             return (id.to_string(), String::new());
         }
 
@@ -235,7 +353,7 @@ impl CacheManager {
         let placeholders = ["{id}", "{name}", "{singer}", "{album}"];
         let mut last_sep_start = 0;
         let mut last_sep_len = 0;
-        let mut remaining = self.template.as_str();
+        let mut remaining = template;
         let mut offset = 0;
         while !remaining.is_empty() {
             let mut earliest = remaining.len();
@@ -263,7 +381,7 @@ impl CacheManager {
             return (stem.to_string(), String::new());
         }
 
-        let sep = &self.template[last_sep_start..last_sep_start + last_sep_len];
+        let sep = &template[last_sep_start..last_sep_start + last_sep_len];
 
         if sep.is_empty() {
             return (stem.to_string(), String::new());
