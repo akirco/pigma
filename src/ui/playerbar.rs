@@ -6,11 +6,12 @@ use ratatui::{
     widgets::{LineGauge, Padding, Paragraph},
 };
 
+use super::gradient_line_gauge::GradientLineGauge;
 use super::spinner::Spinner;
 
+use super::BlockStyle;
 use super::create_block;
-use crate::config::PlayerbarConfig;
-use crate::config::Theme;
+use crate::config::{PlayerbarConfig, Theme};
 use crate::playback::types::PlayMode;
 use crate::state::PlaybackState;
 
@@ -35,14 +36,12 @@ pub fn draw(
     f: &mut Frame,
     player: &PlaybackState,
     tick: u64,
-    colors: &Theme,
-    bordered: bool,
-    border_rounded: bool,
+    bs: &BlockStyle<'_>,
     pb_config: &PlayerbarConfig,
     area: Rect,
 ) {
-    let block = create_block("", colors, bordered, border_rounded, false)
-        .block_padding(Padding::horizontal(1));
+    let colors = bs.colors;
+    let block = create_block("", bs, false).block_padding(Padding::horizontal(1));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -159,18 +158,35 @@ fn draw_gauge(
     fmt_secs_into(dur_secs, &mut time_buf);
     let time_str = time_buf;
 
-    let unfilled_color = if player.cached {
-        pb.unfilled_color_cached.as_str()
+    if pb.gradient_enabled {
+        let unfilled_color = if player.cached {
+            pb.unfilled_color_cached.as_str()
+        } else {
+            pb.unfilled_color.as_str()
+        };
+        let gauge = GradientLineGauge::new(&pb.gradient_preset)
+            .ratio(player.progress.clamp(0.0, 1.0))
+            .label(Line::from(Span::styled(
+                time_str,
+                Style::default().fg(colors.text),
+            )))
+            .filled_symbol(&pb.filled_symbol)
+            .unfilled_symbol(&pb.unfilled_symbol)
+            .unfilled_style(Style::default().fg(colors.field_color(unfilled_color)));
+        f.render_widget(gauge, area);
     } else {
-        pb.unfilled_color.as_str()
-    };
-
-    let gauge = LineGauge::default()
-        .filled_symbol(&pb.filled_symbol)
-        .unfilled_symbol(&pb.unfilled_symbol)
-        .filled_style(Style::default().fg(colors.field_color(&pb.filled_color)))
-        .unfilled_style(Style::default().fg(colors.field_color(unfilled_color)))
-        .ratio(player.progress.clamp(0.0, 1.0))
-        .label(Span::styled(time_str, Style::default().fg(colors.text)));
-    f.render_widget(gauge, area);
+        let unfilled_color = if player.cached {
+            pb.unfilled_color_cached.as_str()
+        } else {
+            pb.unfilled_color.as_str()
+        };
+        let gauge = LineGauge::default()
+            .filled_symbol(&pb.filled_symbol)
+            .unfilled_symbol(&pb.unfilled_symbol)
+            .filled_style(Style::default().fg(colors.field_color(&pb.filled_color)))
+            .unfilled_style(Style::default().fg(colors.field_color(unfilled_color)))
+            .ratio(player.progress.clamp(0.0, 1.0))
+            .label(Span::styled(time_str, Style::default().fg(colors.text)));
+        f.render_widget(gauge, area);
+    }
 }

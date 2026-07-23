@@ -7,7 +7,7 @@ mod search;
 mod splash;
 mod table;
 
-use crate::event::{AppEvent, CommandPanelAction};
+use crate::event::{AppEvent, CommandEvent, CommandPanelAction};
 use crate::state::{App, Page};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
 
@@ -22,7 +22,7 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> color_eyre::Resu
             KeyCode::Char('p' | 'P') => {
                 app.state
                     .events
-                    .send(AppEvent::CommandPanel(CommandPanelAction::Open));
+                    .send(CommandEvent::Panel(CommandPanelAction::Open));
                 return Ok(());
             }
             KeyCode::Char('l' | 'L') => {

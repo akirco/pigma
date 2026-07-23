@@ -1,13 +1,15 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use ncm_api::{NcmClient, SongInfo, SongQuality};
+use ncm_api::{NcmClient, NcmError, SongInfo, SongQuality};
 use stream_download::{Settings, StreamDownload};
 use y7dl::Client;
 
 use super::player::{AudioInput, SharedReader};
 use crate::cache::CacheManager;
+use crate::utils::youtube::{clean_search_query, parse_duration_str, score_match};
 
+/// Resolves audio inputs for songs via local files, NCM streaming, or YouTube fallback.
 #[derive(Clone)]
 pub struct AudioSource {
     api: Arc<NcmClient>,
@@ -38,67 +40,31 @@ impl AudioSource {
         }
     }
 
-    /// Parse a duration string like "3:33" or "1:02:33" into seconds.
-    fn parse_duration_str(s: &str) -> Option<u64> {
-        let parts: Vec<&str> = s.split(':').collect();
-        match parts.len() {
-            2 => {
-                let min: u64 = parts[0].parse().ok()?;
-                let sec: u64 = parts[1].parse().ok()?;
-                Some(min * 60 + sec)
-            }
-            3 => {
-                let hr: u64 = parts[0].parse().ok()?;
-                let min: u64 = parts[1].parse().ok()?;
-                let sec: u64 = parts[2].parse().ok()?;
-                Some(hr * 3600 + min * 60 + sec)
-            }
-            _ => None,
+    /// Derive a file extension from a streaming URL.
+    fn ext_from_url(url: &str) -> &'static str {
+        let path = url::Url::parse(url)
+            .ok()
+            .and_then(|u| {
+                u.path_segments()
+                    .and_then(|mut s| s.next_back().map(|s| s.to_string()))
+            })
+            .unwrap_or_default();
+        let stem = path.rsplit('.').nth(1).unwrap_or("");
+        match stem {
+            "flac" => "flac",
+            "ogg" => "ogg",
+            "wav" => "wav",
+            "m4a" | "mp4" => "m4a",
+            _ => "mp3",
         }
-    }
-
-    /// Score a YouTube search result against the original NCM song.
-    /// Higher is better. 0 means no match at all.
-    fn score_match(
-        title: &str,
-        author: &str,
-        yt_duration_secs: Option<u64>,
-        song: &SongInfo,
-    ) -> u32 {
-        let title_lower = title.to_lowercase();
-        let author_lower = author.to_lowercase();
-        let name_lower = song.name.to_lowercase();
-        let singer_lower = song.singer.to_lowercase();
-
-        let mut score = 0u32;
-
-        if title_lower.contains(&name_lower) {
-            score += 10;
-        }
-        if author_lower.contains(&singer_lower) || singer_lower.contains(&author_lower) {
-            score += 10;
-        }
-        if song.duration > 0 {
-            let ncm_secs = song.duration / 1000;
-            if let Some(yt_secs) = yt_duration_secs {
-                let diff = ncm_secs.abs_diff(yt_secs);
-                if diff <= 10 {
-                    score += 5;
-                } else if diff <= 30 {
-                    score += 2;
-                }
-            }
-        }
-
-        score
     }
 
     /// Search YouTube for a song and stream the best-matching result.
     async fn youtube_fallback(&self, song: &SongInfo) -> Result<AudioInput, String> {
-        let query = format!("{} {}", song.name, song.singer);
+        let query = format!("{} {}", clean_search_query(&song.name), song.singer);
         let results = self
             .y7dl
-            .search(&query, 5, None)
+            .search(&query, 8, None)
             .await
             .map_err(|e| format!("YouTube搜索失败: {e}"))?;
 
@@ -109,12 +75,12 @@ impl AudioSource {
         let best = results
             .iter()
             .map(|r| {
-                let yt_dur = Self::parse_duration_str(&r.duration);
-                let score = Self::score_match(&r.title, &r.author, yt_dur, song);
+                let yt_dur = parse_duration_str(&r.duration);
+                let score = score_match(&r.title, &r.author, &r.views, yt_dur, song);
                 (r, score)
             })
             .max_by_key(|(_, score)| *score)
-            .filter(|(_, score)| *score > 0);
+            .filter(|(_, score)| *score >= 15);
 
         let (result, _score) = match best {
             Some((r, s)) => (r, s),
@@ -150,7 +116,7 @@ impl AudioSource {
         let url =
             url::Url::parse(&stream_url_str).map_err(|e| format!("YouTube URL解析失败: {e}"))?;
 
-        let ext = "mp3";
+        let ext = Self::ext_from_url(&stream_url_str);
         let provider = self
             .cache
             .create_provider(song, ext)
@@ -163,9 +129,45 @@ impl AudioSource {
         Ok(SharedReader(Arc::new(Mutex::new(Box::new(reader)))))
     }
 
-    pub async fn resolve(&self, song: &SongInfo) -> Result<AudioInput, String> {
-        let ext = "mp3";
+    /// Try to resolve a song from NCM streaming.
+    async fn resolve_ncm(&self, song: &SongInfo) -> Result<AudioInput, String> {
+        let urls = self.api.songs_url_v1(&[song.id], self.quality).await;
 
+        let urls = match urls {
+            Ok(u) => u,
+            Err(NcmError::Http(e)) => {
+                return Err(format!("NETWORK:获取歌曲URL失败: {e}"));
+            }
+            Err(NcmError::Session(e)) => {
+                return Err(format!("NETWORK:会话异常: {e}"));
+            }
+            Err(e) => {
+                return Err(format!("获取歌曲URL失败: {e}"));
+            }
+        };
+
+        let url_str = urls
+            .iter()
+            .find(|u| !u.url.is_empty() && !u.free_trial)
+            .map(|u| &u.url)
+            .ok_or_else(|| "该歌曲暂无播放源".to_string())?;
+
+        let url = url::Url::parse(url_str).map_err(|e| format!("URL解析失败: {e}"))?;
+        let ext = Self::ext_from_url(url_str);
+
+        let provider = self
+            .cache
+            .create_provider(song, ext)
+            .map_err(|e| format!("缓存创建失败: {e}"))?;
+
+        let reader = StreamDownload::new_http(url, provider, Settings::default())
+            .await
+            .map_err(|e| format!("流下载失败: {e}"))?;
+
+        Ok(SharedReader(Arc::new(Mutex::new(Box::new(reader)))))
+    }
+
+    pub async fn resolve(&self, song: &SongInfo) -> Result<AudioInput, String> {
         // Free songs: only use local file if the path actually exists
         if song.copyright == ncm_api::SongCopyright::Free {
             let path = std::path::Path::new(&song.album);
@@ -180,65 +182,59 @@ impl AudioSource {
             // album is not a valid file path, fall through to cache/NCM/YouTube
         }
 
-        if self.cache.is_cached(song.id, ext) {
-            let cache = self.cache.clone();
-            let song_id = song.id;
-            let file = tokio::task::spawn_blocking(move || cache.open_cached(song_id, ext))
-                .await
-                .map_err(|e| format!("无法打开缓存文件: {e}"))?
-                .map_err(|e| format!("无法打开缓存文件: {e}"))?;
-            return Ok(SharedReader(Arc::new(Mutex::new(Box::new(file)))));
-        }
-
-        // Try NCM source first, fall back to YouTube on failure
-        // VIP/Payment songs: skip NCM API, go straight to YouTube
-        let ncm_result = async {
-            if matches!(
-                song.copyright,
-                ncm_api::SongCopyright::VipOnly
-                    | ncm_api::SongCopyright::Payment
-                    | ncm_api::SongCopyright::VipOnlyHighRate
-            ) {
-                return Err("该歌曲需要会员".to_string());
+        if self.cache.is_cached(song.id, "mp3")
+            || self.cache.is_cached(song.id, "flac")
+            || self.cache.is_cached(song.id, "m4a")
+            || self.cache.is_cached(song.id, "ogg")
+        {
+            // Try common extensions, prefer the one that exists
+            for ext in &["mp3", "flac", "m4a", "ogg"] {
+                if self.cache.is_cached(song.id, ext) {
+                    let cache = self.cache.clone();
+                    let song_id = song.id;
+                    let ext = ext.to_string();
+                    let file =
+                        tokio::task::spawn_blocking(move || cache.open_cached(song_id, &ext))
+                            .await
+                            .map_err(|e| format!("无法打开缓存文件: {e}"))?
+                            .map_err(|e| format!("无法打开缓存文件: {e}"))?;
+                    return Ok(SharedReader(Arc::new(Mutex::new(Box::new(file)))));
+                }
             }
-
-            let urls = self
-                .api
-                .songs_url_v1(&[song.id], self.quality)
-                .await
-                .map_err(|e| format!("获取歌曲URL失败: {e}"))?;
-
-            let url_str = urls
-                .first()
-                .filter(|u| !u.url.is_empty())
-                .map(|u| &u.url)
-                .ok_or_else(|| "该歌曲暂无播放源".to_string())?;
-
-            let url = url::Url::parse(url_str).map_err(|e| format!("URL解析失败: {e}"))?;
-
-            let provider = self
-                .cache
-                .create_provider(song, ext)
-                .map_err(|e| format!("缓存创建失败: {e}"))?;
-
-            let reader = StreamDownload::new_http(url, provider, Settings::default())
-                .await
-                .map_err(|e| format!("流下载失败: {e}"))?;
-
-            Ok::<AudioInput, String>(SharedReader(Arc::new(Mutex::new(Box::new(reader)))))
+            unreachable!("is_cached checked above");
         }
-        .await;
 
-        match ncm_result {
-            Ok(input) => Ok(input),
-            Err(_) => {
-                log::info!(
-                    "NCM无源，尝试YouTube fallback: {} - {}",
-                    song.name,
-                    song.singer
-                );
-                self.youtube_fallback(song).await
+        // Try NCM source — transient network failures are retried up to 3 times,
+        // then fall back to YouTube. All other failures fall back immediately.
+        for attempt in 0..3 {
+            match self.resolve_ncm(song).await {
+                Ok(input) => return Ok(input),
+                Err(e) if e.starts_with("NETWORK:") && attempt < 2 => {
+                    log::warn!(
+                        "NCM网络错误，重试 {}/3: {} - {}: {}",
+                        attempt + 1,
+                        song.name,
+                        song.singer,
+                        &e["NETWORK:".len()..]
+                    );
+                }
+                Err(e) => {
+                    log::info!(
+                        "NCM解析失败，尝试YouTube fallback: {} - {} ({})",
+                        song.name,
+                        song.singer,
+                        e
+                    );
+                    return self.youtube_fallback(song).await;
+                }
             }
         }
+
+        log::warn!(
+            "NCM网络错误，3次重试失败，fallback到YouTube: {} - {}",
+            song.name,
+            song.singer
+        );
+        self.youtube_fallback(song).await
     }
 }

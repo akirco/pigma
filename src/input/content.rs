@@ -1,4 +1,4 @@
-use crate::event::AppEvent;
+use crate::event::NavigationEvent;
 use crate::state::App;
 use crate::state::ContentState;
 
@@ -33,7 +33,7 @@ fn check_load_more(app: &mut App, count: usize) {
         let sel = app.state.navigation.content_selected;
         if !pg.loading && pg.has_more && count >= 5 && sel >= count.saturating_sub(5) {
             pg.loading = true;
-            app.state.events.send(AppEvent::LoadMore);
+            app.state.events.send(NavigationEvent::LoadMore);
         }
     }
 }
@@ -64,7 +64,7 @@ pub(super) fn row_enter_action(app: &mut App) {
     match app.state.navigation.content.as_ref() {
         ContentState::SongLists(lists) => {
             if let Some(list) = lists.get(sel) {
-                app.state.events.send(AppEvent::PlaylistSelect {
+                app.state.events.send(NavigationEvent::PlaylistSelect {
                     id: list.id,
                     name: Some(list.name.clone()),
                 });
@@ -72,7 +72,7 @@ pub(super) fn row_enter_action(app: &mut App) {
         }
         ContentState::TopLists(lists) => {
             if let Some(list) = lists.get(sel) {
-                app.state.events.send(AppEvent::PlaylistSelect {
+                app.state.events.send(NavigationEvent::PlaylistSelect {
                     id: list.id,
                     name: Some(list.name.clone()),
                 });
@@ -80,15 +80,19 @@ pub(super) fn row_enter_action(app: &mut App) {
         }
         ContentState::Songs(songs) => {
             if let Some(song) = songs.get(sel) {
-                app.state.events.send(AppEvent::SongPlay(song.id));
+                app.state
+                    .events
+                    .send(crate::event::PlaybackEvent::SongPlay(song.id));
             }
         }
         ContentState::Singers(_) => {
-            app.state.events.send(AppEvent::CellAction(sel, 0));
+            app.state.events.send(NavigationEvent::CellAction(sel, 0));
         }
         ContentState::HotSearch(keywords) => {
             if let Some(kw) = keywords.get(sel) {
-                app.state.events.send(AppEvent::SearchSong(kw.clone()));
+                app.state
+                    .events
+                    .send(NavigationEvent::SearchSong(kw.clone()));
             }
         }
         _ => {}
@@ -98,5 +102,5 @@ pub(super) fn row_enter_action(app: &mut App) {
 pub(super) fn cell_enter_action(app: &mut App) {
     let sel = app.state.navigation.content_selected;
     let col = app.state.navigation.content_column_selected;
-    app.state.events.send(AppEvent::CellAction(sel, col));
+    app.state.events.send(NavigationEvent::CellAction(sel, col));
 }

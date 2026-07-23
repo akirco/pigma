@@ -4,9 +4,9 @@ use std::time::Duration;
 
 use rodio::Source;
 use rodio::cpal::traits::{DeviceTrait, HostTrait};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
-use crate::event::{AppEvent, Event};
+use crate::event::{Event, PlaybackEvent};
 
 pub trait AudioReader: Read + Seek + Send + Sync {}
 impl<T: Read + Seek + Send + Sync> AudioReader for T {}
@@ -45,72 +45,57 @@ pub enum ControlCmd {
     SetVolume(f32),
 }
 
+/// Run the audio player. Returns a oneshot receiver that fires when the player
+/// task has fully finished and all resources (decoder, sink, reader) are dropped.
 pub async fn run(
     reader: SharedReader,
     seek_time: Option<Duration>,
     event_tx: mpsc::UnboundedSender<Event>,
     control_rx: std::sync::mpsc::Receiver<ControlCmd>,
-) {
-    let decoder = match tokio::task::spawn_blocking(move || rodio::Decoder::new(reader)).await {
-        Ok(Ok(d)) => d,
-        Err(e) => {
-            if event_tx
-                .send(Event::App(AppEvent::PlaybackError(format!("decode: {e}"))))
-                .is_err()
-            {
-                log::error!("Failed to send PlaybackError: receiver dropped");
-            }
-            return;
-        }
-        Ok(Err(e)) => {
-            if event_tx
-                .send(Event::App(AppEvent::PlaybackError(format!("decode: {e}"))))
-                .is_err()
-            {
-                log::error!("Failed to send PlaybackError: receiver dropped");
-            }
-            return;
-        }
-    };
-
-    let total_duration = decoder.total_duration();
-    let (source, seek_offset): (Box<dyn Source<Item = f32> + Send>, Duration) =
-        if let Some(t) = seek_time {
-            let mut d = decoder;
-            if d.try_seek(t).is_err() {
-                log::warn!("try_seek failed for {t:?}, starting from 0");
-                (Box::new(d), Duration::default())
-            } else {
-                (Box::new(d), t)
-            }
-        } else {
-            (Box::new(decoder), Duration::default())
-        };
-
-    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+) -> oneshot::Receiver<()> {
+    let (done_tx, done_rx) = oneshot::channel();
 
     let progress_interval = Duration::from_millis(200);
 
     tokio::task::spawn_blocking(move || {
+        // Decoder is created inside the blocking task so it is dropped here
+        // when the task finishes, ensuring the underlying StreamDownload (and
+        // its HTTP connection / buffers) is released promptly.
+        let decoder = match rodio::Decoder::new(reader) {
+            Ok(d) => d,
+            Err(e) => {
+                let _ = event_tx.send(PlaybackEvent::Error(format!("decode: {e}")).into());
+                let _ = done_tx.send(());
+                return;
+            }
+        };
+
+        let total_duration = decoder.total_duration();
+        let (source, seek_offset): (Box<dyn Source<Item = f32> + Send>, Duration) =
+            if let Some(t) = seek_time {
+                let mut d = decoder;
+                if d.try_seek(t).is_err() {
+                    log::warn!("try_seek failed for {t:?}, starting from 0");
+                    (Box::new(d), Duration::default())
+                } else {
+                    (Box::new(d), t)
+                }
+            } else {
+                (Box::new(decoder), Duration::default())
+            };
+
         let mut sink = match open_sink_silent() {
             Ok(s) => s,
             Err(e) => {
-                if event_tx
-                    .send(Event::App(AppEvent::PlaybackError(format!(
-                        "open audio device: {e}"
-                    ))))
-                    .is_err()
-                {
-                    log::error!("Failed to send PlaybackError: receiver dropped");
-                }
+                let _ =
+                    event_tx.send(PlaybackEvent::Error(format!("open audio device: {e}")).into());
+                let _ = done_tx.send(());
                 return;
             }
         };
         sink.log_on_drop(false);
         let player = rodio::Player::connect_new(sink.mixer());
         player.append(source);
-
-        let _ = ready_tx.send(());
 
         loop {
             match control_rx.recv_timeout(progress_interval) {
@@ -125,6 +110,8 @@ pub async fn run(
                     }
                     ControlCmd::Stop => {
                         player.stop();
+                        // sink, player, source, decoder are dropped here
+                        let _ = done_tx.send(());
                         return;
                     }
                     ControlCmd::SetVolume(v) => {
@@ -137,10 +124,7 @@ pub async fn run(
             }
 
             if player.empty() && !player.is_paused() {
-                if event_tx
-                    .send(Event::App(AppEvent::PlaybackFinished))
-                    .is_err()
-                {
+                if event_tx.send(PlaybackEvent::Finished.into()).is_err() {
                     log::error!("Failed to send PlaybackFinished: receiver dropped");
                 }
                 break;
@@ -149,19 +133,24 @@ pub async fn run(
             if !player.is_paused() {
                 let pos = player.get_pos() + seek_offset;
                 if event_tx
-                    .send(Event::App(AppEvent::PlaybackProgress {
-                        position: pos,
-                        total: total_duration,
-                    }))
+                    .send(
+                        PlaybackEvent::Progress {
+                            position: pos,
+                            total: total_duration,
+                        }
+                        .into(),
+                    )
                     .is_err()
                 {
                     log::error!("Failed to send PlaybackProgress: receiver dropped");
                 }
             }
         }
+        // player, source, decoder dropped here
+        let _ = done_tx.send(());
     });
 
-    let _ = ready_rx.await;
+    done_rx
 }
 
 /// RAII guard that redirects stderr to /dev/null while alive, restoring it on drop.

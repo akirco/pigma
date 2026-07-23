@@ -1,5 +1,5 @@
 use super::{App, send_event};
-use crate::event::{AppEvent, Event};
+use crate::event::NavigationEvent;
 use crate::state::ContentState;
 
 impl App {
@@ -16,7 +16,7 @@ impl App {
                 Ok(r) => ContentState::Songs(r.songs),
                 Err(e) => ContentState::Error(e.to_string()),
             };
-            send_event(&sender, Event::App(AppEvent::ContentLoaded(state)));
+            send_event(&sender, NavigationEvent::ContentLoaded(state).into());
         });
     }
 
@@ -46,7 +46,7 @@ impl App {
             .and_then(|item| item.api.as_ref());
         if let Some(api) = api {
             let sender = self.state.events.sender();
-            send_event(&sender, Event::App(AppEvent::NavSelect(api.clone())));
+            send_event(&sender, NavigationEvent::NavSelect(api.clone()).into());
         }
     }
 

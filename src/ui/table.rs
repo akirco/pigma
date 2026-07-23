@@ -31,7 +31,7 @@ pub fn render_table(
         .map(|h| Cell::from(h.header.as_str()).style(Style::default().fg(colors.muted)))
         .collect();
     let header = Row::new(header_cells)
-        .style(Style::default().add_modifier(Modifier::UNDERLINED))
+        .style(Style::default().add_modifier(Modifier::BOLD))
         .height(1);
 
     let widths: Vec<Constraint> = headers.iter().map(|h| h.to_constraint()).collect();

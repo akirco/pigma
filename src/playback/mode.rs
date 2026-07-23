@@ -7,111 +7,64 @@ pub trait PlayStrategy: Send {
     fn prev(&mut self, current_index: Option<usize>, queue_len: usize) -> Option<usize>;
 }
 
-pub struct Sequential;
-
-impl PlayStrategy for Sequential {
-    fn next(&mut self, ci: Option<usize>, queue_len: usize) -> Option<usize> {
-        match ci {
-            Some(i) if i + 1 < queue_len => Some(i + 1),
-            _ => None,
-        }
-    }
-
-    fn prev(&mut self, ci: Option<usize>, _queue_len: usize) -> Option<usize> {
-        match ci {
-            Some(i) if i > 0 => Some(i - 1),
-            _ => None,
-        }
-    }
+#[derive(Clone)]
+pub enum Strategy {
+    Sequential,
+    RepeatOne,
+    RepeatAll,
+    Shuffle { order: Vec<usize>, pos: usize },
+    Heartbeat,
 }
 
-pub struct RepeatOne;
-
-impl PlayStrategy for RepeatOne {
-    fn next(&mut self, ci: Option<usize>, _queue_len: usize) -> Option<usize> {
-        ci
-    }
-
-    fn prev(&mut self, ci: Option<usize>, _queue_len: usize) -> Option<usize> {
-        ci
-    }
-}
-
-pub struct RepeatAll;
-
-impl PlayStrategy for RepeatAll {
+impl PlayStrategy for Strategy {
     fn next(&mut self, ci: Option<usize>, queue_len: usize) -> Option<usize> {
-        if queue_len == 0 {
-            return None;
+        match self {
+            Strategy::Sequential => match ci {
+                Some(i) if i + 1 < queue_len => Some(i + 1),
+                _ => None,
+            },
+            Strategy::RepeatOne => ci,
+            Strategy::RepeatAll => {
+                if queue_len == 0 {
+                    return None;
+                }
+                let i = ci.unwrap_or(0);
+                Some((i + 1) % queue_len)
+            }
+            Strategy::Shuffle { order, pos } => {
+                if order.is_empty() || queue_len == 0 {
+                    return None;
+                }
+                *pos = (*pos + 1) % order.len();
+                Some(order[*pos])
+            }
+            Strategy::Heartbeat => None,
         }
-        let i = ci.unwrap_or(0);
-        Some((i + 1) % queue_len)
     }
 
     fn prev(&mut self, ci: Option<usize>, queue_len: usize) -> Option<usize> {
-        if queue_len == 0 {
-            return None;
+        match self {
+            Strategy::Sequential => match ci {
+                Some(i) if i > 0 => Some(i - 1),
+                _ => None,
+            },
+            Strategy::RepeatOne => ci,
+            Strategy::RepeatAll => {
+                if queue_len == 0 {
+                    return None;
+                }
+                let i = ci.unwrap_or(0);
+                Some((i + queue_len - 1) % queue_len)
+            }
+            Strategy::Shuffle { order, pos } => {
+                if order.is_empty() {
+                    return None;
+                }
+                *pos = (*pos + order.len() - 1) % order.len();
+                Some(order[*pos])
+            }
+            Strategy::Heartbeat => None,
         }
-        let i = ci.unwrap_or(0);
-        Some((i + queue_len - 1) % queue_len)
-    }
-}
-
-pub struct ShuffleMode {
-    order: Vec<usize>,
-    pos: usize,
-}
-
-impl ShuffleMode {
-    pub fn new(queue_len: usize, current_index: usize) -> Self {
-        if queue_len <= 1 {
-            return Self {
-                order: (0..queue_len).collect(),
-                pos: 0,
-            };
-        }
-        let start = current_index.min(queue_len - 1);
-        let mut tail: Vec<usize> = (0..queue_len).filter(|&i| i != start).collect();
-        tail.shuffle(&mut rand::rng());
-        let mut order = vec![start];
-        order.extend(tail);
-        Self { order, pos: 0 }
-    }
-}
-
-impl PlayStrategy for ShuffleMode {
-    fn next(&mut self, _ci: Option<usize>, queue_len: usize) -> Option<usize> {
-        if self.order.is_empty() || queue_len == 0 {
-            return None;
-        }
-        self.pos = (self.pos + 1) % self.order.len();
-        Some(self.order[self.pos])
-    }
-
-    fn prev(&mut self, _ci: Option<usize>, _queue_len: usize) -> Option<usize> {
-        if self.order.is_empty() {
-            return None;
-        }
-        self.pos = (self.pos + self.order.len() - 1) % self.order.len();
-        Some(self.order[self.pos])
-    }
-}
-
-pub struct HeartbeatMode;
-
-impl HeartbeatMode {
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-impl PlayStrategy for HeartbeatMode {
-    fn next(&mut self, _ci: Option<usize>, _queue_len: usize) -> Option<usize> {
-        None
-    }
-
-    fn prev(&mut self, _ci: Option<usize>, _queue_len: usize) -> Option<usize> {
-        None
     }
 }
 
@@ -119,12 +72,22 @@ pub fn create_strategy(
     mode: &PlayMode,
     queue_len: usize,
     current_index: Option<usize>,
-) -> Box<dyn PlayStrategy> {
+) -> Strategy {
     match mode {
-        PlayMode::Sequential => Box::new(Sequential),
-        PlayMode::RepeatOne => Box::new(RepeatOne),
-        PlayMode::RepeatAll => Box::new(RepeatAll),
-        PlayMode::Shuffle => Box::new(ShuffleMode::new(queue_len, current_index.unwrap_or(0))),
-        PlayMode::Heartbeat { .. } => Box::new(HeartbeatMode::new()),
+        PlayMode::Sequential => Strategy::Sequential,
+        PlayMode::RepeatOne => Strategy::RepeatOne,
+        PlayMode::RepeatAll => Strategy::RepeatAll,
+        PlayMode::Shuffle => Strategy::Shuffle {
+            order: {
+                let start = current_index.unwrap_or(0).min(queue_len.saturating_sub(1));
+                let mut tail: Vec<usize> = (0..queue_len).filter(|&i| i != start).collect();
+                tail.shuffle(&mut rand::rng());
+                let mut order = vec![start];
+                order.extend(tail);
+                order
+            },
+            pos: 0,
+        },
+        PlayMode::Heartbeat { .. } => Strategy::Heartbeat,
     }
 }

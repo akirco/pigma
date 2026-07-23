@@ -1,5 +1,5 @@
 use super::{App, send_event};
-use crate::event::{AppEvent, Event};
+use crate::event::{NavigationEvent, PlaybackEvent};
 use crate::playback::types::parse_lyric_lines;
 use crate::state::{ContentState, PaginationInfo, TableMode};
 
@@ -34,10 +34,11 @@ impl App {
                     };
                     send_event(
                         &sender,
-                        Event::App(AppEvent::ContentLoadedPaged {
+                        NavigationEvent::ContentLoadedPaged {
                             content: ContentState::Songs(result.songs),
                             pagination: new_pg,
-                        }),
+                        }
+                        .into(),
                     );
                 }
                 Err(e) => {
@@ -112,10 +113,10 @@ impl App {
                     Err(e) => (ContentState::Error(e.to_string()), None),
                 }
             };
-            send_event(&sender, Event::App(AppEvent::ContentLoaded(state)));
+            send_event(&sender, NavigationEvent::ContentLoaded(state).into());
             let breadcrumb = detail_name.or(name);
             if let Some(name) = breadcrumb {
-                send_event(&sender, Event::App(AppEvent::BreadcrumbSet(name)));
+                send_event(&sender, NavigationEvent::BreadcrumbSet(name).into());
             }
         });
     }
@@ -157,21 +158,22 @@ impl App {
             let api = self.api.clone();
             let sender = self.state.events.sender();
 
-            if let Some(cached) = cache.load_lyrics_cache(song_id) {
-                let lyric_lines = parse_lyric_lines(&cached.lyric);
-                let tlyric_lines = parse_lyric_lines(&cached.tlyric);
-                send_event(
-                    &sender,
-                    Event::App(AppEvent::LyricsLoaded {
-                        song_id,
-                        lyrics: lyric_lines,
-                        translated_lyrics: tlyric_lines,
-                    }),
-                );
-                return;
-            }
-
             tokio::spawn(async move {
+                if let Some(cached) = cache.load_lyrics_cache_async(song_id).await {
+                    let lyric_lines = parse_lyric_lines(&cached.lyric);
+                    let tlyric_lines = parse_lyric_lines(&cached.tlyric);
+                    send_event(
+                        &sender,
+                        PlaybackEvent::LyricsLoaded {
+                            song_id,
+                            lyrics: lyric_lines,
+                            translated_lyrics: tlyric_lines,
+                        }
+                        .into(),
+                    );
+                    return;
+                }
+
                 match api.song_lyric(song_id).await {
                     Ok(lyrics) => {
                         let cache_clone = cache.clone();
@@ -185,11 +187,12 @@ impl App {
                         let tlyric_lines = parse_lyric_lines(&lyrics.tlyric);
                         send_event(
                             &sender,
-                            Event::App(AppEvent::LyricsLoaded {
+                            PlaybackEvent::LyricsLoaded {
                                 song_id,
                                 lyrics: lyric_lines,
                                 translated_lyrics: tlyric_lines,
-                            }),
+                            }
+                            .into(),
                         );
                     }
                     Err(e) => {

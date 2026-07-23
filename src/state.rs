@@ -17,7 +17,7 @@ use ncm_api::LoginInfo;
 use ratatui::widgets::TableState;
 
 use crate::{
-    config::{Config, Theme, ThemeRegistry},
+    config::{BorderConfig, Config, Theme, ThemeRegistry},
     event::EventHandler,
     text_input::TextInput,
 };
@@ -153,8 +153,7 @@ pub struct SearchState {
 pub struct State {
     pub running: bool,
     pub events: EventHandler,
-    pub bordered: bool,
-    pub border_rounded: bool,
+    pub border: BorderConfig,
     pub splash: SplashState,
     pub navigation: NavigationState,
     pub command_panel: CommandPanel,
@@ -171,6 +170,7 @@ pub fn theme_fallback() -> &'static Theme {
     FALLBACK.get_or_init(Theme::default)
 }
 
+/// Main application state and entry point for the pigma TUI.
 pub struct App {
     pub config: Config,
     pub state: State,
@@ -181,8 +181,7 @@ pub struct App {
 
 impl App {
     pub fn new(config: Config) -> color_eyre::Result<Self> {
-        let bordered = config.bordered;
-        let border_rounded = config.border_rounded;
+        let border = config.border.clone();
 
         let events = EventHandler::new();
         let tx = events.sender();
@@ -255,8 +254,7 @@ impl App {
             state: State {
                 running: true,
                 events,
-                bordered,
-                border_rounded,
+                border,
                 splash: SplashState::default(),
                 navigation: NavigationState {
                     page: Page::Splash,
@@ -310,10 +308,14 @@ impl App {
     pub fn execute_command(&mut self, action: CommandAction) {
         match action {
             CommandAction::ToggleBordered => {
-                self.state.bordered = !self.state.bordered;
+                self.state.border.enabled = !self.state.border.enabled;
                 self.toast(format!(
                     "BORDER MODE: {}",
-                    if self.state.bordered { "ON" } else { "OFF" }
+                    if self.state.border.enabled {
+                        "ON"
+                    } else {
+                        "OFF"
+                    }
                 ));
             }
             CommandAction::SwitchTheme(name) => {

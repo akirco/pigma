@@ -1,9 +1,11 @@
+mod border;
 mod column;
 mod navigation;
 mod playerbar;
 pub mod theme;
 mod titles;
 
+pub use border::*;
 pub use column::*;
 pub use navigation::*;
 pub use playerbar::*;
@@ -19,8 +21,7 @@ use crate::logger::Logger;
 #[serde(default)]
 pub struct Config {
     pub default_theme: String,
-    pub bordered: bool,
-    pub border_rounded: bool,
+    pub border: BorderConfig,
     pub seek_interval_secs: u32,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub themes: Vec<Theme>,
@@ -89,8 +90,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             default_theme: Theme::default().name,
-            bordered: true,
-            border_rounded: false,
+            border: BorderConfig::default(),
             seek_interval_secs: 15,
             themes: Vec::new(),
             logger: Logger::default(),

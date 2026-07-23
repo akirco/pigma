@@ -1299,12 +1299,18 @@ impl NcmClient {
         }
         let image_url = format!("{}?param={}y{}", url, width, height);
         let bytes = self.http.get(&image_url).send().await?.bytes().await?;
-        if let Some(parent) = path.parent()
-            && let Err(e) = std::fs::create_dir_all(parent)
-        {
-            log::warn!("failed to create image dir {:?}: {}", parent, e);
-        }
-        std::fs::write(&path, &bytes)?;
+        let parent = path.parent().map(|p| p.to_path_buf());
+        tokio::task::spawn_blocking(move || {
+            if let Some(parent) = parent {
+                if let Err(e) = std::fs::create_dir_all(&parent) {
+                    log::warn!("failed to create image dir {:?}: {}", parent, e);
+                }
+            }
+            std::fs::write(&path, &bytes)
+        })
+        .await
+        .map_err(|e| NcmError::Session(format!("spawn_blocking failed: {e}")))?
+        .map_err(|e| NcmError::Session(format!("failed to write image: {e}")))?;
         Ok(())
     }
 
@@ -1317,12 +1323,18 @@ impl NcmClient {
             return Ok(());
         }
         let bytes = self.http.get(url).send().await?.bytes().await?;
-        if let Some(parent) = path.parent()
-            && let Err(e) = std::fs::create_dir_all(parent)
-        {
-            log::warn!("failed to create song dir {:?}: {}", parent, e);
-        }
-        std::fs::write(&path, &bytes)?;
+        let parent = path.parent().map(|p| p.to_path_buf());
+        tokio::task::spawn_blocking(move || {
+            if let Some(parent) = parent {
+                if let Err(e) = std::fs::create_dir_all(&parent) {
+                    log::warn!("failed to create song dir {:?}: {}", parent, e);
+                }
+            }
+            std::fs::write(&path, &bytes)
+        })
+        .await
+        .map_err(|e| NcmError::Session(format!("spawn_blocking failed: {e}")))?
+        .map_err(|e| NcmError::Session(format!("failed to write song: {e}")))?;
         Ok(())
     }
 

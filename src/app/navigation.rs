@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use super::{App, send_event};
 use crate::api::ApiEndpoint;
-use crate::event::{AppEvent, Event};
+use crate::event::NavigationEvent;
 use crate::state::{ContentState, PaginationInfo};
 
 impl App {
@@ -25,24 +25,6 @@ impl App {
             self.state.navigation.content_selected = 0;
             return Ok(());
         }
-        if api == ApiEndpoint::Download {
-            let cache = self.playback.cache().clone();
-            let songs = cache.list_cached_songs();
-            self.state
-                .navigation
-                .set_content(ContentState::Songs(songs));
-            self.state.navigation.content_selected = 0;
-            return Ok(());
-        }
-        let ttl = self.config.content_cache_ttl;
-        if ttl > 0
-            && api != ApiEndpoint::Search
-            && let Some(cached) = self.playback.cache().load_content_cache(&api_str, ttl)
-        {
-            self.state.navigation.set_content(cached);
-            self.state.navigation.content_selected = 0;
-            return Ok(());
-        }
 
         self.state.navigation.clear_breadcrumb();
         self.state.navigation.set_content(ContentState::Loading);
@@ -54,8 +36,25 @@ impl App {
         let api_client = self.api.clone();
         let sender = self.state.events.sender();
         let uid = self.state.navigation.user.as_ref().map(|u| u.uid);
+        let ttl = self.config.content_cache_ttl;
 
         tokio::spawn(async move {
+            if api == ApiEndpoint::Download {
+                let songs = cache.list_cached_songs_async().await;
+                send_event(
+                    &sender,
+                    NavigationEvent::ContentLoaded(ContentState::Songs(songs)).into(),
+                );
+                return;
+            }
+
+            if ttl > 0
+                && api != ApiEndpoint::Search
+                && let Some(cached) = cache.load_content_cache_async(&api_str, ttl).await
+            {
+                send_event(&sender, NavigationEvent::ContentLoaded(cached).into());
+                return;
+            }
             // Handle LikedSongs separately: also fetch playlist ID for heartbeat mode
             if api == ApiEndpoint::LikedSongs
                 && let Some(uid) = uid
@@ -64,17 +63,21 @@ impl App {
                 match songs_result {
                     Ok(songs) => {
                         let state = ContentState::Songs(songs);
-                        send_event(&sender, Event::App(AppEvent::ContentLoaded(state)));
+                        send_event(&sender, NavigationEvent::ContentLoaded(state).into());
                         if let Ok(lists) = api_client.user_song_list(uid, 0, 50).await
                             && let Some(liked) = lists.iter().find(|l| l.name == "我喜欢的音乐")
                         {
-                            send_event(&sender, Event::App(AppEvent::SetPlaylistId(liked.id)));
+                            send_event(
+                                &sender,
+                                crate::event::PlaybackEvent::SetPlaylistId(liked.id).into(),
+                            );
                         }
                     }
                     Err(e) => {
                         send_event(
                             &sender,
-                            Event::App(AppEvent::ContentLoaded(ContentState::Error(e.to_string()))),
+                            NavigationEvent::ContentLoaded(ContentState::Error(e.to_string()))
+                                .into(),
                         );
                     }
                 }
@@ -186,13 +189,14 @@ impl App {
             if let Some(pg) = pagination {
                 send_event(
                     &sender,
-                    Event::App(AppEvent::ContentLoadedPaged {
+                    NavigationEvent::ContentLoadedPaged {
                         content: state,
                         pagination: pg,
-                    }),
+                    }
+                    .into(),
                 );
             } else {
-                send_event(&sender, Event::App(AppEvent::ContentLoaded(state)));
+                send_event(&sender, NavigationEvent::ContentLoaded(state).into());
             }
         });
         Ok(())
@@ -218,8 +222,8 @@ impl App {
                 Ok(songs) => ContentState::Songs(songs),
                 Err(e) => ContentState::Error(e.to_string()),
             };
-            let _ = sender.send(Event::App(AppEvent::ContentLoaded(state)));
-            let _ = sender.send(Event::App(AppEvent::BreadcrumbSet(name)));
+            let _ = sender.send(NavigationEvent::ContentLoaded(state).into());
+            let _ = sender.send(NavigationEvent::BreadcrumbSet(name).into());
         });
     }
 

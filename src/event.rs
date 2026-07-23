@@ -18,34 +18,43 @@ pub enum Event {
 #[derive(Clone, Debug)]
 pub enum AppEvent {
     Quit,
-    SplashTick {
+    Splash(SplashEvent),
+    Auth(AuthEvent),
+    Playback(PlaybackEvent),
+    Navigation(NavigationEvent),
+    Command(CommandEvent),
+}
+
+#[derive(Clone, Debug)]
+pub enum SplashEvent {
+    Tick {
         progress: f64,
         log: Option<SplashLogEntry>,
     },
+    LocalMusicLoaded(Vec<SongInfo>),
+    SetOffline,
+}
+
+#[derive(Clone, Debug)]
+pub enum AuthEvent {
     Login,
-    LoginSuccess(LoginInfo),
-    LoginError(String),
+    Success(LoginInfo),
+    Error(String),
     CaptchaSent,
-    QRCreated {
-        url: String,
-        key: String,
-    },
+    QRCreated { url: String, key: String },
     QRStatus(String),
-    NavSelect(String),
-    ContentLoaded(ContentState),
-    PlaylistSelect {
-        id: u64,
-        name: Option<String>,
-    },
-    BreadcrumbSet(String),
+}
+
+#[derive(Clone, Debug)]
+pub enum PlaybackEvent {
     SongPlay(u64),
-    PlaybackStarted,
-    PlaybackProgress {
+    Started,
+    Progress {
         position: Duration,
         total: Option<Duration>,
     },
-    PlaybackFinished,
-    PlaybackError(String),
+    Finished,
+    Error(String),
     LyricsLoaded {
         song_id: u64,
         lyrics: Vec<LyricLine>,
@@ -54,22 +63,35 @@ pub enum AppEvent {
     HeartbeatSong(SongInfo),
     HeartbeatFallback,
     SetPlaylistId(u64),
-    SearchSong(String),
-    LocalMusicLoaded(Vec<SongInfo>),
-    SetOffline,
-    Navigate(Page),
-    CommandPanel(CommandPanelAction),
-    SearchActivated,
-    SearchDeactivated,
-    ToggleBordered,
-    ExecuteCommand(CommandAction),
-    ContentRestore,
-    CellAction(usize, usize),
-    LoadMore,
+}
+
+#[derive(Clone, Debug)]
+pub enum NavigationEvent {
+    NavSelect(String),
+    ContentLoaded(ContentState),
     ContentLoadedPaged {
         content: ContentState,
         pagination: PaginationInfo,
     },
+    PlaylistSelect {
+        id: u64,
+        name: Option<String>,
+    },
+    BreadcrumbSet(String),
+    SearchSong(String),
+    Navigate(Page),
+    SearchActivated,
+    SearchDeactivated,
+    ContentRestore,
+    CellAction(usize, usize),
+    LoadMore,
+}
+
+#[derive(Clone, Debug)]
+pub enum CommandEvent {
+    Panel(CommandPanelAction),
+    Execute(CommandAction),
+    ToggleBordered,
 }
 
 #[derive(Clone, Debug)]
@@ -81,6 +103,35 @@ pub enum CommandPanelAction {
     Select,
 }
 
+macro_rules! impl_from_sub_event {
+    ($variant:ident, $sub:ty) => {
+        impl From<$sub> for AppEvent {
+            fn from(e: $sub) -> Self {
+                AppEvent::$variant(e)
+            }
+        }
+
+        impl From<$sub> for Event {
+            fn from(e: $sub) -> Self {
+                Event::App(AppEvent::$variant(e))
+            }
+        }
+    };
+}
+
+impl_from_sub_event!(Splash, SplashEvent);
+impl_from_sub_event!(Auth, AuthEvent);
+impl_from_sub_event!(Playback, PlaybackEvent);
+impl_from_sub_event!(Navigation, NavigationEvent);
+impl_from_sub_event!(Command, CommandEvent);
+
+impl From<AppEvent> for Event {
+    fn from(e: AppEvent) -> Self {
+        Event::App(e)
+    }
+}
+
+/// Bridges crossterm terminal events into an internal mpsc event channel.
 pub struct EventHandler {
     sender: mpsc::UnboundedSender<Event>,
     receiver: mpsc::UnboundedReceiver<Event>,
@@ -107,8 +158,8 @@ impl EventHandler {
             .ok_or_eyre("Failed to receive event")
     }
 
-    pub fn send(&mut self, app_event: AppEvent) {
-        if let Err(e) = self.sender.send(Event::App(app_event)) {
+    pub fn send<E: Into<Event>>(&mut self, event: E) {
+        if let Err(e) = self.sender.send(event.into()) {
             log::error!("Failed to send event: {}", e);
         }
     }

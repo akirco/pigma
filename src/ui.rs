@@ -2,6 +2,7 @@ mod block;
 mod breadcrumb;
 mod command_panel;
 mod content;
+mod gradient_line_gauge;
 mod login;
 mod lyrics;
 mod navigation;
@@ -27,10 +28,15 @@ use std::time::Duration;
 use self::block::CornerBlock;
 
 use crate::{
-    config::Theme,
+    config::{BorderConfig, Theme},
     layout,
     state::{App, Page},
 };
+
+pub struct BlockStyle<'a> {
+    pub colors: &'a Theme,
+    pub border: &'a BorderConfig,
+}
 
 pub fn calc_scroll_offset(selected: usize, visible_height: usize, total: usize) -> usize {
     if total <= visible_height || visible_height == 0 {
@@ -96,8 +102,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
 
     let area = f.area();
-    let bordered = app.state.bordered;
-    let border_rounded = app.state.border_rounded;
 
     let colors = app
         .theme_registry
@@ -108,14 +112,19 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             crate::state::theme_fallback()
         });
 
+    let bs = BlockStyle {
+        colors,
+        border: &app.state.border,
+    };
+
     match app.state.navigation.page {
         Page::Splash => {
             let lay = layout::splash(area);
-            splash::draw(f, &app.state.splash, colors, &lay);
+            splash::draw(f, &app.state.splash, &bs, &lay);
         }
         Page::Login => {
             let lay = layout::login(area);
-            login::draw(f, &app.state.navigation.login, colors, bordered, &lay);
+            login::draw(f, &app.state.navigation.login, &bs, &lay);
         }
         page => {
             let lay = layout::build_layout(area, page);
@@ -124,18 +133,14 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 f,
                 app.state.navigation.user.as_ref(),
                 &app.state.navigation.search,
-                colors,
-                bordered,
-                border_rounded,
+                &bs,
                 lay.topbar,
             );
             playerbar::draw(
                 f,
                 &app.playback.state,
                 app.state.tick,
-                colors,
-                bordered,
-                border_rounded,
+                &bs,
                 &app.config.playerbar,
                 lay.playerbar,
             );
@@ -145,9 +150,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     navigation::draw(
                         f,
                         &mut app.state.navigation.nav,
-                        colors,
-                        bordered,
-                        border_rounded,
+                        &bs,
                         &app.config.titles.sidebar,
                         lay.sidebar,
                     );
@@ -155,9 +158,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     breadcrumb::render_breadcrumb(
                         f,
                         &app.state.navigation.nav,
-                        colors,
-                        bordered,
-                        border_rounded,
+                        &bs,
                         lay.breadcrumb,
                     );
 
@@ -178,7 +179,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                             .unwrap_or("{name} ({count})");
                         render_title(template, name, count)
                     };
-                    let block = create_block(title, colors, bordered, border_rounded, false);
+                    let block = create_block(title, &bs, false);
                     let inner = block.inner(lay.content);
                     f.render_widget(block, lay.content);
 
@@ -190,7 +191,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         &app.config.columns,
                         api,
                         &app.state.navigation.content_rows_cache,
-                        colors,
+                        &bs,
                         &mut app.state.navigation.table_state,
                         app.state.navigation.table_mode,
                         inner,
@@ -200,9 +201,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     lyrics::draw(
                         f,
                         &app.playback.state,
-                        colors,
-                        bordered,
-                        border_rounded,
+                        &bs,
                         &app.config.lyric_gradient,
                         &app.config.titles.lyrics,
                         lay.content,
@@ -213,9 +212,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         f,
                         &app.playback,
                         app.state.navigation.playlist_selected,
-                        colors,
-                        bordered,
-                        border_rounded,
+                        &bs,
                         &app.config.titles.playlist,
                         lay.content,
                     );
@@ -271,18 +268,20 @@ fn draw_toast(f: &mut Frame, app: &App, colors: &Theme) {
 
 pub(crate) fn create_block<'a>(
     title: impl Into<ratatui::text::Line<'a>>,
-    colors: &'a Theme,
-    bordered: bool,
-    border_rounded: bool,
+    style: &'a BlockStyle<'a>,
     focused: bool,
 ) -> CornerBlock<'a> {
-    let border_color = if focused { colors.accent } else { colors.muted };
-    let border_type = if border_rounded {
+    let border_color = if focused {
+        style.colors.accent
+    } else {
+        style.colors.muted
+    };
+    let border_type = if style.border.rounded {
         BorderType::Rounded
     } else {
         BorderType::Plain
     };
-    let block = if bordered {
+    let block = if style.border.enabled {
         Block::default()
             .borders(Borders::ALL)
             .border_type(border_type)
@@ -293,19 +292,20 @@ pub(crate) fn create_block<'a>(
         Block::default()
             .borders(Borders::NONE)
             .border_style(Style::default().fg(if focused {
-                colors.accent
+                style.colors.accent
             } else {
-                colors.surface
+                style.colors.surface
             }))
-            .style(Style::default().bg(colors.bg))
+            .style(Style::default().bg(style.colors.bg))
             .title(title)
             .title_style(Style::default().fg(border_color))
             .padding(Padding::horizontal(1))
     };
-    let corner = colors.accent;
+    let corner = style.colors.accent;
     CornerBlock::new(block)
         .corner_color(corner)
         .corner_sizes(2, 1)
+        .follow_corner_color(style.border.follow_corner_color)
 }
 
 #[cfg(test)]

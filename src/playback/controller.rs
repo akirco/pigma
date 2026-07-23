@@ -31,12 +31,19 @@ impl PlaybackHandle {
         tokio::spawn(async move {
             let mut control_tx: Option<mpsc::Sender<ControlCmd>> = None;
             let mut shared_reader: Option<SharedReader> = None;
+            let mut old_done_rx: Option<tokio::sync::oneshot::Receiver<()>> = None;
 
             while let Some(cmd) = cmd_rx.recv().await {
                 match cmd {
                     PlayerCmd::Play { input, seek_time } => {
-                        if let Some(ref ctrl) = control_tx {
+                        if let Some(ctrl) = control_tx.take() {
                             let _ = ctrl.send(ControlCmd::Stop);
+                        }
+                        // Await old player completion to ensure its decoder,
+                        // sink, and underlying StreamDownload (HTTP connection,
+                        // buffers) are fully dropped before starting a new one.
+                        if let Some(rx) = old_done_rx.take() {
+                            let _ = rx.await;
                         }
 
                         shared_reader = Some(input.clone());
@@ -45,9 +52,8 @@ impl PlaybackHandle {
                         control_tx = Some(ctrl_tx);
 
                         let tx = event_tx.clone();
-                        tokio::spawn(async move {
-                            player::run(input, seek_time, tx, ctrl_rx).await;
-                        });
+                        let done_rx = player::run(input, seek_time, tx, ctrl_rx).await;
+                        old_done_rx = Some(done_rx);
                     }
                     PlayerCmd::Pause => {
                         if let Some(ref ctrl) = control_tx {
@@ -60,10 +66,13 @@ impl PlaybackHandle {
                         }
                     }
                     PlayerCmd::SeekTo(seek_time) => {
-                        if let Some(ref ctrl) = control_tx {
+                        if let Some(ctrl) = control_tx.take() {
                             let _ = ctrl.send(ControlCmd::Stop);
                         }
-                        control_tx = None;
+                        // Await old player completion before reusing the reader.
+                        if let Some(rx) = old_done_rx.take() {
+                            let _ = rx.await;
+                        }
 
                         if let Some(ref reader) = shared_reader {
                             if let Ok(mut locked) = reader.0.lock() {
@@ -74,16 +83,20 @@ impl PlaybackHandle {
                             control_tx = Some(ctrl_tx);
 
                             let tx = event_tx.clone();
-                            tokio::spawn(async move {
-                                player::run(input, Some(seek_time), tx, ctrl_rx).await;
-                            });
+                            let done_rx = player::run(input, Some(seek_time), tx, ctrl_rx).await;
+                            old_done_rx = Some(done_rx);
                         }
                     }
                     PlayerCmd::Stop => {
-                        if let Some(ref ctrl) = control_tx {
+                        if let Some(ctrl) = control_tx.take() {
                             let _ = ctrl.send(ControlCmd::Stop);
                         }
-                        control_tx = None;
+                        // Await old player completion so resources are freed
+                        // immediately rather than lingering in the background.
+                        if let Some(rx) = old_done_rx.take() {
+                            let _ = rx.await;
+                        }
+                        shared_reader = None;
                     }
                     PlayerCmd::SetVolume(v) => {
                         if let Some(ref ctrl) = control_tx {

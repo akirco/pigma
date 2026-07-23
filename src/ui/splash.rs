@@ -6,6 +6,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
+use super::BlockStyle;
 use crate::config::Theme;
 use crate::layout::SplashLayout;
 use crate::state::{LogLevel, SplashState};
@@ -16,7 +17,8 @@ const LOGO: &[&str] = &[
     "█     ▄█▄ ▀▄▄▄▀ █   █ █   █",
 ];
 
-pub fn draw(f: &mut Frame, splash: &SplashState, colors: &Theme, layout: &SplashLayout) {
+pub fn draw(f: &mut Frame, splash: &SplashState, bs: &BlockStyle<'_>, layout: &SplashLayout) {
+    let colors = bs.colors;
     render_logo(f, colors, layout.logo);
     render_progress(f, splash, colors, layout.progress);
     render_logs(f, splash, colors, layout.logs);

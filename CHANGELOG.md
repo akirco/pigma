@@ -5,6 +5,28 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 本项目遵循 [语义化版本控制](https://semver.org/lang/zh-CN/)。
 
+## [0.1.2] - 2026-07-23
+
+### 新增
+- 渐变进度条（GradientLineGauge），支持 colorgrad 预设主题
+- 边框配置 `BorderConfig`，支持 `rounded` 和 `follow_corner_color` 选项
+- 播放器进度条新增渐变色配置：`gradient_enabled` 和 `gradient_preset`
+- 缓存索引存储歌曲时长，避免播放列表加载时解码音频文件
+- 异步缓存方法：`load_lyrics_cache_async`、`list_cached_songs_async`
+- YouTube 搜索辅助模块（`utils/youtube.rs`），含繁简中文归一化和改进的匹配评分
+
+### 变更
+- 重构事件系统：`AppEvent` 拆分为 `SplashEvent`、`AuthEvent`、`PlaybackEvent`、`NavigationEvent`、`CommandEvent` 五个领域子事件
+- 统一播放策略为单一 `Strategy` 枚举，移除 `Box<dyn PlayStrategy>` 动态分派
+- 播放器 `player::run` 返回 oneshot 完成信号，确保上一曲的 decoder/sink/StreamDownload 完全释放后再启动下一曲
+- YouTube 搜索工具函数从 `AudioSource` 提取至独立模块
+- 移除 examples 目录下的示例文件和 dev-dependencies
+- 添加 `rustfmt.toml` 统一代码格式
+
+### 修复
+- 修复切换歌曲时旧播放器资源（HTTP 连接、缓冲区）未及时释放导致的资源泄漏
+- 修复缓存索引反序列化兼容旧格式（纯字符串 → 新对象格式平滑迁移）
+
 ## [0.1.1] - 2026-07-21
 
 ### 新增
