@@ -4,6 +4,7 @@
 [![CI](https://github.com/akirco/pigma/actions/workflows/ci.yml/badge.svg)](https://github.com/akirco/pigma/actions/workflows/ci.yml)
 [![Release](https://github.com/akirco/pigma/actions/workflows/release.yml/badge.svg)](https://github.com/akirco/pigma/actions/workflows/release.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+![AUR Version](https://img.shields.io/aur/version/pigma-bin)
 
 <img width="100" src="./imgs/logo.jpg" alt="pigma" />
 
@@ -82,9 +83,18 @@ bin install https://github.com/akirco/pigma
 
 `windows(scoop)`
 
-```
+```sh
 scoop bucket add aki 'https://github.com/akirco/aki-apps.git'
 scoop install aki/pigma
+```
+
+`linux(aur)`
+```sh
+yay -S pigma
+
+#or
+
+paru -S pigma
 ```
 
 ### From source (cargo)
