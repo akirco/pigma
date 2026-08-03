@@ -26,6 +26,11 @@ impl Default for NavConfig {
                             title_template: None,
                         },
                         NavItemConfig {
+                            name: " 热门歌手".into(),
+                            api: Some("top_singers".into()),
+                            title_template: None,
+                        },
+                        NavItemConfig {
                             name: " 排行榜".into(),
                             api: Some("toplist".into()),
                             title_template: None,
@@ -45,21 +50,11 @@ impl Default for NavConfig {
                             api: Some("search".into()),
                             title_template: None,
                         },
-                        NavItemConfig {
-                            name: " 热门歌手".into(),
-                            api: Some("top_singers".into()),
-                            title_template: None,
-                        },
                     ],
                 },
                 NavSectionConfig {
                     title: "<accent>▎</accent> <b>MY MUSIC</b>".into(),
                     items: vec![
-                        NavItemConfig {
-                            name: " 我的音乐云盘".into(),
-                            api: Some("user_cloud_disk".into()),
-                            title_template: None,
-                        },
                         NavItemConfig {
                             name: " 我喜欢的音乐".into(),
                             api: Some("__liked__".into()),
@@ -78,6 +73,11 @@ impl Default for NavConfig {
                         NavItemConfig {
                             name: " 我收藏的专辑".into(),
                             api: Some("album_sublist".into()),
+                            title_template: None,
+                        },
+                        NavItemConfig {
+                            name: " 我的音乐云盘".into(),
+                            api: Some("user_cloud_disk".into()),
                             title_template: None,
                         },
                         NavItemConfig {
@@ -114,7 +114,7 @@ pub struct NavItemConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub api: Option<String>,
     /// Optional title template. Supports `{name}` (item name), `{count}` (item count).
-    /// If None, defaults to `"{name} ({count})"`.
+    /// If None, defaults to `"a"`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title_template: Option<String>,
 }

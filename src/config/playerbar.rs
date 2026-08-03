@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::utils::GradientPreset;
+use crate::utils::{GradientPreset, deserialize_optional};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -43,10 +43,9 @@ pub struct PlayerbarConfig {
     pub unfilled_color: String,
     #[serde(default = "default_pb_unfilled_color_cached")]
     pub unfilled_color_cached: String,
-    #[serde(default)]
-    pub gradient_enabled: bool,
-    #[serde(default)]
-    pub gradient_preset: GradientPreset,
+    /// 进度条渐变预设。空串或未知名称表示不启用渐变。
+    #[serde(default, deserialize_with = "deserialize_optional")]
+    pub gradient_preset: Option<GradientPreset>,
     #[serde(default)]
     pub layout: LayoutType,
     #[serde(default)]
@@ -77,8 +76,7 @@ impl Default for PlayerbarConfig {
             filled_color: default_pb_filled_color(),
             unfilled_color: default_pb_unfilled_color(),
             unfilled_color_cached: default_pb_unfilled_color_cached(),
-            gradient_enabled: false,
-            gradient_preset: GradientPreset::default(),
+            gradient_preset: None,
             layout: LayoutType::default(),
             visible: PlayerbarVisible::default(),
         }

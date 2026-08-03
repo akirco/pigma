@@ -63,7 +63,7 @@ impl App {
             self.state.navigation.pagination = Some(pagination.clone());
             *self.state.navigation.content_rows_cache.borrow_mut() = None;
 
-            let ttl = self.config.content_cache_ttl;
+            let ttl = self.config.cache.content_cache_ttl;
             if ttl > 0 && !pagination.api.is_empty() {
                 let cache = self.service.cache().clone();
                 let api_str = pagination.api.clone();

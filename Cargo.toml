@@ -1,6 +1,6 @@
 [package]
 name = "pigma"
-version = "0.1.8"
+version = "0.1.9"
 edition = "2024"
 description = "A netease cloud music client"
 repository = "https://github.com/akirco/pigma.git"
@@ -21,6 +21,7 @@ futures = {
 }
 image = { version = "0.25.10", default-features = false, features = ["jpeg"] }
 log = { version = "0.4.33", features = ["serde", "std"] }
+musicx = { path = "crates/musicx" }
 ncm-api = { path = "crates/ncm-api" }
 qrcode = "0.14.1"
 rand = "0.10.2"
@@ -58,16 +59,15 @@ rustls = {
     "std",
   ]
 }
-
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 stream-download = {
-  version = "0.24.2",
+  version = "0.24.3",
   default-features = false,
   features = ["async-read", "reqwest"]
 }
 time = {
-  version = "0.3.54",
+  version = "0.3.55",
   features = ["formatting", "local-offset", "macros"]
 }
 tokio = {
@@ -82,7 +82,6 @@ tokio = {
 toml_edit = { version = "0.25.13", features = ["serde"] }
 unicode-width = "0.2.2"
 url = "2.5.8"
-y7dl = { path = "crates/y7dl" }
 # dhat = "0.3.3"
 
 [target.'cfg(target_os = "linux")'.dependencies]

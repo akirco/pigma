@@ -1,6 +1,6 @@
 use crate::event::{CommandEvent, NavigationEvent, PlaybackEvent};
 use crate::state::{App, ContentState, Page, TableMode};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
+use crossterm::event::{KeyCode, KeyEvent, MouseEventKind};
 
 use super::content::{
     cell_enter_action, content_select_next, content_select_prev, playlist_play_selected,
@@ -31,12 +31,6 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
             } else {
                 content_select_next(app);
             }
-        }
-        KeyCode::Left if key_event.modifiers == KeyModifiers::SHIFT => {
-            app.playback.prev();
-        }
-        KeyCode::Right if key_event.modifiers == KeyModifiers::SHIFT => {
-            app.playback.next();
         }
         KeyCode::Enter => {
             if app.state.navigation.page == Page::Playlist {
@@ -78,11 +72,13 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
             app.state.events.send(NavigationEvent::Navigate(next));
         }
         KeyCode::Char('p' | 'P') => {
-            if app.state.navigation.page != Page::Playlist {
-                toggle_table_mode(app);
-            } else {
-                app.playback.prev();
-            }
+            app.playback.prev();
+        }
+        KeyCode::Char('n' | 'N') => {
+            app.playback.next();
+        }
+        KeyCode::Char('c' | 'C') => {
+            toggle_table_mode(app);
         }
         KeyCode::Char('f' | 'F') => {
             let next = match app.state.navigation.page {

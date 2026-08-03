@@ -243,18 +243,18 @@ impl App {
         };
 
         let nav_config = config.navigation.clone();
-        let quality = ncm_api::SongQuality::from_level(&config.quality)
+        let quality = ncm_api::SongQuality::from_level(&config.cache.quality)
             .unwrap_or(ncm_api::SongQuality::Higher);
 
         let cache_dir = {
-            let path = std::path::Path::new(&config.cache_dir);
+            let path = std::path::Path::new(&config.cache.cache_dir);
             if path.is_absolute() {
-                std::path::PathBuf::from(&config.cache_dir)
+                std::path::PathBuf::from(&config.cache.cache_dir)
             } else {
                 dirs::cache_dir()
                     .unwrap_or_else(|| std::path::PathBuf::from("."))
                     .join("pigma")
-                    .join(&config.cache_dir)
+                    .join(&config.cache.cache_dir)
             }
         };
         let base_dir = dirs::cache_dir()
@@ -262,8 +262,32 @@ impl App {
             .join("pigma");
         let proxy = yt_proxy;
 
-        let cache =
-            crate::cache::CacheManager::new(cache_dir, base_dir, config.cache_template.clone());
+        let finder = {
+            let mut sources: Vec<musicx::MusicSource> = Vec::new();
+            for name in &config.source_fallback.providers {
+                let source = match name.as_str() {
+                    "kuwo" => musicx::MusicSource::Kuwo,
+                    "kugou" => musicx::MusicSource::Kugou,
+                    "bilivideo" => musicx::MusicSource::BiliVideo,
+                    "youtube" => musicx::MusicSource::Youtube,
+                    _ => continue,
+                };
+                if !sources.contains(&source) {
+                    sources.push(source);
+                }
+            }
+            let search_config = musicx::SearchConfig::new()
+                .with_providers(sources)
+                .with_timeout(config.source_fallback.timeout_ms)
+                .with_proxy(proxy.clone());
+            musicx::MusicFinder::new(search_config)
+        };
+
+        let cache = crate::cache::CacheManager::new(
+            cache_dir,
+            base_dir,
+            config.cache.cache_template.clone(),
+        );
 
         let service = ApiService::new(api.clone(), cache.clone());
 
@@ -280,10 +304,19 @@ impl App {
             None => {}
         }
 
+        let musicx_enabled = config.source_fallback.enabled;
         Ok(Self {
             config,
             service: service.clone(),
-            playback: PlaybackEngine::new(tx, service, cache, quality, proxy),
+            playback: PlaybackEngine::new(
+                tx,
+                service,
+                cache,
+                quality,
+                proxy,
+                finder,
+                musicx_enabled,
+            ),
             state: State {
                 running: true,
                 events,

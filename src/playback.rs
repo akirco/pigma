@@ -61,6 +61,8 @@ impl PlaybackEngine {
         cache: crate::cache::CacheManager,
         quality: SongQuality,
         proxy: String,
+        finder: musicx::MusicFinder,
+        musicx_enabled: bool,
     ) -> Self {
         let storage = PlaylistStorage::new();
         let mut this = Self {
@@ -68,7 +70,14 @@ impl PlaybackEngine {
             queue: PlaylistQueue::new(),
             strategy: mode::Strategy::Sequential,
             storage,
-            source: AudioSource::new(service.clone(), cache, quality, proxy),
+            source: AudioSource::new(
+                service.clone(),
+                cache,
+                quality,
+                proxy,
+                finder,
+                musicx_enabled,
+            ),
             controller: PlaybackHandle::new(event_tx.clone()),
             event_tx: event_tx.clone(),
             service,

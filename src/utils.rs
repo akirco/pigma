@@ -2,10 +2,8 @@ pub mod format;
 pub mod gradient;
 pub mod terminal;
 pub mod time;
-pub mod youtube;
 
-pub use gradient::{GradientPreset, gradient_color};
+pub use gradient::{GradientPreset, deserialize_optional, gradient_color};
 pub use time::{
     clock_time, format_duration, format_duration_into, local_timestamp, parse_duration_secs,
 };
-pub use youtube::{clean_search_query, parse_duration_str, parse_view_count, score_match};

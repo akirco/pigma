@@ -1,23 +1,23 @@
 use std::sync::{Arc, Mutex};
 
+use musicx::{MusicFinder, Quality, SearchQuery};
 use ncm_api::{NcmError, SongInfo, SongQuality};
 use stream_download::{Settings, StreamDownload};
-use y7dl::Client;
 
 use super::player::{AudioInput, SharedReader};
 use crate::cache::CacheManager;
 #[cfg(target_os = "linux")]
 use crate::playback::mem_rss_kb;
 use crate::service::ApiService;
-use crate::utils::youtube::{clean_search_query, parse_duration_str, score_match};
 
-/// Resolves audio inputs for songs via local files, NCM streaming, or YouTube fallback.
+/// Resolves audio inputs for songs via local files, NCM streaming, or musicx fallback.
 #[derive(Clone)]
 pub struct AudioSource {
     service: ApiService,
     pub cache: CacheManager,
     quality: SongQuality,
-    y7dl: Arc<Client>,
+    finder: Arc<MusicFinder>,
+    musicx_enabled: bool,
 }
 
 impl AudioSource {
@@ -25,18 +25,16 @@ impl AudioSource {
         service: ApiService,
         cache: CacheManager,
         quality: SongQuality,
-        proxy: String,
+        _proxy: String,
+        finder: MusicFinder,
+        musicx_enabled: bool,
     ) -> Self {
-        let y7dl_client = if proxy.is_empty() {
-            Client::new()
-        } else {
-            Client::with_proxy(&proxy)
-        };
         Self {
             service,
             cache,
             quality,
-            y7dl: Arc::new(y7dl_client),
+            finder: Arc::new(finder),
+            musicx_enabled,
         }
     }
 
@@ -59,78 +57,42 @@ impl AudioSource {
         }
     }
 
-    /// Search YouTube for a song and stream the best-matching result.
-    async fn youtube_fallback(&self, song: &SongInfo) -> Result<AudioInput, String> {
-        let query = format!("{} {}", clean_search_query(&song.name), song.singer);
-        let results = self
-            .y7dl
-            .search(&query, 8, None)
-            .await
-            .map_err(|e| format!("YouTube搜索失败: {e}"))?;
-
-        #[cfg(target_os = "linux")]
-        log::info!(
-            "[HEAP] after y7dl search (id={}): {} kB",
-            song.id,
-            mem_rss_kb()
-        );
-
-        if results.is_empty() {
-            return Err("YouTube未找到相关结果".into());
+    fn to_musicx_quality(quality: SongQuality) -> Quality {
+        match quality {
+            SongQuality::Lossless
+            | SongQuality::HiRes
+            | SongQuality::Surround
+            | SongQuality::Master
+            | SongQuality::AudioVivid => Quality::Lossless,
+            SongQuality::Standard => Quality::Standard,
+            _ => Quality::High,
         }
+    }
 
-        let best = results
-            .iter()
-            .map(|r| {
-                let yt_dur = parse_duration_str(&r.duration);
-                let score = score_match(&r.title, &r.author, &r.views, yt_dur, song);
-                (r, score)
-            })
-            .max_by_key(|(_, score)| *score)
-            .filter(|(_, score)| *score >= 15);
+    /// Search all configured musicx sources for the best playable match and
+    /// stream it.
+    async fn musicx_fallback(&self, song: &SongInfo) -> Result<AudioInput, String> {
+        let keyword = format!("{} {}", song.name, song.singer);
+        let query = SearchQuery::new(keyword).with_duration(song.duration);
 
-        let (result, _score) = match best {
-            Some((r, s)) => (r, s),
-            None => return Err("YouTube未找到匹配的歌曲".into()),
-        };
-
-        let video = self
-            .y7dl
-            .get_video(&result.video_id)
+        let (found, play) = self
+            .finder
+            .search_and_get_url(&query, Some(Self::to_musicx_quality(self.quality)))
             .await
-            .map_err(|e| format!("获取YouTube视频信息失败: {e}"))?;
-
-        let format = video
-            .audio_formats()
-            .into_iter()
-            .filter(|f| {
-                // Only keep formats rodio/symphonia can decode
-                f.mime_type.starts_with("audio/mpeg")
-                    || f.mime_type.starts_with("audio/mp4")
-                    || f.mime_type.starts_with("audio/ogg")
-                    || f.mime_type.starts_with("audio/flac")
-                    || f.mime_type.starts_with("audio/wav")
-            })
-            .max_by_key(|f| f.bitrate.unwrap_or(0))
-            .ok_or_else(|| "YouTube视频无可用水源格式".to_string())?;
-
-        let stream_url_str = self
-            .y7dl
-            .stream_url(&video, format)
-            .await
-            .map_err(|e| format!("获取YouTube流地址失败: {e}"))?;
+            .map_err(|e| format!("musicx 兜底失败: {e}"))?;
 
         #[cfg(target_os = "linux")]
         log::info!(
-            "[HEAP] after stream_url (id={}): {} kB",
+            "[HEAP] after musicx search (id={}): {} kB — {} ({})",
             song.id,
-            mem_rss_kb()
+            mem_rss_kb(),
+            found.name,
+            found.source
         );
 
-        let url =
-            url::Url::parse(&stream_url_str).map_err(|e| format!("YouTube URL解析失败: {e}"))?;
+        let url = url::Url::parse(&play.url).map_err(|e| format!("musicx URL解析失败: {e}"))?;
 
-        let ext = Self::ext_from_url(&stream_url_str);
+        let ext = Self::ext_from_url(&play.url);
         let provider = self
             .cache
             .create_provider(song, ext)
@@ -138,7 +100,7 @@ impl AudioSource {
 
         let reader = StreamDownload::new_http(url, provider, Settings::default())
             .await
-            .map_err(|e| format!("YouTube流下载失败: {e}"))?;
+            .map_err(|e| format!("musicx 流下载失败: {e}"))?;
 
         #[cfg(target_os = "linux")]
         log::info!(
@@ -204,7 +166,7 @@ impl AudioSource {
                     .map_err(|e| format!("无法打开本地文件: {e}"))?;
                 return Ok(SharedReader(Arc::new(Mutex::new(Box::new(file)))));
             }
-            // album is not a valid file path, fall through to cache/NCM/YouTube
+            // album is not a valid file path, fall through to cache/NCM/musicx
         }
 
         if let Some(ext) = self.cache.find_cached_extension(song.id) {
@@ -219,7 +181,8 @@ impl AudioSource {
         }
 
         // Try NCM source — transient network failures are retried once,
-        // then fall back to YouTube. All other failures fall back immediately.
+        // then fall back to musicx (kugou/kuwo/bilivideo/youtube). All other
+        // failures fall back immediately.
         for attempt in 0..2 {
             match self.resolve_ncm(song).await {
                 Ok(input) => return Ok(input),
@@ -240,13 +203,16 @@ impl AudioSource {
                         mem_rss_kb(),
                         e
                     );
-                    log::info!(
-                        "NCM解析失败，尝试YouTube fallback: {} - {} ({})",
-                        song.name,
-                        song.singer,
-                        e
-                    );
-                    return self.youtube_fallback(song).await;
+                    if self.musicx_enabled {
+                        log::info!(
+                            "NCM解析失败，尝试musicx fallback: {} - {} ({})",
+                            song.name,
+                            song.singer,
+                            e
+                        );
+                        return self.musicx_fallback(song).await;
+                    }
+                    return Err(e);
                 }
             }
         }
@@ -258,10 +224,14 @@ impl AudioSource {
             mem_rss_kb()
         );
         log::warn!(
-            "NCM网络错误，2次重试失败，fallback到YouTube: {} - {}",
+            "NCM网络错误，2次重试失败，fallback到musicx: {} - {}",
             song.name,
             song.singer
         );
-        self.youtube_fallback(song).await
+        if self.musicx_enabled {
+            self.musicx_fallback(song).await
+        } else {
+            Err("NCM网络错误，2次重试失败".into())
+        }
     }
 }

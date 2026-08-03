@@ -38,8 +38,15 @@ pub fn draw_song_info(f: &mut Frame, player: &PlaybackState, colors: &Theme, are
                         .add_modifier(Modifier::BOLD),
                 ),
             ]),
-            Line::from(format!("{} ◈  {}", song.singer, song.album))
-                .style(Style::default().fg(colors.muted)),
+            Line::from(vec![
+                Span::styled("\u{25C8} ", Style::default().fg(colors.muted)),
+                Span::styled(
+                    &song.singer,
+                    Style::default()
+                        .fg(colors.muted)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]),
         ];
         f.render_widget(Paragraph::new(info_lines), area);
     } else {
@@ -137,8 +144,8 @@ pub fn draw_gauge_bar(
 
     let ratio = player.progress.clamp(0.0, 1.0);
 
-    if pb.gradient_enabled {
-        let gauge = GradientLineGauge::new(pb.gradient_preset)
+    if let Some(preset) = pb.gradient_preset {
+        let gauge = GradientLineGauge::new(preset)
             .ratio(ratio)
             .label(Line::from(""))
             .filled_symbol(&pb.filled_symbol)
@@ -187,8 +194,8 @@ pub fn draw_gauge_with_label(
         pb.unfilled_color.as_str()
     };
 
-    if pb.gradient_enabled {
-        let gauge = GradientLineGauge::new(pb.gradient_preset)
+    if let Some(preset) = pb.gradient_preset {
+        let gauge = GradientLineGauge::new(preset)
             .ratio(ratio)
             .label(Line::from(Span::styled(
                 time_buf,
@@ -212,8 +219,16 @@ pub fn draw_gauge_with_label(
 
 pub fn draw_song_detail(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     if let Some(song) = &player.current_song {
-        let detail = Line::from(format!("{} ◈ {}", song.singer, song.album))
-            .style(Style::default().fg(colors.muted));
+        let detail = Line::from(vec![
+            Span::styled("\u{25C8} ", Style::default().fg(colors.muted)),
+            Span::styled(
+                &song.singer,
+                Style::default()
+                    .fg(colors.muted)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])
+        .style(Style::default().fg(colors.muted));
         f.render_widget(Paragraph::new(detail), area);
     }
 }

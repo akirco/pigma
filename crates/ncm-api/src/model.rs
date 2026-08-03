@@ -591,10 +591,7 @@ pub(crate) fn parse_song_url(value: &Value) -> Result<Vec<SongUrl>, String> {
                 .and_then(|l| l.as_str())
                 .and_then(SongQuality::from_level)
                 .unwrap_or_else(|| SongQuality::from_rate(rate));
-            let free_trial = v
-                .get("freeTrialInfo")
-                .and_then(|t| t.as_object())
-                .is_some();
+            let free_trial = v.get("freeTrialInfo").and_then(|t| t.as_object()).is_some();
             Some(SongUrl {
                 id: v["id"].as_u64().unwrap_or(0),
                 url: url.to_string(),
@@ -762,7 +759,10 @@ pub(crate) fn parse_cloud_disk_songs(value: &Value) -> Result<CloudDiskResult, S
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let has_more = value.get("hasMore").and_then(|v| v.as_bool()).unwrap_or(false);
+    let has_more = value
+        .get("hasMore")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let count = value.get("count").and_then(|v| v.as_u64()).unwrap_or(0);
     Ok(CloudDiskResult {
         songs,

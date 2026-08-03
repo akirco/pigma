@@ -234,12 +234,20 @@ impl NcmClient {
     }
 
     /// 与 `request_eapi` 相同但接受 `serde_json::Value` 参数（保留数字/布尔类型）。
-    async fn request_eapi_value(&self, path: &str, params: serde_json::Value) -> Result<String, NcmError> {
+    async fn request_eapi_value(
+        &self,
+        path: &str,
+        params: serde_json::Value,
+    ) -> Result<String, NcmError> {
         let cookies = self.prepare_request(true)?;
 
         let mut data = match params {
             serde_json::Value::Object(m) => serde_json::Value::Object(m),
-            _ => return Err(NcmError::Session("request_eapi_value expects an object".into())),
+            _ => {
+                return Err(NcmError::Session(
+                    "request_eapi_value expects an object".into(),
+                ));
+            }
         };
 
         // Add csrf_token
@@ -285,7 +293,10 @@ impl NcmClient {
         let resp = self
             .http
             .post(&url)
-            .header("User-Agent", "NeteaseMusic 9.0.90/5038 (iPhone; iOS 16.2; zh_CN)")
+            .header(
+                "User-Agent",
+                "NeteaseMusic 9.0.90/5038 (iPhone; iOS 16.2; zh_CN)",
+            )
             .header("Content-Type", "application/x-www-form-urlencoded")
             .header("Cookie", &cookies.cookie_header)
             .body(body)
@@ -515,7 +526,8 @@ impl NcmClient {
         let result = self.request_weapi("/weapi/v3/song/detail", &params).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_info_array(&value, &["songs"], SongContext::Usl).map_err(|e| NcmError::parse(e, &value))
+        parse_song_info_array(&value, &["songs"], SongContext::Usl)
+            .map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取歌曲播放 URL（基于码率）
@@ -603,7 +615,8 @@ impl NcmClient {
             .await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        let mut ids: Vec<u64> = parse_song_id_list(&value).map_err(|e| NcmError::parse(e, &value))?;
+        let mut ids: Vec<u64> =
+            parse_song_id_list(&value).map_err(|e| NcmError::parse(e, &value))?;
         ids.reverse();
         if ids.is_empty() {
             return Ok(Vec::new());
@@ -654,8 +667,13 @@ impl NcmClient {
             ("includeRedHeart", "true"),
             ("includeTop", "true"),
         ];
-        let result = self.request_weapi("/api/user/playlist/create", &params).await?;
-        log::debug!("user_created_playlist response: {}", &result[..result.len().min(500)]);
+        let result = self
+            .request_weapi("/api/user/playlist/create", &params)
+            .await?;
+        log::debug!(
+            "user_created_playlist response: {}",
+            &result[..result.len().min(500)]
+        );
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
         parse_song_list(&value, &["data", "playlist"]).map_err(|e| NcmError::parse(e, &value))
@@ -679,8 +697,13 @@ impl NcmClient {
             ("includeRedHeart", "true"),
             ("includeTop", "true"),
         ];
-        let result = self.request_weapi("/api/user/playlist/collect", &params).await?;
-        log::debug!("user_collected_playlist response: {}", &result[..result.len().min(500)]);
+        let result = self
+            .request_weapi("/api/user/playlist/collect", &params)
+            .await?;
+        log::debug!(
+            "user_collected_playlist response: {}",
+            &result[..result.len().min(500)]
+        );
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
         parse_song_list(&value, &["data", "playlist"]).map_err(|e| NcmError::parse(e, &value))
@@ -847,7 +870,8 @@ impl NcmClient {
             .await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_info_array(&value, &["data", "dailySongs"], SongContext::Rmds).map_err(|e| NcmError::parse(e, &value))
+        parse_song_info_array(&value, &["data", "dailySongs"], SongContext::Rmds)
+            .map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取私人 FM 歌曲
@@ -855,7 +879,8 @@ impl NcmClient {
         let result = self.request_weapi("/weapi/v1/radio/get", &[]).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_info_array(&value, &["data"], SongContext::Rmd).map_err(|e| NcmError::parse(e, &value))
+        parse_song_info_array(&value, &["data"], SongContext::Rmd)
+            .map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取所有排行榜列表
@@ -918,7 +943,8 @@ impl NcmClient {
         let result = self.request_weapi(&path, &[]).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_info_array(&value, &["hotSongs"], SongContext::Singer).map_err(|e| NcmError::parse(e, &value))
+        parse_song_info_array(&value, &["hotSongs"], SongContext::Singer)
+            .map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取歌手全部歌曲
@@ -950,7 +976,8 @@ impl NcmClient {
             .await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_info_array(&value, &["songs"], SongContext::SingerSongs).map_err(|e| NcmError::parse(e, &value))
+        parse_song_info_array(&value, &["songs"], SongContext::SingerSongs)
+            .map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取热门歌手
@@ -985,7 +1012,9 @@ impl NcmClient {
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
         // Response: { code: 200, list: { artists: [...] } }
-        let list = value.get("list").ok_or_else(|| NcmError::parse(String::from("list not found"), &value))?;
+        let list = value
+            .get("list")
+            .ok_or_else(|| NcmError::parse(String::from("list not found"), &value))?;
         parse_singer_info(list, &["artists"]).map_err(|e| NcmError::parse(e, &value))
     }
 
@@ -1208,7 +1237,10 @@ impl NcmClient {
         for v in array {
             let song_data = &v["data"];
             if !song_data.is_null() {
-                songs.push(parse_song_info(song_data, SongContext::Usl).map_err(|e| NcmError::parse(e, &value))?);
+                songs.push(
+                    parse_song_info(song_data, SongContext::Usl)
+                        .map_err(|e| NcmError::parse(e, &value))?,
+                );
             }
         }
         Ok(songs)
@@ -1222,10 +1254,7 @@ impl NcmClient {
     ) -> Result<CloudDiskResult, NcmError> {
         let offset_s = offset.to_string();
         let limit_s = limit.to_string();
-        let params = vec![
-            ("offset", offset_s.as_str()),
-            ("limit", limit_s.as_str()),
-        ];
+        let params = vec![("offset", offset_s.as_str()), ("limit", limit_s.as_str())];
         let result = self.request_weapi("/weapi/v1/cloud/get", &params).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
@@ -1256,7 +1285,8 @@ impl NcmClient {
         let result = self.request_weapi("/weapi/search/get", &params).await?;
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
-        parse_song_info_array(&value, &["result", "songs"], SongContext::Search).map_err(|e| NcmError::parse(e, &value))
+        parse_song_info_array(&value, &["result", "songs"], SongContext::Search)
+            .map_err(|e| NcmError::parse(e, &value))
     }
 
     /// 获取精品歌单
@@ -1508,7 +1538,11 @@ impl NcmClient {
         let check_song_id: String = check_value
             .get("songId")
             .and_then(|v| v.as_str().map(|s| s.to_string()))
-            .or_else(|| check_value.get("songId").and_then(|v| v.as_u64().map(|n| n.to_string())))
+            .or_else(|| {
+                check_value
+                    .get("songId")
+                    .and_then(|v| v.as_u64().map(|n| n.to_string()))
+            })
             .unwrap_or_else(|| "0".to_string());
 
         // 步骤 2：解析音频元数据（用独立文件句柄，按需 seek 读取标签，不占满内存）
@@ -1517,9 +1551,21 @@ impl NcmClient {
         let (song_name, album, artist) = {
             let (s, a, ar) = parse_audio_meta(meta_file, mime);
             (
-                if s.is_empty() && !song_hint.is_empty() { song_hint.to_string() } else { s },
-                if a.is_empty() && !album_hint.is_empty() { album_hint.to_string() } else { a },
-                if ar.is_empty() && !artist_hint.is_empty() { artist_hint.to_string() } else { ar },
+                if s.is_empty() && !song_hint.is_empty() {
+                    song_hint.to_string()
+                } else {
+                    s
+                },
+                if a.is_empty() && !album_hint.is_empty() {
+                    album_hint.to_string()
+                } else {
+                    a
+                },
+                if ar.is_empty() && !artist_hint.is_empty() {
+                    artist_hint.to_string()
+                } else {
+                    ar
+                },
             )
         };
 
@@ -1572,22 +1618,33 @@ impl NcmClient {
                 .await?;
             let upload_token_value: Value = serde_json::from_str(&upload_token)?;
             Self::check_api_code(&upload_token_value)?;
-            let upload_result = upload_token_value
-                .get("result")
-                .ok_or_else(|| NcmError::parse("upload token alloc: result not found", &upload_token_value))?;
+            let upload_result = upload_token_value.get("result").ok_or_else(|| {
+                NcmError::parse("upload token alloc: result not found", &upload_token_value)
+            })?;
             let upload_object_key = upload_result
                 .get("objectKey")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| NcmError::parse("upload token alloc: objectKey missing", &upload_token_value))?
+                .ok_or_else(|| {
+                    NcmError::parse("upload token alloc: objectKey missing", &upload_token_value)
+                })?
                 .replace('/', "%2F");
             let upload_nos_token = upload_result
                 .get("token")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| NcmError::parse("upload token alloc: token missing", &upload_token_value))?
+                .ok_or_else(|| {
+                    NcmError::parse("upload token alloc: token missing", &upload_token_value)
+                })?
                 .to_string();
 
-            self.upload_to_nos(path, &upload_object_key, &upload_nos_token, &md5, size, &mime)
-                .await?;
+            self.upload_to_nos(
+                path,
+                &upload_object_key,
+                &upload_nos_token,
+                &md5,
+                size,
+                &mime,
+            )
+            .await?;
         }
 
         // 步骤 5：提交云盘信息（元数据为空时 fallback 到文件名，对齐参考实现）
@@ -1672,9 +1729,7 @@ impl NcmClient {
             .and_then(|u| u.as_array())
             .and_then(|a| a.first())
             .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                NcmError::Session(format!("nos lbs returned no upload node: {lbs}"))
-            })?
+            .ok_or_else(|| NcmError::Session(format!("nos lbs returned no upload node: {lbs}")))?
             .to_string();
 
         // 2. 以文件作为请求体流式上传（reqwest 自动按文件大小设置 Content-Length）
@@ -1740,16 +1795,16 @@ fn parse_audio_meta<R: std::io::Read + std::io::Seek>(
         None => return (String::new(), String::new(), String::new()),
     };
     let song = tag
-        .get_string(&ItemKey::TrackTitle)
+        .get_string(ItemKey::TrackTitle)
         .unwrap_or("")
         .to_string();
     let album = tag
-        .get_string(&ItemKey::AlbumTitle)
+        .get_string(ItemKey::AlbumTitle)
         .unwrap_or("")
         .to_string();
     let artist = tag
-        .get_string(&ItemKey::TrackArtist)
-        .or_else(|| tag.get_string(&ItemKey::AlbumArtist))
+        .get_string(ItemKey::TrackArtist)
+        .or_else(|| tag.get_string(ItemKey::AlbumArtist))
         .unwrap_or("")
         .to_string();
 
@@ -1828,8 +1883,10 @@ mod tests {
     #[test]
     fn test_parse_audio_meta_graceful_on_garbage() {
         // 非音频字节应优雅返回空串，而非 panic
-        let (song, album, artist) =
-            parse_audio_meta(std::io::Cursor::new(b"not an audio file at all".to_vec()), "audio/mpeg");
+        let (song, album, artist) = parse_audio_meta(
+            std::io::Cursor::new(b"not an audio file at all".to_vec()),
+            "audio/mpeg",
+        );
         assert_eq!(song, "");
         assert_eq!(album, "");
         assert_eq!(artist, "");

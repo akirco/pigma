@@ -109,7 +109,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             login::draw(f, &app.state.navigation.login, &bs, &lay);
         }
         page => {
-            let lay = layout::build_layout(area, page, app.config.nav_position);
+            let lay = layout::build_layout(area, page, app.config.navigation_position);
 
             topbar::draw(
                 f,
@@ -130,8 +130,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
             match page {
                 Page::Main => {
-                    match app.config.nav_position {
-                        crate::config::NavPosition::Sidebar => {
+                    match app.config.navigation_position {
+                        crate::config::NavPosition::Left | crate::config::NavPosition::Right => {
                             navigation::draw(
                                 f,
                                 &mut app.state.navigation.nav,
@@ -147,7 +147,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                                 lay.breadcrumb,
                             );
                         }
-                        crate::config::NavPosition::Top => {
+                        crate::config::NavPosition::Top | crate::config::NavPosition::Bottom => {
                             navigation::draw_top(f, &mut app.state.navigation.nav, &bs, lay.nav);
                         }
                     }
@@ -183,7 +183,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                             let count = nst.content.len();
                             let template = current_item
                                 .and_then(|item| item.title_template.as_deref())
-                                .unwrap_or("{name} ({count})");
+                                .unwrap_or("\u{25BA} {name} ({count}) \u{25C4}");
                             let title = render_title(template, name, count);
                             *nst.title_cache.borrow_mut() =
                                 Some((title.clone(), focus, selected, generation));

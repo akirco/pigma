@@ -1,14 +1,45 @@
-
 # pigma (In development)
 
 [![CI](https://github.com/akirco/pigma/actions/workflows/ci.yml/badge.svg)](https://github.com/akirco/pigma/actions/workflows/ci.yml)
 [![Release](https://github.com/akirco/pigma/actions/workflows/release.yml/badge.svg)](https://github.com/akirco/pigma/actions/workflows/release.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 ![AUR Version](https://img.shields.io/aur/version/pigma-bin)
+![GitHub repo size](https://img.shields.io/github/repo-size/akirco/pigma)
 
-<img width="100" src="./imgs/logo.jpg" alt="pigma" />
+
+<img width="100" src="./imgs/logo.png" alt="pigma" />
 
 A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built with [Ratatui](https://ratatui.rs).
+
+<details>
+<summary><b>📖 点击展开/折叠目录 (Table of Contents)</b></summary>
+
+- [pigma (In development)](#pigma-in-development)
+  - [Features](#features)
+  - [Preview](#preview)
+  - [Install](#install)
+    - [From releases](#from-releases)
+    - [From source (cargo)](#from-source-cargo)
+    - [Build from source](#build-from-source)
+  - [Usage](#usage)
+  - [Configuration](#configuration)
+    - [Columns Configuration](#columns-configuration)
+      - [Column width types](#column-width-types)
+      - [Available fields by content type](#available-fields-by-content-type)
+      - [All override keys](#all-override-keys)
+    - [Navigation layout](#navigation-layout)
+    - [Title templates](#title-templates)
+    - [Progress bar customization](#progress-bar-customization)
+    - [Content cache](#content-cache)
+    - [Lyric gradient](#lyric-gradient)
+    - [Navigation items](#navigation-items)
+      - [Section titles support rich-text markup](#section-titles-support-rich-text-markup)
+    - [Theme](#theme)
+  - [Development](#development)
+  - [License](#license)
+
+</details>
+
 
 **注意：**
 
@@ -31,7 +62,7 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 - [x] table标题自定义
 - [x] 心动模式
 - [x] 数据分页加载(目前仅支持云盘)
-- [x] youtube源fallback(音源评分重写)
+- [x] kugou,kuwo,bilibili,youtube源fallback(无需cookie),参考[UnblockNeteaseMusic](https://github.com/UnblockNeteaseMusic/server)
 - [x] 歌曲操作(like,dislike,fav .etc)
 - [x] 重构播放队列
 - [x] 下载管理（重合边听边存）
@@ -39,9 +70,12 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 - [x] 云盘上传（缓存文件，本地文件）
 - [x] 音量控制
 - [x] 更多layout支持
+- [x] 支持系统包管理器安装(yay,paru,scoop)
+- [ ] 重构播放队列添加逻辑
+- [ ] 支持搜索多源
+- [ ] 重写splash
+- [ ] 修复手机验证码\邮箱登录
 - [ ] styled_text标记语法嵌套
-- [ ] bilibili音源
-- [ ] 新增可选歌词页(沉浸式封面+歌词)
 - [ ] command panel重写，更多运行时配置支持
 - [ ] 云盘源作为fallback
 - [ ] 本地音频歌词，元数据重写
@@ -49,8 +83,8 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 - [ ] 重构进入程序流程
 - [ ] 歌手信息
 - [ ] 行内简易模式
-- [ ] ascii art style 歌词
-- [ ] 支持系统包管理器安装
+- [ ] ~~新增可选歌词页(沉浸式封面+歌词)~~
+- [ ] ~~ascii art style 歌词~~
 
 ## Preview
 
@@ -70,7 +104,7 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 
 ## Install
 
-> Note: the `gnu` Linux builds depend on system audio libraries (e.g. `alsa-lib`). The `musl` builds are fully static and portable across distributions.
+> Note: the `gnu` Linux builds depend on system audio libraries (e.g. `alsa-lib`).
 
 ### From releases
 
@@ -115,22 +149,24 @@ cargo build --release
 ## Usage
 
 
-| 快捷键              |                     描述                     |
-| :------------------ | :------------------------------------------: |
-| ctrl+l              |                 清空播放队列                 |
-| s/d                 |       添加到喜欢/不感兴趣(仅每日推荐)        |
-| tab/shift+tab       |                   切换导航                   |
-| enter               |                播放/进入列表                 |
-| space               |                     暂停                     |
-| f                   |                   播放队列                   |
-| l                   |                     歌词                     |
-| /                   |                  搜索/过滤                   |
-| b                   |                   样式切换                   |
-| left /right         |                   seek 15s                   |
-| shift + left /right |                上一首/下一首                 |
-| ctrl+p              |                command panel                 |
-| p                   |            切换表格为cell/row模式            |
-| m                   | 切换播放模式（适用于我的歌单或我喜欢的音乐） |
+| 快捷键        |                     描述                     |
+| :------------ | :------------------------------------------: |
+| ctrl+l        |                 清空播放队列                 |
+| s/d           |       添加到喜欢/不感兴趣(仅每日推荐)        |
+| tab/shift+tab |                   切换导航                   |
+| enter         |                播放/进入列表                 |
+| space         |                     暂停                     |
+| f             |                   播放队列                   |
+| l             |                     歌词                     |
+| /             |                  搜索/过滤                   |
+| b             |                   样式切换                   |
+| left /right   |                   seek 15s                   |
+| p /n          |                上一首/下一首                 |
+| ctrl+p        |                command panel                 |
+| c             |  切换表格为cell/row模式(回车进入歌手/专辑)   |
+| m             | 切换播放模式（适用于我的歌单或我喜欢的音乐） |
+| u             |  上传`本地音乐`或`下载管理`的音频到音乐云盘  |
+
 
 
 
@@ -257,27 +293,27 @@ Fields:
 
 Any API endpoint can have a `[columns.overrides.{key}]` entry. Available keys:
 
-| Key                  | Default type | Description        |
-| -------------------- | ------------ | ------------------ |
-| `recommend_songs`    | songs        | 每日推荐           |
-| `recommend_resource` | songlist     | 推荐歌单           |
-| `toplist`            | toplist      | 排行榜             |
-| `top_song_list`      | songlist     | 歌单               |
-| `user_radio_sublist` | songlist     | 电台               |
-| `user_cloud_disk`    | songs        | 我的音乐云盘       |
-| `__liked__`          | songs        | 我喜欢的音乐       |
-| `user_song_list`     | songlist     | 我的歌单           |
-| `__local_music__`    | songs        | 本地音乐           |
-| `__recent__`         | songs        | 最近播放           |
-| `top_singers`        | singers      | 热门歌手           |
-| `search`             | songs        | 搜索-热搜榜        |
-| `__download__`       | —            | 下载管理           |
+| Key                  | Default type | Description  |
+| -------------------- | ------------ | ------------ |
+| `recommend_songs`    | songs        | 每日推荐     |
+| `recommend_resource` | songlist     | 推荐歌单     |
+| `toplist`            | toplist      | 排行榜       |
+| `top_song_list`      | songlist     | 歌单         |
+| `user_radio_sublist` | songlist     | 电台         |
+| `user_cloud_disk`    | songs        | 我的音乐云盘 |
+| `__liked__`          | songs        | 我喜欢的音乐 |
+| `user_song_list`     | songlist     | 我的歌单     |
+| `__local_music__`    | songs        | 本地音乐     |
+| `__recent__`         | songs        | 最近播放     |
+| `top_singers`        | singers      | 热门歌手     |
+| `search`             | songs        | 搜索-热搜榜  |
+| `__download__`       | —            | 下载管理     |
 
 ### Navigation layout
 
 ```toml
-# 导航栏位置: "sidebar" (侧边, 默认) 或 "top" (顶部 topbar 下方, 不显示面包屑)
-nav_position = "sidebar"
+# 导航栏位置: "left" (左侧边, 默认) 或 "top" “right” "bottom"
+navigation_position = "left"
 ```
 
 `top` 模式下导航项横排为一行，超宽时自动横向滚动，Tab/BackTab 切换导航项不变。
@@ -429,6 +465,7 @@ default key `b`).
 ```sh
 git clone https://github.com/akirco/pigma.git
 cd pigma
+git submodule update --init --recursive
 cargo run
 ```
 

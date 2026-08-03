@@ -1,3 +1,23 @@
+## [0.1.9] - 2026-08-03
+
+### 🚀 Features
+
+- *(crates/musicx)* Unifield fallback sound source (akirco)
+
+### 🚜 Refactor
+
+- *(config)* Restructuring the config structure (akirco)
+- *(fallback)* Using new sound source fallback (akirco)
+- *(layout)* New navigation layout (akirco)
+
+### 📚 Documentation
+
+- *(README)* Add aur installtion desc (akirco)
+- Update README.md (akirco)
+
+### ⚙️ Miscellaneous Tasks
+
+- Update deps (akirco)
 ## [0.1.8] - 2026-08-01
 
 ### 🚀 Features

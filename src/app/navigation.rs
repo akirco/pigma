@@ -21,7 +21,7 @@ impl App {
             self.state.navigation.clear_breadcrumb();
             self.state.navigation.set_content(ContentState::Loading);
             let cache = self.service.cache().clone();
-            let ttl = self.config.content_cache_ttl;
+            let ttl = self.config.cache.content_cache_ttl;
             let sender = self.state.events.sender();
             let music_dir = dirs::home_dir().unwrap_or_default().join("Music");
 
@@ -64,7 +64,7 @@ impl App {
         let service = self.service.clone();
         let sender = self.state.events.sender();
         let uid = self.state.navigation.user.as_ref().map(|u| u.uid);
-        let ttl = self.config.content_cache_ttl;
+        let ttl = self.config.cache.content_cache_ttl;
         let limit = self.config.search_limit;
 
         tokio::spawn(async move {

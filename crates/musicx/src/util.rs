@@ -1,8 +1,6 @@
-use ncm_api::SongInfo;
-
 /// Convert common Traditional Chinese characters to Simplified.
 /// Covers artist names, song titles, and common music-related words.
-fn normalize_cjk(s: &str) -> String {
+pub fn normalize_cjk(s: &str) -> String {
     s.chars()
         .map(|c| match c {
             // Surnames (most common in Chinese music)
@@ -20,7 +18,7 @@ fn normalize_cjk(s: &str) -> String {
             '謝' => '谢',
             '許' => '许',
             '韓' => '韩',
-            '馮' => '邓',
+            '馮' => '冯',
             '鄧' => '邓',
             '蕭' => '萧',
             '蔡' => '蔡',
@@ -148,7 +146,7 @@ fn normalize_cjk(s: &str) -> String {
 }
 
 /// Normalize a string for comparison: lowercase + CJK conversion + trim.
-fn normalize_for_match(s: &str) -> String {
+pub fn normalize_for_match(s: &str) -> String {
     normalize_cjk(&s.to_lowercase()).trim().to_string()
 }
 
@@ -185,129 +183,9 @@ pub fn strip_annotation(s: &str) -> String {
         .unwrap_or_default()
 }
 
-/// Clean a song name for YouTube search by stripping common annotations.
+/// Clean a song name for search by stripping common annotations.
 pub fn clean_search_query(name: &str) -> String {
     strip_annotation(name)
-}
-
-/// Score name match: 0-30 points.
-/// Position-aware: exact=30, prefix=25, suffix=22, in-brackets=20, substring by length.
-fn score_name(title: &str, name: &str) -> u32 {
-    if name.is_empty() {
-        return 0;
-    }
-
-    // Exact match after normalization
-    if title == name {
-        return 30;
-    }
-
-    // Name is a prefix of the title
-    if title.starts_with(name) {
-        return 25;
-    }
-
-    // Name is a suffix of the title
-    if title.ends_with(name) {
-        return 22;
-    }
-
-    // Name appears inside brackets/parentheses
-    if let Some(pos) = title.find(name) {
-        let before = &title[..pos];
-        let after = &title[pos + name.len()..];
-        let in_brackets = (before.ends_with('【')
-            || before.ends_with('[')
-            || before.ends_with('(')
-            || before.ends_with('（'))
-            && (after.starts_with('】')
-                || after.starts_with(']')
-                || after.starts_with(')')
-                || after.starts_with('）'));
-        if in_brackets {
-            return 20;
-        }
-    }
-
-    // Substring match — penalize short names to reduce false positives
-    if title.contains(name) {
-        match name.chars().count() {
-            1..=2 => 5,
-            3..=4 => 10,
-            _ => 15,
-        }
-    } else {
-        0
-    }
-}
-
-/// Score artist match: 0-20 points.
-/// Checks both the channel name (author) and the video title.
-fn score_artist(title: &str, author: &str, singer: &str) -> u32 {
-    if singer.is_empty() {
-        return 0;
-    }
-
-    // Exact match in channel name (most authoritative — official channel)
-    if author == singer {
-        return 20;
-    }
-    // Exact match in title
-    if title == singer {
-        return 18;
-    }
-    // Channel name contains artist
-    if author.contains(singer) {
-        return 16;
-    }
-    // Title contains artist
-    if title.contains(singer) {
-        return 14;
-    }
-
-    0
-}
-
-/// Score duration match: 0-10 points.
-/// Returns 0 (no signal) when NCM duration is unknown.
-fn score_duration(ncm_duration_ms: u64, yt_secs: Option<u64>) -> u32 {
-    if ncm_duration_ms == 0 {
-        return 0;
-    }
-    let Some(yt_secs) = yt_secs else {
-        return 0;
-    };
-
-    let ncm_secs = ncm_duration_ms / 1000;
-    let diff = ncm_secs.abs_diff(yt_secs);
-
-    match diff {
-        0..=3 => 10,
-        4..=10 => 7,
-        11..=30 => 4,
-        _ => 0,
-    }
-}
-
-/// Score a YouTube search result against the original NCM song.
-/// Returns 0-60. Threshold for acceptance is 15.
-pub fn score_match(
-    title: &str,
-    author: &str,
-    _views: &str,
-    yt_duration_secs: Option<u64>,
-    song: &SongInfo,
-) -> u32 {
-    let name_norm = normalize_for_match(&strip_annotation(&song.name));
-    let singer_norm = normalize_for_match(&strip_annotation(&song.singer));
-    let title_norm = normalize_for_match(title);
-    let author_norm = normalize_for_match(author);
-
-    let mut score = 0u32;
-    score += score_name(&title_norm, &name_norm);
-    score += score_artist(&title_norm, &author_norm, &singer_norm);
-    score += score_duration(song.duration, yt_duration_secs);
-    score
 }
 
 #[cfg(test)]
@@ -326,23 +204,6 @@ mod tests {
         assert_eq!(parse_duration_str("3:33"), Some(213));
         assert_eq!(parse_duration_str("1:02:33"), Some(3753));
         assert_eq!(parse_duration_str("invalid"), None);
-    }
-
-    #[test]
-    fn test_score_name() {
-        assert_eq!(score_name("世界末日", "世界末日"), 30); // exact
-        assert_eq!(score_name("世界末日 周杰伦", "世界末日"), 25); // prefix
-        assert_eq!(score_name("周杰伦 世界末日", "世界末日"), 22); // suffix
-        assert_eq!(score_name("周杰伦【世界末日】", "世界末日"), 20); // brackets
-        assert_eq!(score_name("周杰伦-世界末日-HQ", "世界末日"), 10); // substring 3-4 chars
-        assert_eq!(score_name("其他内容", "世界末日"), 0); // no match
-    }
-
-    #[test]
-    fn test_score_artist() {
-        assert_eq!(score_artist("标题", "周杰伦", "周杰伦"), 20); // exact channel
-        assert_eq!(score_artist("周杰伦 - 歌曲", "其他频道", "周杰伦"), 14); // in title
-        assert_eq!(score_artist("其他", "其他频道", "周杰伦"), 0); // no match
     }
 
     #[test]

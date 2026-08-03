@@ -17,7 +17,7 @@ pub struct LayoutArea {
 
 pub fn build_default(area: Rect) -> LayoutArea {
     let cols = Layout::horizontal([
-        Constraint::Length(30),
+        Constraint::Length(20),
         Constraint::Min(30),
         Constraint::Length(3),
         Constraint::Length(8),

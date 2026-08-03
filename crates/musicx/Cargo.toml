@@ -1,0 +1,49 @@
+[package]
+name = "musicx"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+async-trait = "0.1.91"
+base64 = { version = "0.23.0", features = ["std"] }
+futures = "0.3.33"
+log = "0.4.33"
+md5 = "0.8.1"
+once_cell = "1.21.4"
+regex = "1.13.1"
+reqwest = {
+  version = "0.13.4",
+  default-features = false,
+  features = [
+    "brotli",
+    "deflate",
+    "gzip",
+    "json",
+    "query",
+    "rustls-no-provider"
+  ]
+}
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+thiserror = "2.0.19"
+# chrono = { version = "0.4.45", features = ["serde"] }
+time = {
+  version = "0.3.55",
+  features = [
+    "local-offset",
+  ]
+}
+tokio = { version = "1.53.1", features = ["full"] }
+url = "2.5.8"
+urlencoding = "2.1"
+y7dl = { path = "../y7dl" }
+
+[dev-dependencies]
+rustls = {
+  version = "0.23",
+  default-features = false,
+  features = [
+    "ring",
+    "std",
+  ]
+}

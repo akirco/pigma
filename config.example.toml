@@ -10,27 +10,14 @@ default_theme = "default"
 # 快进/快退间隔 (秒)
 seek_interval_secs = 15
 
-# 内容缓存过期时间 (秒), 0 表示不缓存
-content_cache_ttl = 300
-
 # 搜索结果数量限制
 search_limit = 100
 
-# 导航栏位置: "sidebar" (侧边, 默认) 或 "top" (顶部 topbar 下方一行, 不显示面包屑)
-nav_position = "sidebar"
+# 导航栏位置: "left" (左侧, 默认), "right" (右侧), "top" (顶部) 或 "bottom" (底部)
+navigation_position = "left"
 
 # 歌词渐变效果: "rainbow", "fire", "ocean", "forest", "sunset", "neon", "pastel", "monochrome"
 lyric_gradient = "rainbow"
-
-# 音质: "standard", "higher", "exhigh", "lossless", "hires", "jyeffect", "sky", "jymaster"
-quality = "standard"
-
-# 下载缓存目录 (相对于缓存目录或绝对路径)
-# 默认：~/.cache/pigma/downloads
-cache_dir = "downloads"
-
-# 缓存文件命名模板, 可用变量: {id}, {name}, {singer}, {album}
-cache_template = "{name}-{singer}"
 
 # 代理地址, 支持 http:// https:// socks5://
 proxy = "http://127.0.0.1:7890"
@@ -39,6 +26,32 @@ proxy = "http://127.0.0.1:7890"
 # 海外用户: proxy_target = "ncm"  (NCM 走代理, YouTube 直连)
 # 国内用户: proxy_target = "yt"   (NCM 直连, YouTube 走代理)
 proxy_target = "yt"
+
+# =============================================================================
+# 缓存配置
+# =============================================================================
+[cache]
+# 内容缓存过期时间 (秒), 0 表示不缓存
+content_cache_ttl = 300
+# 音质: "standard", "higher", "exhigh", "lossless", "hires", "jyeffect", "sky", "jymaster"
+quality = "standard"
+# 下载缓存目录 (相对于缓存目录或绝对路径)
+# 默认：~/.cache/pigma/downloads
+cache_dir = "downloads"
+# 缓存文件命名模板, 可用变量: {id}, {name}, {singer}, {album}
+cache_template = "{name}-{singer}"
+
+# =============================================================================
+# 兜底源配置 (NCM 播放失败时的多源兜底, 基于 musicx)
+# =============================================================================
+[source_fallback]
+# 是否启用兜底源
+enabled = true
+# 参与兜底的源, 按优先级从高到低排列, 可选: kuwo, kugou, bilivideo, youtube
+providers = ["kuwo", "kugou", "bilivideo", "youtube"]
+# 单个源搜索超时(毫秒)
+timeout_ms = 10000
+
 
 # =============================================================================
 # 边框配置
@@ -72,10 +85,9 @@ filled_color = "accent"
 unfilled_color = "text"
 # 已缓存到本地时进度条轨道颜色
 unfilled_color_cached = "warning"
-# 是否启用进度条渐变效果
-gradient_enabled = false
-# 渐变预设: "warm", "cool", "sunset", "ocean", "forest", "neon", "pastel", "rainbow"
-gradient_preset = "warm"
+# 渐变预设: 设为空或未知名称即关闭渐变
+# 可选: "warm", "cubehelix", "rainbow", "turbo", "spectral", "viridis"
+gradient_preset = ""
 
 # 播放栏各组件可见性(建议暂时别用，音量控制没写好)
 [playerbar.visible]

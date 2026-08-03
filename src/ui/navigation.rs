@@ -82,8 +82,9 @@ pub fn draw(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, title: &str,
     f.render_stateful_widget(list, inner, &mut global_state);
 }
 
-/// 顶部导航模式：所有 item 跨 section 平铺成一行，选中项以 accent 底色高亮，
-/// 超宽时按 `NavState::scroll_x` 横向滚动，保证选中项始终可见。
+/// 顶部/底部导航模式：所有 item 跨 section 平铺成一行，选中项以 accent 底色
+/// 高亮并带左右拼接字符，超宽时按 `NavState::scroll_x` 横向滚动，保证选中项
+/// 始终可见。
 pub fn draw_top(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, area: Rect) {
     let colors = bs.colors;
     let block = create_block("", bs, false);
@@ -115,7 +116,8 @@ pub fn draw_top(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, area: Re
 
             if is_selected {
                 selected_start = Some(total);
-                selected_width = width;
+                selected_width = width + 2;
+                spans.push(Span::styled("\u{E0B2}", Style::default().fg(colors.accent)));
             }
 
             for s in name_spans {
@@ -129,7 +131,10 @@ pub fn draw_top(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, area: Re
                 };
                 spans.push(Span::styled(s.content, style));
             }
-            total += width;
+            if is_selected {
+                spans.push(Span::styled("\u{E0B0}", Style::default().fg(colors.accent)));
+            }
+            total += width + if is_selected { 2 } else { 0 };
         }
     }
 

@@ -75,7 +75,25 @@ pub fn build_layout(area: Rect, page: Page, nav_position: NavPosition) -> Layout
                     playerbar,
                 }
             }
-            NavPosition::Sidebar => {
+            NavPosition::Bottom => {
+                let [topbar, middle, nav, playerbar] = Layout::vertical([
+                    Constraint::Length(3),
+                    Constraint::Min(10),
+                    Constraint::Length(3),
+                    Constraint::Length(5),
+                ])
+                .areas(area);
+
+                LayoutAreas {
+                    topbar,
+                    sidebar: Rect::default(),
+                    breadcrumb: Rect::default(),
+                    nav,
+                    content: middle,
+                    playerbar,
+                }
+            }
+            NavPosition::Left | NavPosition::Right => {
                 let [topbar, middle, playerbar] = Layout::vertical([
                     Constraint::Length(3),
                     Constraint::Min(10),
@@ -83,8 +101,21 @@ pub fn build_layout(area: Rect, page: Page, nav_position: NavPosition) -> Layout
                 ])
                 .areas(area);
 
-                let [sidebar, right] =
-                    Layout::horizontal([Constraint::Length(26), Constraint::Min(40)]).areas(middle);
+                let (sidebar, right) = match nav_position {
+                    NavPosition::Left => {
+                        let [sidebar, right] =
+                            Layout::horizontal([Constraint::Length(26), Constraint::Min(40)])
+                                .areas(middle);
+                        (sidebar, right)
+                    }
+                    NavPosition::Right => {
+                        let [right, sidebar] =
+                            Layout::horizontal([Constraint::Min(40), Constraint::Length(26)])
+                                .areas(middle);
+                        (sidebar, right)
+                    }
+                    _ => unreachable!(),
+                };
 
                 let [breadcrumb, content] =
                     Layout::vertical([Constraint::Length(3), Constraint::Min(1)]).areas(right);

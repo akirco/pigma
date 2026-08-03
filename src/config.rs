@@ -1,4 +1,5 @@
 mod border;
+mod cache;
 mod column;
 mod navigation;
 mod playerbar;
@@ -6,6 +7,7 @@ pub mod theme;
 mod titles;
 
 pub use border::*;
+pub use cache::*;
 pub use column::*;
 pub use navigation::*;
 pub use playerbar::*;
@@ -28,9 +30,8 @@ pub struct Config {
     pub themes: Vec<Theme>,
     pub logger: Logger,
     pub navigation: NavConfig,
-    /// Content cache TTL in seconds (0 to disable).
-    #[serde(default = "default_content_cache_ttl")]
-    pub content_cache_ttl: u64,
+    #[serde(default)]
+    pub cache: CacheConfig,
     #[serde(default)]
     pub playerbar: PlayerbarConfig,
     #[serde(default)]
@@ -40,16 +41,6 @@ pub struct Config {
     /// 歌词高亮渐变风格：warm / cubehelix / rainbow / spectral / viridis / turbo。
     #[serde(default)]
     pub lyric_gradient: GradientPreset,
-    /// 边听边存缓存目录（绝对路径或相对于 ~/.cache/pigma/ 的路径）。
-    #[serde(default = "default_cache_dir")]
-    pub cache_dir: String,
-    /// 边听边存音质等级：standard / higher / exhigh / lossless / hires。
-    #[serde(default = "default_quality")]
-    pub quality: String,
-    /// 缓存文件命名模板。变量：{id} {name} {singer} {album}。
-    /// 例："{name}-{singer}"
-    #[serde(default = "default_cache_template")]
-    pub cache_template: String,
     /// YouTube fallback 代理地址（留空则不使用代理）。
     #[serde(default = "default_proxy")]
     pub proxy: String,
@@ -59,25 +50,12 @@ pub struct Config {
     /// 搜索结果数量上限。
     #[serde(default = "default_search_limit")]
     pub search_limit: u16,
-    /// 导航栏位置：sidebar（侧边）或 top（顶部）。
+    /// 导航栏位置：left（左侧，默认）、right（右侧）、top（顶部）或 bottom（底部）。
     #[serde(default)]
-    pub nav_position: NavPosition,
-}
-
-fn default_content_cache_ttl() -> u64 {
-    300
-}
-
-fn default_quality() -> String {
-    "standard".into()
-}
-
-fn default_cache_dir() -> String {
-    "downloads".into()
-}
-
-fn default_cache_template() -> String {
-    "{name}-{singer}".into()
+    pub navigation_position: NavPosition,
+    /// musicx 兜底源配置（NCM 播放失败时的多源兜底）。
+    #[serde(default)]
+    pub source_fallback: MusicxConfig,
 }
 
 fn default_proxy() -> String {
@@ -96,17 +74,47 @@ pub enum ProxyTarget {
     Both,
 }
 
-/// 导航栏位置：侧边（默认）或顶部。
+/// 导航栏位置：左侧（默认）、右侧、顶部或底部。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum NavPosition {
     #[default]
-    Sidebar,
+    Left,
+    Right,
     Top,
+    Bottom,
 }
 
 fn default_search_limit() -> u16 {
     100
+}
+
+/// 兜底源配置（musicx 多源兜底）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MusicxConfig {
+    /// 是否启用兜底源。
+    pub enabled: bool,
+    /// 参与兜底的源，按优先级从高到低排列：
+    /// `kuwo`, `kugou`, `bilivideo`, `youtube`。
+    pub providers: Vec<String>,
+    /// 单个源搜索超时（毫秒）。
+    pub timeout_ms: u64,
+}
+
+impl Default for MusicxConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            providers: vec![
+                "kuwo".to_string(),
+                "kugou".to_string(),
+                "bilivideo".to_string(),
+                "youtube".to_string(),
+            ],
+            timeout_ms: 10000,
+        }
+    }
 }
 
 impl Default for Config {
@@ -118,18 +126,16 @@ impl Default for Config {
             themes: Vec::new(),
             logger: Logger::default(),
             navigation: NavConfig::default(),
-            content_cache_ttl: 300,
+            cache: CacheConfig::default(),
             playerbar: PlayerbarConfig::default(),
             titles: TitlesConfig::default(),
             columns: ColumnsConfig::default(),
             lyric_gradient: GradientPreset::default(),
-            cache_dir: default_cache_dir(),
-            quality: default_quality(),
-            cache_template: default_cache_template(),
             proxy: default_proxy(),
             proxy_target: default_proxy_target(),
             search_limit: default_search_limit(),
-            nav_position: NavPosition::default(),
+            navigation_position: NavPosition::default(),
+            source_fallback: MusicxConfig::default(),
         }
     }
 }

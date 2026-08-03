@@ -1,7 +1,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// 歌词高亮渐变预设
 ///
@@ -105,6 +105,16 @@ impl GradientPreset {
 // GradientPreset::from_str_or_rainbow + .color() directly.
 pub fn gradient_color(preset: &str, t: f32) -> [u8; 3] {
     GradientPreset::from_str_or_rainbow(preset).color(t)
+}
+
+/// Deserialize an optional preset: empty or unknown names yield `None`
+/// (gradient disabled) instead of failing the whole config parse.
+pub fn deserialize_optional<'de, D>(deserializer: D) -> Result<Option<GradientPreset>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    Ok(GradientPreset::from_str(&s).ok())
 }
 
 fn cubehelix_color(h0: f32, s0: f32, l0: f32, h1: f32, s1: f32, l1: f32, t: f32) -> [u8; 3] {
