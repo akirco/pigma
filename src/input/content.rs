@@ -28,6 +28,23 @@ pub(super) fn content_select_next(app: &mut App) {
     check_load_more(app, count);
 }
 
+pub(super) fn content_select_first(app: &mut App) {
+    if content_item_count(app) == 0 {
+        return;
+    }
+    app.state.navigation.content_selected = 0;
+    app.state.navigation.table_state.select(Some(0));
+}
+
+pub(super) fn content_select_last(app: &mut App) {
+    let count = content_item_count(app);
+    if count == 0 {
+        return;
+    }
+    app.state.navigation.content_selected = count - 1;
+    app.state.navigation.table_state.select(Some(count - 1));
+}
+
 fn check_load_more(app: &mut App, count: usize) {
     if let Some(ref mut pg) = app.state.navigation.pagination {
         let sel = app.state.navigation.content_selected;
@@ -51,6 +68,19 @@ pub(super) fn playlist_select_next(app: &mut App) {
     let sel = &mut app.state.navigation.playlist_selected;
     if len > 0 {
         *sel = (*sel + 1) % len;
+    }
+}
+
+pub(super) fn playlist_select_first(app: &mut App) {
+    if app.playback.queue_len() > 0 {
+        app.state.navigation.playlist_selected = 0;
+    }
+}
+
+pub(super) fn playlist_select_last(app: &mut App) {
+    let len = app.playback.queue_len();
+    if len > 0 {
+        app.state.navigation.playlist_selected = len - 1;
     }
 }
 

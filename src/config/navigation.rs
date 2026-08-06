@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-use crate::api::ApiEndpoint;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NavConfig {
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -117,10 +115,4 @@ pub struct NavItemConfig {
     /// If None, defaults to `"a"`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title_template: Option<String>,
-}
-
-impl NavItemConfig {
-    pub fn endpoint(&self) -> Option<ApiEndpoint> {
-        self.api.as_deref().and_then(ApiEndpoint::parse)
-    }
 }

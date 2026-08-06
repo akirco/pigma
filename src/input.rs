@@ -1,5 +1,6 @@
 mod command;
 mod content;
+mod help;
 mod login;
 mod main;
 mod navigation;
@@ -34,8 +35,19 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> color_eyre::Resu
         }
     }
 
+    // `?` (Shift+/) toggles the help overlay anywhere.
+    if key_event.code == KeyCode::Char('?') {
+        app.state.help.toggle();
+        return Ok(());
+    }
+
     if app.state.navigation.page == Page::Splash {
         splash::handle_splash_key(app, key_event);
+        return Ok(());
+    }
+
+    if app.state.help.open {
+        help::handle_help_key(app, key_event);
         return Ok(());
     }
 
@@ -57,6 +69,11 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> color_eyre::Resu
 }
 
 pub fn handle_mouse_event(app: &mut App, kind: MouseEventKind, col: u16, row: u16) {
+    if app.state.help.open {
+        help::handle_help_mouse(app, kind);
+        return;
+    }
+
     if app.state.command_panel.open {
         command::handle_command_mouse(app, kind);
         return;

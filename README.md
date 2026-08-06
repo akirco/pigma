@@ -3,7 +3,7 @@
 [![CI](https://github.com/akirco/pigma/actions/workflows/ci.yml/badge.svg)](https://github.com/akirco/pigma/actions/workflows/ci.yml)
 [![Release](https://github.com/akirco/pigma/actions/workflows/release.yml/badge.svg)](https://github.com/akirco/pigma/actions/workflows/release.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-![AUR Version](https://img.shields.io/aur/version/pigma-bin)
+[![AUR Version](https://img.shields.io/aur/version/pigma-bin)](https://aur.archlinux.org/packages/pigma-bin)
 ![GitHub repo size](https://img.shields.io/github/repo-size/akirco/pigma)
 
 
@@ -71,8 +71,10 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 - [x] 音量控制
 - [x] 更多layout支持
 - [x] 支持系统包管理器安装(yay,paru,scoop)
+- [x] 支持搜索多源
+- [ ] 优化主题配色
+- [ ] JSON IPC控制（waybar.etc）
 - [ ] 重构播放队列添加逻辑
-- [ ] 支持搜索多源
 - [ ] 重写splash
 - [ ] 修复手机验证码\邮箱登录
 - [ ] styled_text标记语法嵌套
@@ -153,7 +155,7 @@ cargo build --release
 | :------------ | :------------------------------------------: |
 | ctrl+l        |                 清空播放队列                 |
 | s/d           |       添加到喜欢/不感兴趣(仅每日推荐)        |
-| tab/shift+tab |                   切换导航                   |
+| tab/shift+tab |              切换导航/搜索引擎               |
 | enter         |                播放/进入列表                 |
 | space         |                     暂停                     |
 | f             |                   播放队列                   |
@@ -166,6 +168,8 @@ cargo build --release
 | c             |  切换表格为cell/row模式(回车进入歌手/专辑)   |
 | m             | 切换播放模式（适用于我的歌单或我喜欢的音乐） |
 | u             |  上传`本地音乐`或`下载管理`的音频到音乐云盘  |
+| g/G           |                列表顶部/底部                 |
+
 
 
 

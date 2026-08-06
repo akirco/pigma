@@ -168,9 +168,9 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "base64"
-version = "0.23.0"
+version = "0.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b25655df2c3cdd83c5e5b293b88acd880332b2ddadd7c30ac43144fdc0033da9"
+checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "base64-simd"
@@ -1825,33 +1825,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "musicx"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64 0.23.0",
- "futures",
- "log",
- "md5",
- "once_cell",
- "regex",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.19",
- "time",
- "tokio",
- "url",
- "urlencoding",
- "y7dl",
-]
-
-[[package]]
 name = "ncm-api"
 version = "0.1.0"
 dependencies = [
  "aes",
- "base64 0.23.0",
+ "base64 0.23.1",
  "dirs",
  "lofty",
  "log",
@@ -2358,7 +2336,7 @@ dependencies = [
 
 [[package]]
 name = "pigma"
-version = "0.1.9"
+version = "0.2.0"
 dependencies = [
  "color-eyre",
  "crossterm 0.29.0",
@@ -2367,7 +2345,6 @@ dependencies = [
  "image",
  "libc",
  "log",
- "musicx",
  "ncm-api",
  "qrcode",
  "rand 0.10.2",
@@ -2378,6 +2355,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
+ "sonar",
  "stream-download",
  "time",
  "tokio",
@@ -2848,7 +2826,6 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "encoding_rs",
- "futures-channel",
  "futures-core",
  "futures-util",
  "http",
@@ -3302,6 +3279,28 @@ checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "sonar"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "futures",
+ "log",
+ "md5",
+ "once_cell",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "time",
+ "tokio",
+ "url",
+ "urlencoding",
+ "y7dl",
 ]
 
 [[package]]

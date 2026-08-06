@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-// --- 音质 ---
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum SongQuality {
     #[default]
@@ -357,6 +355,26 @@ fn first_artist_id(v: &Value) -> u64 {
         .unwrap_or(0)
 }
 
+/// Build an NCM image URL from a numeric `picId`, used when a response carries
+/// only the id (e.g. legacy `/weapi/search/get` results have `album.picId`
+/// instead of `album.picUrl`). Mirrors the official client: XOR the id digits
+/// with `3go8&$8*3*3h0k(2)2`, md5 the bytes, then url-safe base64 —
+/// `https://p1.music.126.net/<hash>/<picId>.jpg`.
+fn pic_url_from_id(pic_id: u64) -> String {
+    use base64::Engine;
+    use md5::Digest;
+    const KEY: &[u8] = b"3go8&$8*3*3h0k(2)2";
+    let digits = pic_id.to_string();
+    let xored: Vec<u8> = digits
+        .bytes()
+        .enumerate()
+        .map(|(i, c)| c ^ KEY[i % KEY.len()])
+        .collect();
+    let digest = md5::Md5::digest(&xored);
+    let hash = base64::engine::general_purpose::URL_SAFE.encode(digest);
+    format!("https://p1.music.126.net/{hash}/{pic_id}.jpg")
+}
+
 pub(crate) fn parse_song_info(v: &Value, context: SongContext) -> Result<SongInfo, String> {
     let name = str_val(v, "name");
 
@@ -396,8 +414,17 @@ pub(crate) fn parse_song_info(v: &Value, context: SongContext) -> Result<SongInf
                 .get("album")
                 .and_then(|a| a.get("picUrl"))
                 .and_then(|n| n.as_str())
-                .unwrap_or("")
-                .to_string();
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                // Legacy search responses only carry `album.picId` (a numeric
+                // id), not `picUrl` — rebuild the cover URL from it.
+                .or_else(|| {
+                    v.get("album")
+                        .and_then(|a| a.get("picId"))
+                        .and_then(|n| n.as_u64())
+                        .map(pic_url_from_id)
+                })
+                .unwrap_or_default();
             (album_name, album_id, pic_url)
         }
         SongContext::Singer => {
@@ -506,7 +533,18 @@ pub(crate) fn parse_login_info(value: &Value) -> Result<LoginInfo, String> {
             msg: String::new(),
         })
     } else {
-        let msg = value["msg"].as_str().unwrap_or("unknown error").to_string();
+        let msg = value["msg"]
+            .as_str()
+            .map(str::to_string)
+            .filter(|m| !m.is_empty())
+            .unwrap_or_else(|| match code {
+                501 => "账号或密码错误".to_string(),
+                502 => "请切换登录方式或升级版本".to_string(),
+                10004 => "当前登录存在安全风险，请稍后再试".to_string(),
+                -462 => "需要完成安全验证（滑块/行为验证）".to_string(),
+                301 => "登录已过期".to_string(),
+                _ => format!("登录失败 (code={code})"),
+            });
         Err(msg)
     }
 }
@@ -1097,6 +1135,19 @@ mod tests {
         assert_eq!(song.album_id, 456);
         assert_eq!(song.duration, 300000);
         assert_eq!(song.copyright, SongCopyright::Free);
+    }
+
+    #[test]
+    fn test_pic_url_from_id() {
+        // Known pair from a real hot-search icon picId.
+        assert_eq!(
+            pic_url_from_id(109951163967994693),
+            "https://p1.music.126.net/IBKnY_RCYTUAALcqWhAT6g==/109951163967994693.jpg"
+        );
+        assert_eq!(
+            pic_url_from_id(109951171458803146),
+            "https://p1.music.126.net/kBeIsIs1LuDB5aoj8PWdxw==/109951171458803146.jpg"
+        );
     }
 
     #[test]

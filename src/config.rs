@@ -41,10 +41,11 @@ pub struct Config {
     /// 歌词高亮渐变风格：warm / cubehelix / rainbow / spectral / viridis / turbo。
     #[serde(default)]
     pub lyric_gradient: GradientPreset,
-    /// YouTube fallback 代理地址（留空则不使用代理）。
+    /// 代理地址（留空则不使用代理）。
     #[serde(default = "default_proxy")]
     pub proxy: String,
-    /// 代理目标：`ncm` 代理 NCM API（海外用户），`yt` 代理 YouTube（默认，国内用户）。
+    /// 代理目标：`normal` 仅代理 YouTube（默认，国内用户），`reversed` 除 YouTube 外
+    /// 全部走代理（海外用户），`both` 全部走代理。
     #[serde(default = "default_proxy_target")]
     pub proxy_target: ProxyTarget,
     /// 搜索结果数量上限。
@@ -53,9 +54,9 @@ pub struct Config {
     /// 导航栏位置：left（左侧，默认）、right（右侧）、top（顶部）或 bottom（底部）。
     #[serde(default)]
     pub navigation_position: NavPosition,
-    /// musicx 兜底源配置（NCM 播放失败时的多源兜底）。
+    /// sonar 兜底源配置（NCM 播放失败时的多源兜底）。
     #[serde(default)]
-    pub source_fallback: MusicxConfig,
+    pub source_fallback: SonarConfig,
 }
 
 fn default_proxy() -> String {
@@ -63,14 +64,17 @@ fn default_proxy() -> String {
 }
 
 fn default_proxy_target() -> ProxyTarget {
-    ProxyTarget::Yt
+    ProxyTarget::Normal
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProxyTarget {
-    Ncm,
-    Yt,
+    /// 国内默认：仅 YouTube 走代理，其余直连。
+    Normal,
+    /// 海外用户：除 YouTube 外全部走代理。
+    Reversed,
+    /// 全部走代理。
     Both,
 }
 
@@ -89,10 +93,10 @@ fn default_search_limit() -> u16 {
     100
 }
 
-/// 兜底源配置（musicx 多源兜底）。
+/// 兜底源配置（sonar 多源兜底）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct MusicxConfig {
+pub struct SonarConfig {
     /// 是否启用兜底源。
     pub enabled: bool,
     /// 参与兜底的源，按优先级从高到低排列：
@@ -102,7 +106,7 @@ pub struct MusicxConfig {
     pub timeout_ms: u64,
 }
 
-impl Default for MusicxConfig {
+impl Default for SonarConfig {
     fn default() -> Self {
         Self {
             enabled: true,
@@ -123,19 +127,19 @@ impl Default for Config {
             default_theme: Theme::default().name,
             border: BorderConfig::default(),
             seek_interval_secs: 15,
-            themes: Vec::new(),
-            logger: Logger::default(),
-            navigation: NavConfig::default(),
-            cache: CacheConfig::default(),
-            playerbar: PlayerbarConfig::default(),
-            titles: TitlesConfig::default(),
-            columns: ColumnsConfig::default(),
             lyric_gradient: GradientPreset::default(),
             proxy: default_proxy(),
             proxy_target: default_proxy_target(),
             search_limit: default_search_limit(),
             navigation_position: NavPosition::default(),
-            source_fallback: MusicxConfig::default(),
+            logger: Logger::default(),
+            cache: CacheConfig::default(),
+            playerbar: PlayerbarConfig::default(),
+            titles: TitlesConfig::default(),
+            source_fallback: SonarConfig::default(),
+            themes: Vec::new(),
+            navigation: NavConfig::default(),
+            columns: ColumnsConfig::default(),
         }
     }
 }

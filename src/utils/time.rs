@@ -20,6 +20,18 @@ pub fn clock_time() -> String {
 const TIMESTAMP_FMT: &[FormatItem<'static>] =
     format_description!("[year]-[month]-[day] [hour]:[minute]:[second]");
 
+const MONTH_DAY_FMT: &[FormatItem<'static>] = format_description!("[month]-[day]");
+
+/// `MM-DD` in local timezone, appended to queue keys so time-based content
+pub fn local_month_day() -> String {
+    let now = match time::OffsetDateTime::now_local() {
+        Ok(t) => t,
+        Err(_) => OffsetDateTime::now_utc(),
+    };
+    now.format(&MONTH_DAY_FMT)
+        .unwrap_or_else(|_| String::from("00-00"))
+}
+
 pub fn format_duration(ms: u64) -> String {
     let mut s = String::with_capacity(5);
     format_duration_into(ms, &mut s);
@@ -44,7 +56,8 @@ pub fn format_duration_into(ms: u64, out: &mut String) {
 }
 
 /// Parse a `MM:SS` / `HH:MM:SS` duration string into total seconds.
-pub fn parse_duration_secs(s: &str) -> Option<u64> {
+#[cfg(test)]
+pub(crate) fn parse_duration_secs(s: &str) -> Option<u64> {
     let parts: Vec<&str> = s.split(':').collect();
     let mut secs: u64 = 0;
     for (i, p) in parts.iter().rev().enumerate() {
@@ -69,6 +82,13 @@ mod tests {
     #[test]
     fn timestamp_len() {
         assert_eq!(local_timestamp().len(), 19);
+    }
+
+    #[test]
+    fn month_day_is_compact() {
+        let s = local_month_day();
+        assert_eq!(s.len(), 5);
+        assert_eq!(&s[2..3], "-");
     }
 
     #[test]

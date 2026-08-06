@@ -1,6 +1,8 @@
-use crate::error::{MusicError, Result};
-use crate::model::{Artist, MusicSource, PlayUrlResult, Quality, SearchQuery, SearchResult, Song};
-use crate::provider::MusicProvider;
+use crate::error::{Result, SonarError};
+use crate::model::{
+    PlayUrlResult, Quality, SearchQuery, SearchResult, SonarSource, Song, SongMeta, make_song_id,
+};
+use crate::provider::SonarProvider;
 use crate::util::parse_duration_str;
 use async_trait::async_trait;
 use y7dl::Client;
@@ -35,17 +37,17 @@ impl Default for YoutubeProvider {
 }
 
 #[async_trait]
-impl MusicProvider for YoutubeProvider {
-    fn source(&self) -> MusicSource {
-        MusicSource::Youtube
+impl SonarProvider for YoutubeProvider {
+    fn source(&self) -> SonarSource {
+        SonarSource::Youtube
     }
 
     async fn search(&self, query: &SearchQuery) -> Result<SearchResult> {
         let results = self
             .client
-            .search(&query.keyword, 10, None)
+            .search(&query.keyword, query.page_size.unwrap_or(30) as usize, None)
             .await
-            .map_err(|e| MusicError::Provider {
+            .map_err(|e| SonarError::Provider {
                 provider: "youtube".into(),
                 message: e.to_string(),
             })?;
@@ -53,41 +55,35 @@ impl MusicProvider for YoutubeProvider {
         let songs: Vec<Song> = results
             .into_iter()
             .map(|r| Song {
-                id: r.video_id,
+                id: make_song_id(SonarSource::Youtube, &r.video_id),
+                source_id: r.video_id,
                 name: r.title,
-                artists: vec![Artist {
-                    id: String::new(),
-                    name: r.author,
-                }],
-                album: None,
+                singer: r.author,
+                album: String::new(),
                 duration: parse_duration_str(&r.duration).unwrap_or(0) * 1000,
-                source: MusicSource::Youtube,
-                quality: None,
-                url: None,
-                raw_data: serde_json::json!({
-                    "views": r.views,
-                    "duration_str": r.duration,
-                }),
+                source: SonarSource::Youtube,
+                pic_url: String::new(),
+                meta: SongMeta::default(),
             })
             .collect();
 
         Ok(SearchResult {
             total: Some(songs.len() as u32),
             songs,
-            source: MusicSource::Youtube,
+            source: SonarSource::Youtube,
             query: query.clone(),
         })
     }
 
     async fn get_play_url(&self, song: &Song, _quality: Option<Quality>) -> Result<PlayUrlResult> {
-        let video = self
-            .client
-            .get_video(&song.id)
-            .await
-            .map_err(|e| MusicError::Provider {
-                provider: "youtube".into(),
-                message: e.to_string(),
-            })?;
+        let video =
+            self.client
+                .get_video(&song.source_id)
+                .await
+                .map_err(|e| SonarError::Provider {
+                    provider: "youtube".into(),
+                    message: e.to_string(),
+                })?;
 
         let format = video
             .audio_formats()
@@ -101,13 +97,13 @@ impl MusicProvider for YoutubeProvider {
                     || f.mime_type.starts_with("audio/wav")
             })
             .max_by_key(|f| f.bitrate.unwrap_or(0))
-            .ok_or(MusicError::NoPlayUrl)?;
+            .ok_or(SonarError::NoPlayUrl)?;
 
         let url =
             self.client
                 .stream_url(&video, format)
                 .await
-                .map_err(|e| MusicError::Provider {
+                .map_err(|e| SonarError::Provider {
                     provider: "youtube".into(),
                     message: e.to_string(),
                 })?;

@@ -1,3 +1,39 @@
+## [0.2.0] - 2026-08-06
+
+### 🚀 Features
+
+- *(musicx)* 第三方多源搜索与歌词/封面 fallback (akirco)
+- *(musicx)* 歌词/封面加载与播放队列集成 (akirco)
+- *(input)* 搜索源切换与快捷键增强（Tab 切换源、g/G、S 喜欢当前播放） (akirco)
+- *(ui)* ? 帮助弹窗与代理配置支持 Normal/Reversed/Both (akirco)
+- *(layout)* 窄终端隐藏侧边栏与封面尺寸适配 (akirco)
+- *(theme)* 添加浅色主题与标题样式 (akirco)
+- *(playback)* 缓存完成更新进度条颜色与 musicx registry 持久化 (akirco)
+- *(musicx)* 注册 utils::musicx 模块 (akirco)
+
+### 🐛 Bug Fixes
+
+- *(playback)* B站流下载 403 与流下载代理支持 (akirco)
+- *(ncm-api)* Use device id and md5-hashed password in login (akirco)
+
+### 🚜 Refactor
+
+- *(playback)* 移除 types.rs，类型并入 playback.rs (akirco)
+- [**breaking**] Rename musicx crate to sonar (akirco)
+- *(core)* Migrate pigma to the sonar crate (akirco)
+
+### 📚 Documentation
+
+- Update README.md (akirco)
+
+### 🧪 Testing
+
+- *(musicx)* Testing (akirco)
+
+### ⚙️ Miscellaneous Tasks
+
+- *(ci)* Bump checkout and ssh-agent actions (akirco)
+- *(config)* Update example config and linker flags (akirco)
 ## [0.1.9] - 2026-08-03
 
 ### 🚀 Features

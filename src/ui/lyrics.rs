@@ -17,7 +17,7 @@ thread_local! {
 }
 
 /// Find the current lyric index — incremental forward scan, O(1) amortized.
-fn find_current_line(lyrics: &[crate::playback::types::LyricLine], cur_ms: f64) -> usize {
+fn find_current_line(lyrics: &[crate::playback::LyricLine], cur_ms: f64) -> usize {
     LAST_CUR.with(|last| {
         let mut cur = last.get();
         // Reset if lyrics changed (new song)

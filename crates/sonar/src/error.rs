@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum MusicError {
+pub enum SonarError {
     #[error("Network error: {0}")]
     Network(#[from] reqwest::Error),
 
@@ -26,6 +26,9 @@ pub enum MusicError {
     #[error("Play URL not available")]
     NoPlayUrl,
 
+    #[error("Lyrics not available")]
+    NoLyrics,
+
     #[error("Encryption error: {0}")]
     Encryption(String),
 
@@ -42,4 +45,4 @@ pub enum MusicError {
     InvalidResponse(String),
 }
 
-pub type Result<T> = std::result::Result<T, MusicError>;
+pub type Result<T> = std::result::Result<T, SonarError>;

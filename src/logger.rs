@@ -9,8 +9,6 @@ use crate::config::Config;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Logger {
     pub log_level: Level,
-    #[serde(skip)]
-    pub log_file: String,
 }
 
 use std::path::PathBuf;
@@ -29,7 +27,6 @@ impl Default for Logger {
     fn default() -> Self {
         Logger {
             log_level: Level::Debug,
-            log_file: log_file().to_string_lossy().to_string(),
         }
     }
 }

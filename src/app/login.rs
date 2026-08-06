@@ -1,6 +1,6 @@
 use super::{App, send_event};
 use crate::event::AuthEvent;
-use crate::state::{LoginMethod, Page};
+use crate::state::Page;
 
 use tokio::time::{Duration, sleep};
 
@@ -10,74 +10,19 @@ impl App {
         login.loading = true;
         login.error = None;
 
-        match login.selected_method {
-            LoginMethod::Email => {
-                let username = login.username.value.clone();
-                let password = login.password.value.clone();
-                let service = self.service.clone();
-                let sender = self.state.events.sender();
+        let service = self.service.clone();
+        let sender = self.state.events.sender();
 
-                tokio::spawn(async move {
-                    match service.login_email(&username, &password).await {
-                        Ok(info) => {
-                            send_event(&sender, AuthEvent::Success(info).into());
-                        }
-                        Err(e) => {
-                            send_event(&sender, AuthEvent::Error(e.to_string()).into());
-                        }
-                    }
-                });
-            }
-            LoginMethod::Phone => {
-                if login.captcha_sent {
-                    let phone = login.username.value.clone();
-                    let captcha = login.password.value.clone();
-                    let service = self.service.clone();
-                    let sender = self.state.events.sender();
-
-                    tokio::spawn(async move {
-                        match service.login_phone("86", &phone, &captcha).await {
-                            Ok(info) => {
-                                send_event(&sender, AuthEvent::Success(info).into());
-                            }
-                            Err(e) => {
-                                send_event(&sender, AuthEvent::Error(e.to_string()).into());
-                            }
-                        }
-                    });
-                } else {
-                    let phone = login.username.value.clone();
-                    let service = self.service.clone();
-                    let sender = self.state.events.sender();
-
-                    tokio::spawn(async move {
-                        match service.send_captcha("86", &phone).await {
-                            Ok(()) => {
-                                send_event(&sender, AuthEvent::CaptchaSent.into());
-                            }
-                            Err(e) => {
-                                send_event(&sender, AuthEvent::Error(e.to_string()).into());
-                            }
-                        }
-                    });
+        tokio::spawn(async move {
+            match service.login_qr_create().await {
+                Ok((url, key)) => {
+                    send_event(&sender, AuthEvent::QRCreated { url, key }.into());
+                }
+                Err(e) => {
+                    send_event(&sender, AuthEvent::Error(e.to_string()).into());
                 }
             }
-            LoginMethod::QR => {
-                let service = self.service.clone();
-                let sender = self.state.events.sender();
-
-                tokio::spawn(async move {
-                    match service.login_qr_create().await {
-                        Ok((url, key)) => {
-                            send_event(&sender, AuthEvent::QRCreated { url, key }.into());
-                        }
-                        Err(e) => {
-                            send_event(&sender, AuthEvent::Error(e.to_string()).into());
-                        }
-                    }
-                });
-            }
-        }
+        });
     }
 
     pub(super) fn handle_login_success(&mut self, info: ncm_api::LoginInfo) {
@@ -94,12 +39,6 @@ impl App {
         self.toast(format!("登录失败: {}", e));
         self.state.navigation.login.loading = false;
         self.state.navigation.login.error = Some(e);
-    }
-
-    pub(super) fn handle_captcha_sent(&mut self) {
-        self.state.navigation.login.loading = false;
-        self.state.navigation.login.captcha_sent = true;
-        self.state.navigation.login.error = None;
     }
 
     pub(super) fn handle_qr_created(&mut self, url: String, key: String) {

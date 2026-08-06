@@ -30,7 +30,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         border: &app.state.border,
         tick: app.state.tick,
     };
-    let block = super::create_block(title, &style, true);
+    let block = super::create_block_surfaced(title, &style, false);
     let inner = block.inner(popup_area);
 
     f.render_widget(Clear, popup_area);

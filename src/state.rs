@@ -1,17 +1,20 @@
 pub mod command;
 pub mod content;
+pub mod help;
 pub mod login;
 pub mod navigation;
 pub mod splash;
 
 pub use command::*;
 pub use content::*;
+pub use help::*;
 pub use login::*;
 pub use navigation::*;
 pub use splash::*;
 
 use std::cell::RefCell;
-use std::sync::{Arc, OnceLock};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use ncm_api::LoginInfo;
 use ratatui::layout::Rect;
@@ -26,7 +29,7 @@ use crate::{
 
 use crate::playback::PlaybackEngine;
 
-pub use crate::playback::{EnginePlayMode, EngineState as PlaybackState};
+pub use crate::playback::PlaybackState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
@@ -88,6 +91,9 @@ pub struct NavigationState {
     pub search: SearchState,
     pub pagination: Option<PaginationInfo>,
     pub generation: u64,
+    /// True when the current `Songs` content is a search result (Enter plays
+    /// only the selected song instead of appending the whole list to the queue).
+    pub content_is_search: bool,
     /// Cached rendered rows to avoid per-frame serde serialization.
     /// Invalidated when `content` is replaced.
     pub content_rows_cache: RefCell<Option<Vec<Vec<String>>>>,
@@ -151,12 +157,79 @@ impl NavigationState {
     }
 }
 
+/// A search backend selectable in the search bar. `Ncm` is the default and
+/// searches NetEase Cloud Music; the rest delegate to sonar providers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SearchProvider {
+    #[default]
+    Ncm,
+    Kugou,
+    Kuwo,
+    BiliVideo,
+    Youtube,
+}
+
+impl SearchProvider {
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Self::Ncm => "netease",
+            Self::Kugou => "kugou",
+            Self::Kuwo => "kuwo",
+            Self::BiliVideo => "bilivideo",
+            Self::Youtube => "youtube",
+        }
+    }
+
+    pub fn to_sonar(self) -> Option<sonar::SonarSource> {
+        match self {
+            Self::Ncm => None,
+            Self::Kugou => Some(sonar::SonarSource::Kugou),
+            Self::Kuwo => Some(sonar::SonarSource::Kuwo),
+            Self::BiliVideo => Some(sonar::SonarSource::BiliVideo),
+            Self::Youtube => Some(sonar::SonarSource::Youtube),
+        }
+    }
+
+    pub fn from_sonar(source: sonar::SonarSource) -> Self {
+        match source {
+            sonar::SonarSource::Kugou => Self::Kugou,
+            sonar::SonarSource::Kuwo => Self::Kuwo,
+            sonar::SonarSource::BiliVideo => Self::BiliVideo,
+            sonar::SonarSource::Youtube => Self::Youtube,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct SearchState {
     pub active: bool,
     pub input: TextInput,
     pub filter_queue_only: bool,
     pub unfiltered_songs: Option<Vec<Arc<ncm_api::SongInfo>>>,
+    /// Available providers in display order (网易云 first, then configured
+    /// sonar sources). Populated from config at startup.
+    pub providers: Vec<SearchProvider>,
+    /// Currently selected search provider.
+    pub provider: SearchProvider,
+}
+
+impl SearchState {
+    pub fn cycle_provider(&mut self, forward: bool) {
+        if self.providers.is_empty() {
+            return;
+        }
+        let idx = self
+            .providers
+            .iter()
+            .position(|p| *p == self.provider)
+            .unwrap_or(0);
+        let len = self.providers.len();
+        self.provider = if forward {
+            self.providers[(idx + 1) % len]
+        } else {
+            self.providers[(idx + len - 1) % len]
+        };
+    }
 }
 
 pub struct State {
@@ -166,12 +239,14 @@ pub struct State {
     pub splash: SplashState,
     pub navigation: NavigationState,
     pub command_panel: CommandPanel,
+    pub help: HelpState,
     pub offline: bool,
     pub tick: u64,
     pub last_tick: std::time::Instant,
     pub toast_msg: String,
     pub toast_time: Option<std::time::Instant>,
     pub playerbar_area: Rect,
+    pub queue_tab_scroll_x: u16,
 }
 
 pub fn theme_fallback() -> &'static Theme {
@@ -187,6 +262,12 @@ pub struct App {
     pub theme_registry: ThemeRegistry,
     pub service: ApiService,
     pub picker: ratatui_image::picker::Picker,
+    /// Blocking HTTP client for cover downloads (honours the proxy config).
+    pub cover_http: reqwest::Client,
+    /// Shared sonar finder used for per-provider search and playback fallback.
+    pub finder: Arc<sonar::SonarFinder>,
+    /// Original sonar songs for search results, keyed by synthetic song id.
+    pub sonar_songs: Arc<Mutex<HashMap<u64, Arc<sonar::Song>>>>,
 }
 
 impl App {
@@ -205,10 +286,10 @@ impl App {
             .collect();
 
         let theme_children: Vec<CommandItem> = theme_names
-            .iter()
-            .map(|name| CommandItem::Action {
-                name: name.clone(),
-                action: CommandAction::SwitchTheme(name.clone()),
+            .into_iter()
+            .map(|name| {
+                let action = CommandAction::SwitchTheme(name.clone());
+                CommandItem::Action { name, action }
             })
             .collect();
 
@@ -226,23 +307,43 @@ impl App {
         let mut command_panel = CommandPanel::new();
         command_panel.levels = vec![commands];
 
-        let (ncm_proxy, yt_proxy) = if config.proxy.is_empty() {
-            (String::new(), String::new())
+        let proxy = config.proxy.as_str();
+        let empty = proxy.is_empty();
+        use crate::config::ProxyTarget;
+        // `normal`（国内默认）：仅 YouTube 走代理；`reversed`（海外）：除 YouTube
+        // 外全部走代理；`both`：全部走代理。
+        let ncm_proxy = if !empty
+            && matches!(
+                config.proxy_target,
+                ProxyTarget::Reversed | ProxyTarget::Both
+            ) {
+            proxy
         } else {
-            match config.proxy_target {
-                crate::config::ProxyTarget::Ncm => (config.proxy.clone(), String::new()),
-                crate::config::ProxyTarget::Yt => (String::new(), config.proxy.clone()),
-                crate::config::ProxyTarget::Both => (config.proxy.clone(), config.proxy.clone()),
-            }
+            ""
         };
+        let search_proxy = if !empty
+            && matches!(
+                config.proxy_target,
+                ProxyTarget::Reversed | ProxyTarget::Both
+            ) {
+            proxy
+        } else {
+            ""
+        };
+        let youtube_proxy =
+            if !empty && matches!(config.proxy_target, ProxyTarget::Normal | ProxyTarget::Both) {
+                proxy
+            } else {
+                ""
+            };
+        let stream_proxy = search_proxy;
 
         let api = if ncm_proxy.is_empty() {
             Arc::new(ncm_api::NcmClient::new()?)
         } else {
-            Arc::new(ncm_api::NcmClient::builder().proxy(&ncm_proxy).build()?)
+            Arc::new(ncm_api::NcmClient::builder().proxy(ncm_proxy).build()?)
         };
 
-        let nav_config = config.navigation.clone();
         let quality = ncm_api::SongQuality::from_level(&config.cache.quality)
             .unwrap_or(ncm_api::SongQuality::Higher);
 
@@ -260,28 +361,41 @@ impl App {
         let base_dir = dirs::cache_dir()
             .unwrap_or_else(|| std::path::PathBuf::from("."))
             .join("pigma");
-        let proxy = yt_proxy;
 
-        let finder = {
-            let mut sources: Vec<musicx::MusicSource> = Vec::new();
+        let finder = Arc::new({
+            let mut sources: Vec<sonar::SonarSource> = Vec::new();
             for name in &config.source_fallback.providers {
                 let source = match name.as_str() {
-                    "kuwo" => musicx::MusicSource::Kuwo,
-                    "kugou" => musicx::MusicSource::Kugou,
-                    "bilivideo" => musicx::MusicSource::BiliVideo,
-                    "youtube" => musicx::MusicSource::Youtube,
+                    "kuwo" => sonar::SonarSource::Kuwo,
+                    "kugou" => sonar::SonarSource::Kugou,
+                    "bilivideo" => sonar::SonarSource::BiliVideo,
+                    "youtube" => sonar::SonarSource::Youtube,
                     _ => continue,
                 };
                 if !sources.contains(&source) {
                     sources.push(source);
                 }
             }
-            let search_config = musicx::SearchConfig::new()
+            let search_config = sonar::SearchConfig::new()
                 .with_providers(sources)
                 .with_timeout(config.source_fallback.timeout_ms)
-                .with_proxy(proxy.clone());
-            musicx::MusicFinder::new(search_config)
-        };
+                .with_search_proxy(search_proxy.to_string())
+                .with_youtube_proxy(youtube_proxy.to_string());
+            sonar::SonarFinder::new(search_config)
+        });
+
+        // Search providers offered in the search bar: 网易云 always first,
+        // followed by the configured sonar fallback sources.
+        let mut search_providers = vec![SearchProvider::Ncm];
+        for source in finder
+            .sources()
+            .iter()
+            .map(|s| SearchProvider::from_sonar(*s))
+        {
+            if !search_providers.contains(&source) {
+                search_providers.push(source);
+            }
+        }
 
         let cache = crate::cache::CacheManager::new(
             cache_dir,
@@ -304,7 +418,62 @@ impl App {
             None => {}
         }
 
-        let musicx_enabled = config.source_fallback.enabled;
+        let stream_client = {
+            let mut builder = reqwest::Client::builder();
+            if !stream_proxy.is_empty() {
+                builder = builder
+                    .proxy(reqwest::Proxy::all(stream_proxy).map_err(color_eyre::Report::msg)?);
+            }
+            builder.build()?
+        };
+
+        let cover_http = {
+            let mut builder = reqwest::Client::builder();
+            if !search_proxy.is_empty() {
+                builder = builder
+                    .proxy(reqwest::Proxy::all(search_proxy).map_err(color_eyre::Report::msg)?);
+            }
+            builder.build()?
+        };
+
+        let sonar_enabled = config.source_fallback.enabled;
+        let sonar_songs: Arc<Mutex<HashMap<u64, Arc<sonar::Song>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let mut state = State {
+            running: true,
+            events,
+            border,
+            splash: SplashState::default(),
+            navigation: NavigationState {
+                page: Page::Splash,
+                login: LoginState::default(),
+                user: None,
+                nav: NavState::from_config(&config.navigation),
+                content: Arc::new(ContentState::Empty),
+                history: Vec::new(),
+                content_selected: 0,
+                content_column_selected: 0,
+                table_mode: TableMode::Row,
+                table_state: TableState::default(),
+                playlist_selected: 0,
+                search: SearchState::default(),
+                pagination: None,
+                generation: 0,
+                content_is_search: false,
+                content_rows_cache: RefCell::new(None),
+                title_cache: RefCell::new(None),
+            },
+            command_panel,
+            help: HelpState::default(),
+            offline: false,
+            tick: 0,
+            last_tick: std::time::Instant::now(),
+            toast_msg: String::new(),
+            toast_time: None,
+            playerbar_area: Rect::default(),
+            queue_tab_scroll_x: 0,
+        };
+        state.navigation.search.providers = search_providers;
         Ok(Self {
             config,
             service: service.clone(),
@@ -313,43 +482,17 @@ impl App {
                 service,
                 cache,
                 quality,
-                proxy,
-                finder,
-                musicx_enabled,
+                stream_client,
+                Arc::clone(&finder),
+                sonar_enabled,
+                Arc::clone(&sonar_songs),
             ),
-            state: State {
-                running: true,
-                events,
-                border,
-                splash: SplashState::default(),
-                navigation: NavigationState {
-                    page: Page::Splash,
-                    login: LoginState::default(),
-                    user: None,
-                    nav: NavState::from_config(&nav_config),
-                    content: Arc::new(ContentState::Empty),
-                    history: Vec::new(),
-                    content_selected: 0,
-                    content_column_selected: 0,
-                    table_mode: TableMode::Row,
-                    table_state: TableState::default(),
-                    playlist_selected: 0,
-                    search: SearchState::default(),
-                    pagination: None,
-                    generation: 0,
-                    content_rows_cache: RefCell::new(None),
-                    title_cache: RefCell::new(None),
-                },
-                command_panel,
-                offline: false,
-                tick: 0,
-                last_tick: std::time::Instant::now(),
-                toast_msg: String::new(),
-                toast_time: None,
-                playerbar_area: Rect::default(),
-            },
+            state,
             theme_registry,
             picker,
+            cover_http,
+            finder,
+            sonar_songs,
         })
     }
 
@@ -388,9 +531,10 @@ impl App {
                 ));
             }
             CommandAction::SwitchTheme(name) => {
-                self.config.default_theme = name.clone();
+                let msg = format!("THEME: {name}");
+                self.config.default_theme = name;
                 self.config.save();
-                self.toast(format!("THEME: {}", name));
+                self.toast(msg);
             }
         }
     }
@@ -398,5 +542,28 @@ impl App {
     pub fn toast(&mut self, msg: String) {
         self.state.toast_msg = msg;
         self.state.toast_time = Some(std::time::Instant::now());
+    }
+
+    /// Breadcrumb key for the current page: the last breadcrumb level's
+    /// subtitle, falling back to the focused nav item's name. Distinct pages
+    /// get distinct playback queues.
+    pub fn current_queue_key(&self) -> String {
+        let nav = &self.state.navigation;
+        if let Some(sub) = nav.nav.subtitle.clone().filter(|s| !s.trim().is_empty()) {
+            return sub;
+        }
+        nav.nav
+            .sections
+            .get(nav.nav.focus_section)
+            .and_then(|s| {
+                nav.nav
+                    .section_states
+                    .get(nav.nav.focus_section)
+                    .and_then(|st| st.selected())
+                    .and_then(|i| s.items.get(i))
+            })
+            .map(|item| item.name.clone())
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| "默认队列".into())
     }
 }

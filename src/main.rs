@@ -2,20 +2,20 @@ use crate::{app::App, config::Config, logger::init_logger};
 use crossterm::execute;
 use std::io::stdout;
 
-pub mod api;
-pub mod app;
-pub mod cache;
-pub mod config;
-pub mod event;
-pub mod input;
-pub mod layout;
-pub mod logger;
-pub mod playback;
-pub mod service;
-pub mod state;
-pub mod text_input;
-pub mod ui;
-pub mod utils;
+mod api;
+mod app;
+mod cache;
+mod config;
+mod event;
+mod input;
+mod layout;
+mod logger;
+mod playback;
+mod service;
+mod state;
+mod text_input;
+mod ui;
+mod utils;
 
 // #[global_allocator]
 // static ALLOC: dhat::Alloc = dhat::Alloc;

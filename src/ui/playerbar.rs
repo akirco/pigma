@@ -20,10 +20,11 @@ pub fn draw(
     bs: &BlockStyle<'_>,
     config: &PlayerbarConfig,
     area: Rect,
+    is_sixel: bool,
 ) {
     match config.layout {
         LayoutType::Default => default_layout::draw(f, player, tick, bs, config, area),
-        LayoutType::Modern => modern_layout::draw(f, player, tick, bs, config, area),
+        LayoutType::Modern => modern_layout::draw(f, player, tick, bs, config, area, is_sixel),
         LayoutType::Minimal => minimal_layout::draw(f, player, tick, bs, config, area),
     }
 }

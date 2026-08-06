@@ -101,20 +101,25 @@ pub fn build_layout(area: Rect, page: Page, nav_position: NavPosition) -> Layout
                 ])
                 .areas(area);
 
-                let (sidebar, right) = match nav_position {
-                    NavPosition::Left => {
-                        let [sidebar, right] =
-                            Layout::horizontal([Constraint::Length(26), Constraint::Min(40)])
-                                .areas(middle);
-                        (sidebar, right)
+                // 终端<60 列时隐藏侧边栏，内容占满整个区域
+                let (sidebar, right) = if area.width < 60 {
+                    (Rect::default(), middle)
+                } else {
+                    match nav_position {
+                        NavPosition::Left => {
+                            let [sidebar, right] =
+                                Layout::horizontal([Constraint::Length(26), Constraint::Min(40)])
+                                    .areas(middle);
+                            (sidebar, right)
+                        }
+                        NavPosition::Right => {
+                            let [right, sidebar] =
+                                Layout::horizontal([Constraint::Min(40), Constraint::Length(26)])
+                                    .areas(middle);
+                            (sidebar, right)
+                        }
+                        _ => unreachable!(),
                     }
-                    NavPosition::Right => {
-                        let [right, sidebar] =
-                            Layout::horizontal([Constraint::Min(40), Constraint::Length(26)])
-                                .areas(middle);
-                        (sidebar, right)
-                    }
-                    _ => unreachable!(),
                 };
 
                 let [breadcrumb, content] =

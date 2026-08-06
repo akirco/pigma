@@ -11,13 +11,13 @@ pub struct TitlesConfig {
 }
 
 fn default_title_sidebar() -> String {
-    " NAVIGATION".into()
+    "\u{25BA} NAVIGATION \u{25C4}".into()
 }
 fn default_title_playlist() -> String {
-    "\u{266a} QUEUE ({count})".into()
+    "\u{25BA} \u{266a} QUEUE ({count}) \u{25C4}".into()
 }
 fn default_title_lyrics() -> String {
-    "\u{266a} LYRICS".into()
+    "\u{25BA} \u{266a} LYRICS \u{25C4}".into()
 }
 
 impl Default for TitlesConfig {

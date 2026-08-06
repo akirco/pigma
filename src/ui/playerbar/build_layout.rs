@@ -36,6 +36,7 @@ pub fn build_default(area: Rect) -> LayoutArea {
         Constraint::Length(1),
         Constraint::Length(1),
     ])
+    .horizontal_margin(1)
     .split(cols[3]);
 
     LayoutArea {
@@ -49,7 +50,12 @@ pub fn build_default(area: Rect) -> LayoutArea {
     }
 }
 
-pub fn build_modern(area: Rect, show_cover: bool, _show_volume: bool) -> LayoutArea {
+pub fn build_modern(
+    area: Rect,
+    show_cover: bool,
+    _show_volume: bool,
+    is_sixel: bool,
+) -> LayoutArea {
     let cols = Layout::horizontal([
         if show_cover {
             Constraint::Length(8)
@@ -63,6 +69,13 @@ pub fn build_modern(area: Rect, show_cover: bool, _show_volume: bool) -> LayoutA
 
     let cover_area = cols[0];
 
+    let cover_height = (if is_sixel && area.height >= 5 { 4 } else { 3 }).min(area.height);
+    let cover_area = Rect {
+        y: area.y,
+        height: cover_height,
+        ..cover_area
+    };
+
     let right_rows = Layout::vertical([
         Constraint::Length(1),
         Constraint::Length(1),
@@ -72,9 +85,9 @@ pub fn build_modern(area: Rect, show_cover: bool, _show_volume: bool) -> LayoutA
     .split(cols[1]);
 
     let progress_cols = Layout::horizontal([
-        Constraint::Length(6),
+        Constraint::Length(9),
         Constraint::Min(10),
-        Constraint::Length(6),
+        Constraint::Length(9),
     ])
     .split(right_rows[0]);
 

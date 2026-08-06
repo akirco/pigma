@@ -18,6 +18,7 @@ impl App {
         };
 
         if api == ApiEndpoint::LocalMusic {
+            self.state.navigation.content_is_search = false;
             self.state.navigation.clear_breadcrumb();
             self.state.navigation.set_content(ContentState::Loading);
             let cache = self.service.cache().clone();
@@ -38,21 +39,24 @@ impl App {
                 .await
                 .unwrap_or_default();
                 let state = ContentState::Songs(songs);
-                if ttl > 0 {
+                let state = if ttl > 0 {
                     let cache_clone = cache.clone();
-                    let state_clone = state.clone();
                     tokio::task::spawn_blocking(move || {
-                        cache_clone.save_content_cache("__local_music__", &state_clone);
+                        cache_clone.save_content_cache("__local_music__", &state);
+                        state
                     })
                     .await
-                    .ok();
-                }
+                    .unwrap_or(ContentState::Empty)
+                } else {
+                    state
+                };
                 send_event(&sender, NavigationEvent::ContentLoaded(state).into());
             });
             return Ok(());
         }
 
         self.state.navigation.clear_breadcrumb();
+        self.state.navigation.content_is_search = false;
         self.state.navigation.set_content(ContentState::Loading);
         self.state.navigation.nav.subtitle = None;
         self.state.navigation.generation += 1;
@@ -90,15 +94,17 @@ impl App {
                 && let Some(uid) = uid
             {
                 let (state, playlist_id) = service.load_liked_songs(uid, limit).await;
-                if ttl > 0 && !matches!(state, ContentState::Error(_)) {
+                let state = if ttl > 0 && !matches!(state, ContentState::Error(_)) {
                     let cache_clone = cache.clone();
-                    let state_clone = state.clone();
                     tokio::task::spawn_blocking(move || {
-                        cache_clone.save_content_cache("__liked__", &state_clone);
+                        cache_clone.save_content_cache("__liked__", &state);
+                        state
                     })
                     .await
-                    .ok();
-                }
+                    .unwrap_or(ContentState::Empty)
+                } else {
+                    state
+                };
                 send_event(&sender, NavigationEvent::ContentLoaded(state).into());
                 if let Some(id) = playlist_id {
                     send_event(
@@ -111,16 +117,20 @@ impl App {
 
             let (state, pagination) = service.resolve_content(api, uid, limit).await;
 
-            if ttl > 0 && api != ApiEndpoint::Search && !matches!(state, ContentState::Error(_)) {
+            let state = if ttl > 0
+                && api != ApiEndpoint::Search
+                && !matches!(state, ContentState::Error(_))
+            {
                 let cache_clone = cache.clone();
-                let api_str_clone = api_str.clone();
-                let state_clone = state.clone();
                 tokio::task::spawn_blocking(move || {
-                    cache_clone.save_content_cache(&api_str_clone, &state_clone);
+                    cache_clone.save_content_cache(&api_str, &state);
+                    state
                 })
                 .await
-                .ok();
-            }
+                .unwrap_or(ContentState::Empty)
+            } else {
+                state
+            };
 
             if let Some(pg) = pagination {
                 send_event(
@@ -149,13 +159,12 @@ impl App {
             .columns
             .for_content(self.state.navigation.content.content_type(), None)
             .to_vec();
-        let column = match columns.get(col) {
-            Some(c) => c.clone(),
-            None => return Ok(()),
+        let Some(column) = columns.get(col) else {
+            return Ok(());
         };
-        let field = column.field.clone();
+        let field = column.field.as_str();
 
-        match (self.state.navigation.content.as_ref(), field.as_str()) {
+        match (self.state.navigation.content.as_ref(), field) {
             (ContentState::Songs(songs), "album") => {
                 if let Some(song) = songs.get(row) {
                     let album_id = song.album_id;

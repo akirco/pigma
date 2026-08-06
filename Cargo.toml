@@ -1,6 +1,6 @@
 [package]
 name = "pigma"
-version = "0.1.9"
+version = "0.2.0"
 edition = "2024"
 description = "A netease cloud music client"
 repository = "https://github.com/akirco/pigma.git"
@@ -21,7 +21,6 @@ futures = {
 }
 image = { version = "0.25.10", default-features = false, features = ["jpeg"] }
 log = { version = "0.4.33", features = ["serde", "std"] }
-musicx = { path = "crates/musicx" }
 ncm-api = { path = "crates/ncm-api" }
 qrcode = "0.14.1"
 rand = "0.10.2"
@@ -44,7 +43,7 @@ ratatui-image = {
 reqwest = {
   version = "0.13.4",
   default-features = false,
-  features = ["blocking", "rustls-no-provider"]
+  features = ["rustls-no-provider"]
 }
 rodio = {
   version = "0.22.2",
@@ -52,7 +51,7 @@ rodio = {
   features = ["flac", "mp3", "mp4", "playback", "vorbis", "wav"]
 }
 rustls = {
-  version = "0.23",
+  version = "0.23.43",
   default-features = false,
   features = [
     "ring",
@@ -61,6 +60,7 @@ rustls = {
 }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+sonar = { path = "crates/sonar" }
 stream-download = {
   version = "0.24.3",
   default-features = false,

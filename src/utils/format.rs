@@ -1,4 +1,5 @@
 use toml_edit::{Array, InlineTable, Table, Value};
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 /// 将表中指定字段从 ArrayOfTables 转为多行内联表数组
 ///
@@ -50,5 +51,43 @@ pub fn convert_all_aot_to_inline(table: &mut Table, indent: &str) {
 
     for key in keys {
         convert_aot_to_inline(table, &key, indent);
+    }
+}
+
+/// Cap a tab label to `max_cells` display cells, appending an ellipsis when
+/// truncated, so a single long playlist name can't push the others off screen.
+pub fn clip_long_text(s: &str, max_cells: usize) -> String {
+    if UnicodeWidthStr::width(s) <= max_cells {
+        return s.to_string();
+    }
+    let mut out = String::new();
+    let mut cells = 0;
+    for ch in s.chars() {
+        let cw = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if cells + cw > max_cells.saturating_sub(1) {
+            break;
+        }
+        out.push(ch);
+        cells += cw;
+    }
+    out.push('…');
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clip_keeps_short_labels() {
+        assert_eq!(clip_long_text("我喜欢的音乐", 24), "我喜欢的音乐");
+        assert_eq!(clip_long_text("short", 24), "short");
+    }
+
+    #[test]
+    fn clip_truncates_wide_labels() {
+        let clipped = clip_long_text("一个特别特别特别长的歌单名字", 8);
+        assert!(clipped.ends_with('…'));
+        assert!(UnicodeWidthStr::width(clipped.as_str()) <= 8);
     }
 }

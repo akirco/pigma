@@ -5,6 +5,16 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const SAVE_INTERVAL: Duration = Duration::from_secs(10);
 
+/// 生成 52 位十六进制设备指纹（与官方客户端 `generateDeviceId` 一致）
+fn generate_device_id() -> String {
+    const HEX: &[u8] = b"0123456789ABCDEF";
+    let mut s = String::with_capacity(52);
+    for _ in 0..52 {
+        s.push(HEX[(rand::random::<u8>() % 16) as usize] as char);
+    }
+    s
+}
+
 /// 登录后服务器下发的持久化 Cookie + 客户端生成的会话标识
 pub struct CookieStore {
     /// 持久化 cookies（来自 set-cookie，序列化到磁盘）
@@ -63,15 +73,29 @@ impl CookieStore {
                 cookies: HashMap::new(),
             });
 
-        let csrf = persisted.cookies.get("__csrf").cloned().unwrap_or_default();
+        let mut cookies = persisted.cookies;
+        // 设备指纹：持久化，跨重启保持一致（降低风控触发概率）
+        if !cookies.contains_key("deviceId") {
+            cookies.insert("deviceId".to_string(), generate_device_id());
+        }
+
+        let csrf = cookies.get("__csrf").cloned().unwrap_or_default();
 
         Self {
-            cookies: persisted.cookies,
+            cookies,
             session: SessionCookies::new(),
             path,
             csrf,
             last_save: Instant::now(),
         }
+    }
+
+    /// 当前设备指纹（52 位十六进制）
+    pub fn device_id(&self) -> &str {
+        self.cookies
+            .get("deviceId")
+            .map(|s| s.as_str())
+            .unwrap_or("")
     }
 
     /// 构建完整的 Cookie header
@@ -92,7 +116,6 @@ impl CookieStore {
         parts.push(format!("os={}", os));
         parts.push(format!("appver={}", appver));
         parts.push(format!("osver={}", osver));
-        parts.push("deviceId=".to_string());
         parts.push("WEVNSM=1.0.0".to_string());
         parts.push(format!("WNMCID={}", self.session.wn_mc_id));
         parts.push(format!("_ntes_nnid={}", self.session.ntes_nnid));
@@ -145,6 +168,11 @@ impl CookieStore {
     /// 是否已登录（依据关键 cookie 是否存在）
     pub fn is_logged_in(&self) -> bool {
         self.cookies.contains_key("MUSIC_U") || self.cookies.contains_key("__csrf")
+    }
+
+    /// 移除指定 cookie
+    pub fn remove(&mut self, name: &str) {
+        self.cookies.remove(name);
     }
 
     /// 强制写盘
@@ -249,6 +277,26 @@ mod tests {
         let header = store.build_cookie_header(true);
         assert!(header.contains("os=iphone"));
         assert!(header.contains("appver=9.0.90"));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_new_store_generates_device_id() {
+        let path = temp_cookie_path();
+        let store = CookieStore::new(path.clone());
+        let id = store.device_id().to_string();
+        assert_eq!(id.len(), 52);
+        assert!(id.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()));
+
+        // header 里带上指纹
+        let header = store.build_cookie_header(false);
+        assert!(header.contains(&format!("deviceId={id}")));
+
+        // 持久化后重启保持一致
+        let mut store = store;
+        store.flush();
+        let store2 = CookieStore::new(path.clone());
+        assert_eq!(store2.device_id(), id);
         let _ = std::fs::remove_file(path);
     }
 

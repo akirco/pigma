@@ -88,6 +88,17 @@ fn sixel_available() -> bool {
         {
             return true;
         }
+        // Windows Terminal added sixel support in v1.22.
+        Ok("WindowsTerminal")
+            if version_gte(
+                &env::var("TERM_PROGRAM_VERSION").unwrap_or_default(),
+                1,
+                22,
+                0,
+            ) =>
+        {
+            return true;
+        }
         _ => {}
     }
     matches!(env::var("TERM").as_deref(), Ok(t) if t.to_lowercase().starts_with("foot") || t.to_lowercase().starts_with("mlterm"))

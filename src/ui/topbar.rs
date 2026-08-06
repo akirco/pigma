@@ -9,6 +9,7 @@ use super::create_block;
 use crate::config::Theme;
 use crate::state::SearchState;
 use ncm_api::LoginInfo;
+use unicode_width::UnicodeWidthStr;
 
 pub fn draw(
     f: &mut Frame,
@@ -76,21 +77,39 @@ pub fn draw(
 }
 
 fn render_search(f: &mut Frame, search: &SearchState, colors: &Theme, area: Rect) {
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Length(2), Constraint::Min(1)])
-        .split(area);
+    let provider_width = {
+        let name = search.provider.display_name();
+        name.width() + 2
+    };
+    let chunks = if search.filter_queue_only {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Length(2), Constraint::Min(1)])
+            .split(area)
+    } else {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Length(2),
+                Constraint::Min(1),
+                Constraint::Length(provider_width as u16),
+            ])
+            .split(area)
+    };
 
     let icon = Line::from(Span::styled("\u{F002}", Style::default().fg(colors.accent)));
     f.render_widget(Paragraph::new(icon), chunks[0]);
 
     let value = &search.input.value;
 
+    let placeholder = if search.filter_queue_only {
+        " 过滤播放队列..."
+    } else {
+        " 搜索歌曲..."
+    };
+
     let display = if value.is_empty() {
-        Line::from(Span::styled(
-            " 搜索歌曲...",
-            Style::default().fg(colors.muted),
-        ))
+        Line::from(Span::styled(placeholder, Style::default().fg(colors.muted)))
     } else {
         Line::from(Span::styled(
             value.as_str(),
@@ -102,4 +121,18 @@ fn render_search(f: &mut Frame, search: &SearchState, colors: &Theme, area: Rect
     search
         .input
         .show_cursor_at(f, chunks[1].x, chunks[1].y, search.active, false);
+
+    if !search.filter_queue_only {
+        let provider = Line::from(vec![
+            Span::styled(" ", Style::default().fg(colors.text)),
+            Span::styled(
+                search.provider.display_name(),
+                Style::default()
+                    .fg(colors.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])
+        .alignment(Alignment::Right);
+        f.render_widget(Paragraph::new(provider), chunks[2]);
+    }
 }

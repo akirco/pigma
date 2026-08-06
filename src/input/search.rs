@@ -64,6 +64,14 @@ pub(super) fn handle_search_key(app: &mut App, key_event: KeyEvent) -> bool {
             }
             return true;
         }
+        KeyCode::Tab => {
+            app.state.navigation.search.cycle_provider(true);
+            return true;
+        }
+        KeyCode::BackTab => {
+            app.state.navigation.search.cycle_provider(false);
+            return true;
+        }
         KeyCode::Char(c) => {
             app.state.navigation.search.input.enter_char(c);
             if app.state.navigation.search.filter_queue_only {

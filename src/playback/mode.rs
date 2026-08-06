@@ -1,6 +1,6 @@
 use rand::seq::SliceRandom;
 
-use super::types::PlayMode;
+use super::PlayMode;
 
 pub trait PlayStrategy: Send {
     fn next(&mut self, current_index: Option<usize>, queue_len: usize) -> Option<usize>;

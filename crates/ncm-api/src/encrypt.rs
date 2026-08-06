@@ -147,7 +147,7 @@ fn rsa_encrypt(data: &[u8]) -> String {
     encrypted.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
-fn md5_hex(data: &str) -> String {
+pub(crate) fn md5_hex(data: &str) -> String {
     let mut hasher = Md5::new();
     hasher.update(data.as_bytes());
     hasher
@@ -155,6 +155,27 @@ fn md5_hex(data: &str) -> String {
         .iter()
         .map(|b| format!("{:02x}", b))
         .collect()
+}
+
+/// 匿名注册用：`deviceId` XOR `3go8&$8*3*3h0k(2)2` → MD5 原始字节 → 标准 base64。
+/// 与官方客户端 `cloudmusic_dll_encode_id` 一致。
+pub(crate) fn cloudmusic_encode_id(device_id: &str) -> String {
+    use base64::Engine;
+    use md5::Digest;
+    const KEY: &[u8] = b"3go8&$8*3*3h0k(2)2";
+    let xored: Vec<u8> = device_id
+        .bytes()
+        .enumerate()
+        .map(|(i, c)| c ^ KEY[i % KEY.len()])
+        .collect();
+    let digest = md5::Md5::digest(&xored);
+    general_purpose::STANDARD.encode(digest)
+}
+
+/// UTF-8 字节的标准 base64
+pub(crate) fn base64_utf8(s: &str) -> String {
+    use base64::Engine;
+    general_purpose::STANDARD.encode(s.as_bytes())
 }
 
 fn random_key_16() -> Vec<u8> {

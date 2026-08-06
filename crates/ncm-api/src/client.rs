@@ -12,6 +12,7 @@ const EAPI_BASE: &str = "https://music.163.com";
 struct RequestCookies {
     csrf: String,
     cookie_header: String,
+    device_id: String,
 }
 
 const UA_LIST: &[&str] = &[
@@ -128,6 +129,14 @@ impl NcmClient {
         }
     }
 
+    /// 清除 `MUSIC_U`（登录失败后清掉匿名会话，避免误判为已登录）
+    pub fn clear_music_u(&self) {
+        if let Ok(mut store) = self.store.lock() {
+            store.remove("MUSIC_U");
+            store.flush();
+        }
+    }
+
     /// 检查是否已登录（通过 `MUSIC_U` 或 `__csrf` cookie 判断）
     pub fn is_logged_in(&self) -> bool {
         self.store.lock().map(|s| s.is_logged_in()).unwrap_or(false)
@@ -154,6 +163,7 @@ impl NcmClient {
         self.with_store(|store| RequestCookies {
             csrf: store.csrf_token().to_string(),
             cookie_header: store.build_cookie_header(is_eapi),
+            device_id: store.device_id().to_string(),
         })
     }
 
@@ -270,7 +280,7 @@ impl NcmClient {
                 "header".to_string(),
                 serde_json::json!({
                     "osver": "16.2",
-                    "deviceId": "",
+                    "deviceId": cookies.device_id,
                     "os": "iPhone OS",
                     "appver": "9.0.90",
                     "versioncode": "140",
@@ -338,7 +348,7 @@ impl NcmClient {
                 "header".to_string(),
                 serde_json::json!({
                     "osver": "16.2",
-                    "deviceId": "",
+                    "deviceId": cookies.device_id,
                     "os": "iPhone OS",
                     "appver": "9.0.90",
                     "versioncode": "140",
@@ -410,29 +420,35 @@ impl NcmClient {
     ///
     /// * `username` — 手机号（11 位数字）或邮箱
     /// * `password` — 密码（明文）
+    ///
+    /// 与官方客户端一致：密码先 MD5，邮箱走 eAPI `/api/w/login`，手机走
+    /// weapi `/api/w/login/cellphone`（`/weapi/w/login/cellphone`）。
     pub async fn login(&self, username: &str, password: &str) -> Result<LoginInfo, NcmError> {
-        let (path, params);
-        if username.len() == 11 && username.parse::<u64>().is_ok() {
-            path = "/weapi/login/cellphone";
-            params = vec![
+        let md5_password = encrypt::md5_hex(password);
+        let value = if username.len() == 11 && username.parse::<u64>().is_ok() {
+            let params = vec![
+                ("type", "1"),
+                ("https", "true"),
                 ("phone", username),
-                ("password", password),
-                ("rememberLogin", "true"),
+                ("countrycode", "86"),
+                ("password", md5_password.as_str()),
+                ("remember", "true"),
             ];
+            let result = self
+                .request_weapi("/api/w/login/cellphone", &params)
+                .await?;
+            serde_json::from_str(&result)?
         } else {
-            path = "/weapi/login";
-            params = vec![
-                ("username", username),
-                ("password", password),
-                ("rememberLogin", "true"),
-                (
-                    "clientToken",
-                    "1_jVUMqWEPke0/1/Vu56xCmJpo5vP1grjn_SOVVDzOc78w8OKLVZ2JH7IfkjSXqgfmh",
-                ),
-            ];
-        }
-        let result = self.request_weapi(path, &params).await?;
-        let value: Value = serde_json::from_str(&result)?;
+            let params = serde_json::json!({
+                "type": "0",
+                "https": "true",
+                "username": username,
+                "password": md5_password,
+                "rememberLogin": "true",
+            });
+            let result = self.request_eapi_value("/api/w/login", params).await?;
+            serde_json::from_str(&result)?
+        };
         parse_login_info(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
@@ -448,13 +464,15 @@ impl NcmClient {
         captcha: &str,
     ) -> Result<LoginInfo, NcmError> {
         let params = vec![
+            ("type", "1"),
+            ("https", "true"),
             ("phone", phone),
             ("countrycode", ctcode),
             ("captcha", captcha),
-            ("rememberLogin", "true"),
+            ("remember", "true"),
         ];
         let result = self
-            .request_weapi("/weapi/login/cellphone", &params)
+            .request_weapi("/api/w/login/cellphone", &params)
             .await?;
         let value: Value = serde_json::from_str(&result)?;
         parse_login_info(&value).map_err(|e| NcmError::parse(e, &value))
@@ -510,6 +528,22 @@ impl NcmClient {
         let result = self.request_weapi("/weapi/logout", &[]).await?;
         let value: Value = serde_json::from_str(&result)?;
         parse_msg(&value).map_err(|e| NcmError::parse(e, &value))
+    }
+
+    /// 匿名注册：获取匿名会话 cookie（MUSIC_U）作为设备指纹，配合 `deviceId`
+    /// 降低登录风控触发概率。注意：成功后 `is_logged_in()` 会因匿名 MUSIC_U
+    /// 返回 true，若不需要匿名会话请不要调用（或在真实登录后覆盖）。
+    pub async fn register_anonimous(&self) -> Result<(), NcmError> {
+        let device_id = self.with_store(|s| s.device_id().to_string())?;
+        let encoded = encrypt::cloudmusic_encode_id(&device_id);
+        let username = encrypt::base64_utf8(&format!("{device_id} {encoded}"));
+        let params = vec![("username", username.as_str())];
+        let result = self
+            .request_weapi("/api/register/anonimous", &params)
+            .await?;
+        let value: Value = serde_json::from_str(&result)?;
+        Self::check_api_code(&value)?;
+        Ok(())
     }
 
     /// 获取歌曲详情
@@ -589,22 +623,53 @@ impl NcmClient {
 
     /// 获取歌单详情（含歌曲列表）
     ///
+    /// 网易云单次请求最多返回 1000 首，超过的歌单按 `offset` 分页拉全。
+    ///
     /// * `id` — 歌单 ID
     pub async fn song_list_detail(&self, id: u64) -> Result<PlayListDetail, NcmError> {
+        const PAGE: u32 = 1000;
+        const MAX_OFFSET: u32 = 200_000;
         let id_str = id.to_string();
-        let params = vec![
-            ("id", id_str.as_str()),
-            ("offset", "0"),
-            ("total", "true"),
-            ("limit", "1000"),
-            ("n", "1000"),
-        ];
-        let result = self
-            .request_weapi("/weapi/v6/playlist/detail", &params)
-            .await?;
-        let value: Value = serde_json::from_str(&result)?;
-        Self::check_api_code(&value)?;
-        parse_playlist_detail(&value).map_err(|e| NcmError::parse(e, &value))
+
+        let mut all_songs: Vec<SongInfo> = Vec::new();
+        let mut meta: Option<PlayListDetail> = None;
+        let mut offset: u32 = 0;
+
+        loop {
+            let offset_str = offset.to_string();
+            let params = vec![
+                ("id", id_str.as_str()),
+                ("offset", offset_str.as_str()),
+                ("total", if offset == 0 { "true" } else { "false" }),
+                ("limit", "1000"),
+                ("n", "1000"),
+            ];
+            let result = self
+                .request_weapi("/weapi/v6/playlist/detail", &params)
+                .await?;
+            let value: Value = serde_json::from_str(&result)?;
+            Self::check_api_code(&value)?;
+
+            let page = parse_playlist_detail(&value).map_err(|e| NcmError::parse(e, &value))?;
+            let count = page.songs.len();
+            if meta.is_none() {
+                meta = Some(page.clone());
+            }
+            all_songs.extend(page.songs);
+
+            if count < PAGE as usize {
+                break;
+            }
+            offset += PAGE;
+            if offset > MAX_OFFSET {
+                break;
+            }
+        }
+
+        let mut detail =
+            meta.ok_or_else(|| NcmError::Session("歌单详情为空".into()))?;
+        detail.songs = all_songs;
+        Ok(detail)
     }
 
     /// 获取我喜欢的歌曲
@@ -1894,6 +1959,7 @@ mod tests {
 
     #[test]
     fn test_upload_song_rejects_missing_path() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let rt = tokio::runtime::Runtime::new().unwrap();
         let client = NcmClient::new().unwrap();
         // 不存在的路径应返回 Session 错误而非 panic

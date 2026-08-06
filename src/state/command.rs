@@ -43,17 +43,18 @@ impl CommandPanel {
 
     pub fn current_title(&self) -> &str {
         if self.levels.len() > 1 {
-            "THEMES"
+            "\u{25BA} THEMES \u{25C4}"
         } else {
-            "COMMANDS"
+            "\u{25BA} COMMANDS \u{25C4}"
         }
     }
 
     pub fn enter(&mut self) -> Option<CommandAction> {
-        let item = self.current_items()?[self.selected].clone();
+        let item = &self.current_items()?[self.selected];
         match item {
-            CommandItem::Action { action, .. } => Some(action),
+            CommandItem::Action { action, .. } => Some(action.clone()),
             CommandItem::SubMenu { children, .. } => {
+                let children = children.clone();
                 self.selected = 0;
                 self.levels.push(children);
                 None

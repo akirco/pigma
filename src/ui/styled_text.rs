@@ -7,7 +7,7 @@ use crate::utils::gradient_color;
 /// Parse `<tag>text</tag>` markup into styled `Vec<Span>`.
 ///
 /// Supported tags:
-/// - Theme colors: `<accent>`, `<text>`, `<muted>`, `<error>`, `<warning>`, `<highlight>`, `<bg>`, `<surface>`
+/// - Theme colors: `<accent>`, `<text>`, `<muted>`, `<error>`, `<bg>`, `<surface>`
 /// - Modifiers: `<b>` (bold), `<i>` (italic), `<dim>` (dimmed)
 /// - Literal colors: `<#rrggbb>`, or any name accepted by `ratatui::style::Color::from_str`
 /// - Gradient: `<gradient:preset>text</gradient>` or `<grad:preset>text</grad>` (per-char gradient coloring)

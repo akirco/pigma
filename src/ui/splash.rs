@@ -111,8 +111,8 @@ fn render_logs(f: &mut Frame, splash: &SplashState, colors: &Theme, area: Rect) 
             LogLevel::Warning => "[WARN]",
         };
         let tag_color = match entry.level {
-            LogLevel::Success => colors.highlight,
-            LogLevel::Info => colors.warning,
+            LogLevel::Success => colors.accent,
+            LogLevel::Info => colors.muted,
             LogLevel::Warning => colors.error,
         };
 

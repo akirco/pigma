@@ -1,11 +1,13 @@
 [package]
-name = "musicx"
+name = "sonar"
 version = "0.1.0"
 edition = "2024"
+description = "A library for searching audios from youtube,bilibili and other platforms.(no cookies)"
+license = "MIT"
 
 [dependencies]
 async-trait = "0.1.91"
-base64 = { version = "0.23.0", features = ["std"] }
+base64 = { version = "0.23.1", features = ["std"] }
 futures = "0.3.33"
 log = "0.4.33"
 md5 = "0.8.1"

@@ -8,7 +8,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (qr_url, unikey) = client.login_qr_create().await?;
 
-    println!("请用网易云音乐 App 扫描下方二维码登录：\n");
     let code = qrcode::QrCode::new(qr_url.as_bytes())?;
     let qr_art = code.render::<Dense1x2>().quiet_zone(false).build();
     println!("{}", qr_art);

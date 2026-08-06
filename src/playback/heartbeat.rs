@@ -4,8 +4,8 @@ use ncm_api::SongInfo;
 
 use crate::event::PlaybackEvent;
 
+use super::PlayMode;
 use super::PlaybackEngine;
-use super::types::PlayMode;
 
 const MAX_HEARTBEAT_SONGS: usize = 500;
 const KEEP_RECENT: usize = 100;
@@ -87,6 +87,7 @@ impl PlaybackEngine {
         }
 
         self.queue.songs.push(Arc::new(song));
+        self.queue.rebuild_index();
         self.queue.current_index = Some(self.queue.len() - 1);
         self.start_current_song(None);
     }

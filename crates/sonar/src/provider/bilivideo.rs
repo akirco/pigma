@@ -1,7 +1,9 @@
 use crate::crypto::wbi_sign;
-use crate::error::{MusicError, Result};
-use crate::model::{Artist, MusicSource, PlayUrlResult, Quality, SearchQuery, SearchResult, Song};
-use crate::provider::MusicProvider;
+use crate::error::{Result, SonarError};
+use crate::model::{
+    PlayUrlResult, Quality, SearchQuery, SearchResult, SonarSource, Song, SongMeta, make_song_id,
+};
+use crate::provider::SonarProvider;
 use async_trait::async_trait;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -27,10 +29,16 @@ pub struct BiliVideoProvider {
 
 impl BiliVideoProvider {
     pub fn new() -> Self {
-        let client = Client::builder()
-            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            .build()
-            .expect("Failed to create HTTP client");
+        Self::with_proxy("")
+    }
+
+    pub fn with_proxy(proxy_url: &str) -> Self {
+        let mut builder = Client::builder()
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+        if !proxy_url.is_empty() {
+            builder = builder.proxy(reqwest::Proxy::all(proxy_url).expect("invalid proxy url"));
+        }
+        let client = builder.build().expect("Failed to create HTTP client");
         Self {
             client,
             cookies: Arc::new(Mutex::new(String::new())),
@@ -73,7 +81,7 @@ impl BiliVideoProvider {
         let json: Value = resp.json().await?;
 
         if json["code"].as_i64() != Some(0) {
-            return Err(MusicError::Provider {
+            return Err(SonarError::Provider {
                 provider: "bilivideo".into(),
                 message: json["message"].as_str().unwrap_or("Unknown error").into(),
             });
@@ -90,9 +98,9 @@ impl Default for BiliVideoProvider {
 }
 
 #[async_trait]
-impl MusicProvider for BiliVideoProvider {
-    fn source(&self) -> MusicSource {
-        MusicSource::BiliVideo
+impl SonarProvider for BiliVideoProvider {
+    fn source(&self) -> SonarSource {
+        SonarSource::BiliVideo
     }
 
     async fn search(&self, query: &SearchQuery) -> Result<SearchResult> {
@@ -108,35 +116,53 @@ impl MusicProvider for BiliVideoProvider {
                 vec![
                     ("search_type".to_string(), "video".to_string()),
                     ("keyword".to_string(), query.keyword.clone()),
+                    (
+                        "page_size".to_string(),
+                        query.page_size.unwrap_or(20).to_string(),
+                    ),
                 ],
             )
             .await?;
 
         let results = json["data"]["result"]
             .as_array()
-            .ok_or(MusicError::InvalidResponse("Missing result array".into()))?;
+            .ok_or(SonarError::InvalidResponse("Missing result array".into()))?;
 
         let songs: Vec<Song> = results
             .iter()
             .filter_map(|item| {
                 let bvid = item["bvid"].as_str()?.to_string();
                 let title = clean_title(item["title"].as_str().unwrap_or(""));
-                let typeid = item["typeid"].as_u64().unwrap_or(0).to_string();
+                let author = item["author"].as_str().unwrap_or("").to_string();
                 let typename = item["typename"].as_str().unwrap_or("").to_string();
 
+                let duration = item["duration"]
+                    .as_str()
+                    .and_then(crate::util::parse_duration_str)
+                    .unwrap_or(0)
+                    * 1000;
+                let pic_url = item["pic"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .map(|s| {
+                        if s.starts_with("//") {
+                            format!("https:{s}")
+                        } else {
+                            s.to_string()
+                        }
+                    })
+                    .unwrap_or_default();
+
                 Some(Song {
-                    id: bvid,
+                    id: make_song_id(SonarSource::BiliVideo, &bvid),
+                    source_id: bvid,
                     name: title,
-                    artists: vec![Artist {
-                        id: typeid,
-                        name: typename,
-                    }],
-                    album: None,
-                    duration: 0,
-                    source: MusicSource::BiliVideo,
-                    quality: None,
-                    url: None,
-                    raw_data: item.clone(),
+                    singer: author,
+                    album: typename,
+                    duration,
+                    source: SonarSource::BiliVideo,
+                    pic_url,
+                    meta: SongMeta::default(),
                 })
             })
             .collect();
@@ -144,13 +170,13 @@ impl MusicProvider for BiliVideoProvider {
         Ok(SearchResult {
             total: None,
             songs,
-            source: MusicSource::BiliVideo,
+            source: SonarSource::BiliVideo,
             query: query.clone(),
         })
     }
 
     async fn get_play_url(&self, song: &Song, _quality: Option<Quality>) -> Result<PlayUrlResult> {
-        let bvid = &song.id;
+        let bvid = &song.source_id;
 
         let view_json = self
             .signed_request(
@@ -161,7 +187,7 @@ impl MusicProvider for BiliVideoProvider {
 
         let cid = view_json["data"]["cid"]
             .as_u64()
-            .ok_or(MusicError::InvalidResponse("Missing cid".into()))?;
+            .ok_or(SonarError::InvalidResponse("Missing cid".into()))?;
 
         let play_json = self
             .signed_request(
@@ -177,7 +203,7 @@ impl MusicProvider for BiliVideoProvider {
 
         let audio_url = play_json["data"]["dash"]["audio"][0]["base_url"]
             .as_str()
-            .ok_or(MusicError::NoPlayUrl)?;
+            .ok_or(SonarError::NoPlayUrl)?;
 
         Ok(PlayUrlResult {
             url: audio_url.to_string(),

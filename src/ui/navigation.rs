@@ -8,7 +8,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use super::BlockStyle;
-use super::{create_block, styled_text};
+use super::{create_block, create_block_surfaced, styled_text};
 use crate::state::NavState;
 
 pub fn draw(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, title: &str, area: Rect) {
@@ -65,8 +65,10 @@ pub fn draw(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, title: &str,
                 Line::from(spans)
             } else {
                 let mut spans = Vec::with_capacity(name_spans.len() + 1);
-                spans.push(Span::styled("  ", Style::default().fg(colors.text)));
-                spans.extend(name_spans);
+                spans.push(Span::styled("  ", Style::default().fg(colors.muted)));
+                for s in name_spans {
+                    spans.push(Span::styled(s.content, s.style.fg(colors.muted)));
+                }
                 Line::from(spans)
             };
 
@@ -87,7 +89,7 @@ pub fn draw(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, title: &str,
 /// 始终可见。
 pub fn draw_top(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, area: Rect) {
     let colors = bs.colors;
-    let block = create_block("", bs, false);
+    let block = create_block_surfaced("", bs, false);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -115,9 +117,14 @@ pub fn draw_top(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, area: Re
                 .sum();
 
             if is_selected {
+                let capsule = Style::default()
+                    .bg(colors.accent)
+                    .fg(colors.surface)
+                    .add_modifier(Modifier::BOLD);
                 selected_start = Some(total);
-                selected_width = width + 2;
+                selected_width = width + 4;
                 spans.push(Span::styled("\u{E0B2}", Style::default().fg(colors.accent)));
+                spans.push(Span::styled(" ", capsule));
             }
 
             for s in name_spans {
@@ -127,14 +134,19 @@ pub fn draw_top(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, area: Re
                         .fg(colors.surface)
                         .add_modifier(Modifier::BOLD)
                 } else {
-                    s.style
+                    s.style.fg(colors.muted)
                 };
                 spans.push(Span::styled(s.content, style));
             }
             if is_selected {
+                let capsule = Style::default()
+                    .bg(colors.accent)
+                    .fg(colors.surface)
+                    .add_modifier(Modifier::BOLD);
+                spans.push(Span::styled(" ", capsule));
                 spans.push(Span::styled("\u{E0B0}", Style::default().fg(colors.accent)));
             }
-            total += width + if is_selected { 2 } else { 0 };
+            total += width + if is_selected { 4 } else { 0 };
         }
     }
 

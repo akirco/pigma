@@ -143,7 +143,6 @@ impl App {
             AuthEvent::Login => self.handle_login(),
             AuthEvent::Success(info) => self.handle_login_success(info),
             AuthEvent::Error(e) => self.handle_login_error(e),
-            AuthEvent::CaptchaSent => self.handle_captcha_sent(),
             AuthEvent::QRCreated { url, key } => self.handle_qr_created(url, key),
             AuthEvent::QRStatus(text) => self.handle_qr_status(text),
         }
@@ -191,6 +190,17 @@ impl App {
                     }
                 });
             }
+            PlaybackEvent::Cached(song_id) => {
+                if self
+                    .playback
+                    .state
+                    .current_song
+                    .as_ref()
+                    .is_some_and(|s| s.id == song_id)
+                {
+                    self.playback.state.cached = true;
+                }
+            }
         }
     }
 
@@ -229,7 +239,6 @@ impl App {
     fn handle_command_event(&mut self, event: CommandEvent) {
         match event {
             CommandEvent::Panel(action) => self.handle_command_panel(action),
-            CommandEvent::Execute(action) => self.execute_command(action),
             CommandEvent::ToggleBordered => self.state.border.enabled = !self.state.border.enabled,
         }
     }

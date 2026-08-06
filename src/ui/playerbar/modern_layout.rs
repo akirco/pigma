@@ -17,6 +17,7 @@ pub fn draw(
     bs: &BlockStyle<'_>,
     config: &PlayerbarConfig,
     area: Rect,
+    is_sixel: bool,
 ) {
     let colors = bs.colors;
     let block = create_block("", bs, false).block_padding(Padding::horizontal(1));
@@ -33,7 +34,8 @@ pub fn draw(
         return;
     }
 
-    let layout = build_layout::build_modern(inner, config.visible.cover, config.visible.volume);
+    let layout =
+        build_layout::build_modern(inner, config.visible.cover, config.visible.volume, is_sixel);
 
     // Left: cover
     if config.visible.cover && layout.cover.width > 0 {

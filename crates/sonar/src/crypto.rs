@@ -1,6 +1,5 @@
-use crate::error::{MusicError, Result};
+use crate::error::{Result, SonarError};
 use base64::{Engine as _, engine::general_purpose};
-// use chrono::Utc;
 use time::OffsetDateTime;
 
 use md5;
@@ -194,6 +193,10 @@ pub fn kuwo_build_query(rid: &str, format: &str) -> String {
     )
 }
 
+/* -------------------------------------------------------------------------- */
+/*                                  bilibili                                  */
+/* -------------------------------------------------------------------------- */
+
 static WBI_KEYS: OnceLock<(String, String)> = OnceLock::new();
 
 pub async fn get_wbi_keys() -> Result<(String, String)> {
@@ -214,22 +217,22 @@ pub async fn get_wbi_keys() -> Result<(String, String)> {
     let json: serde_json::Value = resp.json().await?;
     let img_url = json["data"]["wbi_img"]["img_url"]
         .as_str()
-        .ok_or_else(|| MusicError::WbiSign("Missing img_url".into()))?;
+        .ok_or_else(|| SonarError::WbiSign("Missing img_url".into()))?;
     let sub_url = json["data"]["wbi_img"]["sub_url"]
         .as_str()
-        .ok_or_else(|| MusicError::WbiSign("Missing sub_url".into()))?;
+        .ok_or_else(|| SonarError::WbiSign("Missing sub_url".into()))?;
 
     let img_key = img_url
         .split('/')
         .next_back()
         .and_then(|s| s.split('.').next())
-        .ok_or_else(|| MusicError::WbiSign("Invalid img_url".into()))?
+        .ok_or_else(|| SonarError::WbiSign("Invalid img_url".into()))?
         .to_string();
     let sub_key = sub_url
         .split('/')
         .next_back()
         .and_then(|s| s.split('.').next())
-        .ok_or_else(|| MusicError::WbiSign("Invalid sub_url".into()))?
+        .ok_or_else(|| SonarError::WbiSign("Invalid sub_url".into()))?
         .to_string();
 
     let _ = WBI_KEYS.set((img_key.clone(), sub_key.clone()));
@@ -254,7 +257,6 @@ pub async fn wbi_sign(params: &mut Vec<(String, String)>) -> Result<String> {
     let (img_key, sub_key) = get_wbi_keys().await?;
     let mixin_key = get_mixin_key(&format!("{}{}", img_key, sub_key));
 
-    // let curr_time = Utc::now().timestamp().to_string();
     let curr_time = OffsetDateTime::now_utc().unix_timestamp().to_string();
 
     params.push(("wts".to_string(), curr_time));

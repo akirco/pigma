@@ -1,10 +1,4 @@
-use ratatui::{
-    Frame,
-    layout::Rect,
-    style::{Modifier, Style},
-    text::{Line, Span},
-    widgets::Paragraph,
-};
+use ratatui::Frame;
 use unicode_width::UnicodeWidthChar;
 
 #[derive(Debug, Clone)]
@@ -25,14 +19,6 @@ impl TextInput {
             value: String::new(),
             cursor: 0,
         }
-    }
-
-    pub fn value(&self) -> &str {
-        &self.value
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.value.is_empty()
     }
 
     fn byte_index(&self) -> usize {
@@ -69,10 +55,6 @@ impl TextInput {
         }
     }
 
-    pub fn cursor(&self) -> usize {
-        self.cursor
-    }
-
     pub fn cursor_width(&self, password: bool) -> u16 {
         if password {
             self.cursor as u16
@@ -85,61 +67,10 @@ impl TextInput {
         }
     }
 
-    pub fn clear(&mut self) {
-        self.value.clear();
-        self.cursor = 0;
-    }
-
-    pub fn show_cursor(&self, f: &mut Frame, area: Rect, focused: bool, password: bool) {
-        if !focused {
-            return;
-        }
-        let x = area.x + 2 + self.cursor_width(password);
-        f.set_cursor_position((x, area.y));
-    }
-
     pub fn show_cursor_at(&self, f: &mut Frame, x: u16, y: u16, focused: bool, password: bool) {
         if !focused {
             return;
         }
         f.set_cursor_position((x + self.cursor_width(password), y));
-    }
-
-    pub fn render(
-        &self,
-        f: &mut Frame,
-        area: Rect,
-        colors: &crate::config::Theme,
-        focused: bool,
-        password: bool,
-    ) {
-        let border_color = if focused { colors.accent } else { colors.muted };
-
-        let display = if password {
-            "*".repeat(self.value.chars().count())
-        } else {
-            self.value.clone()
-        };
-
-        let text_color = if focused { colors.text } else { colors.muted };
-
-        let input_line = Line::from(vec![
-            Span::styled(
-                "❯ ",
-                Style::default()
-                    .fg(colors.accent)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(display, Style::default().fg(text_color)),
-        ]);
-
-        let block = ratatui::widgets::Block::default()
-            .borders(ratatui::widgets::Borders::BOTTOM)
-            .border_style(Style::default().fg(border_color));
-
-        let paragraph = Paragraph::new(input_line).block(block);
-        f.render_widget(paragraph, area);
-
-        self.show_cursor(f, area, focused, password);
     }
 }
