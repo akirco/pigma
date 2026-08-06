@@ -72,11 +72,10 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 - [x] 更多layout支持
 - [x] 支持系统包管理器安装(yay,paru,scoop)
 - [x] 支持搜索多源
+- [x] 重构播放队列添加逻辑
 - [ ] 优化主题配色
 - [ ] JSON IPC控制（waybar.etc）
-- [ ] 重构播放队列添加逻辑
 - [ ] 重写splash
-- [ ] 修复手机验证码\邮箱登录
 - [ ] styled_text标记语法嵌套
 - [ ] command panel重写，更多运行时配置支持
 - [ ] 云盘源作为fallback
@@ -85,6 +84,7 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 - [ ] 重构进入程序流程
 - [ ] 歌手信息
 - [ ] 行内简易模式
+- [ ] ~~修复手机验证码\邮箱登录~~
 - [ ] ~~新增可选歌词页(沉浸式封面+歌词)~~
 - [ ] ~~ascii art style 歌词~~
 

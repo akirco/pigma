@@ -101,7 +101,7 @@ fn apply_tag(tag: &str, current: Style, theme: &Theme) -> Style {
         _ => {
             let is_theme_color = matches!(
                 tag,
-                "bg" | "surface" | "text" | "accent" | "highlight" | "muted" | "error" | "warning"
+                "bg" | "surface" | "text" | "accent" | "muted" | "error" | "border"
             );
             if is_theme_color {
                 current.fg(theme.field_color(tag))
