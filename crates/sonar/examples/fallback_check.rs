@@ -1,7 +1,7 @@
-use sonar::{SonarFinder, SonarSource, SearchConfig, SearchQuery};
+use sonar::{SearchConfig, SearchQuery, SonarFinder, SonarSource};
 
 #[tokio::main]
-fn main() {
+async fn main() {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let finder = SonarFinder::new(SearchConfig::default().with_timeout(15000));
 

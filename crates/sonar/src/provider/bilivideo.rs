@@ -124,6 +124,8 @@ impl SonarProvider for BiliVideoProvider {
             )
             .await?;
 
+        // println!("{:?}", json);
+
         let results = json["data"]["result"]
             .as_array()
             .ok_or(SonarError::InvalidResponse("Missing result array".into()))?;

@@ -150,9 +150,9 @@ fn render_current_line<'a>(
     let total = text.chars().count();
     let split_at = (total as f64 * seg_progress).floor() as usize;
 
-    let mut spans: Vec<Span<'a>> = Vec::with_capacity(total);
+    let mut line = Line::default();
     for (byte_start, ch) in text.char_indices() {
-        let j = spans.len();
+        let j = line.spans.len();
         let byte_end = byte_start + ch.len_utf8();
         let ch_str = &text[byte_start..byte_end];
         let s = if j < split_at {
@@ -172,8 +172,8 @@ fn render_current_line<'a>(
             let [r, g, b] = gradient.color(1.0 - t as f32);
             Span::styled(ch_str, Style::default().fg(Color::Rgb(r, g, b)))
         };
-        spans.push(s);
+        line.push_span(s);
     }
 
-    Line::from(spans).alignment(Alignment::Center)
+    line.alignment(Alignment::Center)
 }

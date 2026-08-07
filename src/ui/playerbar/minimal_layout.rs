@@ -1,63 +1,70 @@
 use ratatui::Frame;
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
-use ratatui::widgets::Padding;
+use ratatui::text::{Line, Span};
+use ratatui::widgets::Paragraph;
 
 use crate::config::PlayerbarConfig;
+use crate::config::Theme;
 use crate::state::PlaybackState;
 
-use super::super::{BlockStyle, create_block};
-use super::build_layout;
+use super::LayoutArea;
+use super::Playerbar;
 use super::widgets;
 
-pub fn draw(
-    f: &mut Frame,
-    player: &PlaybackState,
-    _tick: u64,
-    bs: &BlockStyle<'_>,
-    config: &PlayerbarConfig,
-    area: Rect,
-) {
-    let colors = bs.colors;
-    let block = create_block("", bs, false).block_padding(Padding::horizontal(1));
-    let inner = block.inner(area);
-    f.render_widget(block, area);
+pub struct MinimalLayout;
 
-    if let Some(err) = &player.error {
-        use ratatui::widgets::Paragraph;
-        let text = format!(" \u{26a0}  {}", err);
-        f.render_widget(
-            Paragraph::new(text).style(Style::default().fg(colors.error)),
-            inner,
-        );
-        return;
+impl Playerbar for MinimalLayout {
+    fn layout(&self, area: Rect, _config: &PlayerbarConfig, _is_sixel: bool) -> LayoutArea {
+        let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(area);
+
+        let cols = Layout::horizontal([
+            Constraint::Percentage(12),
+            Constraint::Length(18),
+            Constraint::Length(6),
+            Constraint::Min(0),
+            Constraint::Length(6),
+            Constraint::Length(3),
+        ])
+        .spacing(2)
+        .split(rows[1]);
+
+        LayoutArea {
+            song_info: cols[0],
+            controls: cols[1],
+            progress_time_left: cols[2],
+            gauge: cols[3],
+            progress_time_right: cols[4],
+            mode_icon: cols[5],
+            ..Default::default()
+        }
     }
 
-    let layout = build_layout::build_minimal(inner);
+    fn render(
+        &self,
+        f: &mut Frame,
+        player: &PlaybackState,
+        colors: &Theme,
+        _tick: u64,
+        config: &PlayerbarConfig,
+        layout: &LayoutArea,
+    ) {
+        draw_song_info_inline(f, player, colors, layout.song_info);
+        widgets::draw_controls(f, player, colors, layout.controls, true);
+        widgets::draw_gauge_bar(f, player, colors, config, layout.gauge);
+        widgets::draw_current_time(f, player, colors, layout.progress_time_left);
+        widgets::draw_total_time(f, player, colors, layout.progress_time_right);
 
-    draw_song_info_inline(f, player, colors, layout.song_info);
-    widgets::draw_controls(f, player, colors, layout.controls);
-    widgets::draw_gauge_bar(f, player, colors, config, layout.gauge);
-    widgets::draw_current_time(f, player, colors, layout.progress_time_left);
-    widgets::draw_total_time(f, player, colors, layout.progress_time_right);
-
-    if config.visible.mode_icon {
-        widgets::draw_mode_icon(f, player, colors, layout.mode_icon);
+        if config.visible.mode_icon {
+            widgets::draw_mode_icon(f, player, colors, layout.mode_icon);
+        }
     }
 }
 
-fn draw_song_info_inline(
-    f: &mut Frame,
-    player: &PlaybackState,
-    colors: &crate::config::Theme,
-    area: Rect,
-) {
-    use ratatui::text::{Line, Span};
-    use ratatui::widgets::Paragraph;
-
+fn draw_song_info_inline(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     if let Some(song) = &player.current_song {
         let info = Line::from(vec![
-            Span::styled(" \u{266a} ", Style::default().fg(colors.accent)),
+            Span::styled(" ♪ ", Style::default().fg(colors.accent)),
             Span::styled(
                 &song.name,
                 Style::default()

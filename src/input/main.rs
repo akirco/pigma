@@ -12,7 +12,6 @@ use super::navigation::{navigate_nav_down, navigate_nav_up};
 use super::table::{cell_select_next_column, cell_select_prev_column, toggle_table_mode};
 
 pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre::Result<()> {
-    // Ctrl+C and Ctrl+P are handled globally in input.rs
     match key_event.code {
         KeyCode::Esc => {
             app.state.events.send(NavigationEvent::ContentRestore);
@@ -152,7 +151,9 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
             }
         }
         KeyCode::Char('m') => {
-            app.playback.cycle_mode();
+            let mode = app.playback.cycle_mode();
+            let (icon, label) = crate::ui::playerbar::widgets::mode_icon(&mode);
+            app.toast(format!("{icon} 循环: {label}"));
         }
         KeyCode::Char('S') => {
             if let Some(song) = app.playback.current_song() {
@@ -196,6 +197,11 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
                     app.state.events.send(PlaybackEvent::DislikeSong(song.id));
                     app.toast(format!("✕  {}", song.name));
                 }
+            }
+        }
+        KeyCode::Char('r' | 'R') => {
+            if matches!(app.state.navigation.page, Page::Main | Page::Lyrics) {
+                app.reload_current_nav();
             }
         }
         KeyCode::Char('u' | 'U') if is_download_view(app) || is_local_music_view(app) => {

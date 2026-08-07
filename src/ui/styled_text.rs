@@ -14,10 +14,16 @@ use crate::utils::gradient_color;
 ///   Presets: warm, cubehelix, rainbow, turbo, spectral, viridis
 ///
 /// Text without tags is rendered as plain spans with no styling.
-pub fn parse_styled<'a>(text: &'a str, theme: &Theme) -> Vec<Span<'a>> {
+///
+/// `base` is the starting style. Fields left unset by the markup (e.g. the
+/// foreground color on tag-less text) inherit from `base`, while an explicit
+/// tag always wins. Pass `Style::default()` to get the original behavior where
+/// unstyled text is rendered with no color and falls back to the terminal
+/// default foreground.
+pub fn parse_styled_with<'a>(text: &'a str, theme: &Theme, base: Style) -> Vec<Span<'a>> {
     let mut spans = Vec::new();
     let mut tag_stack: Vec<Style> = Vec::new();
-    let mut current_style = Style::default();
+    let mut current_style = base;
     let mut pos = 0;
     let bytes = text.as_bytes();
     let len = bytes.len();
@@ -91,6 +97,13 @@ pub fn parse_styled<'a>(text: &'a str, theme: &Theme) -> Vec<Span<'a>> {
     }
 
     spans
+}
+
+/// Parse markup into styled spans, leaving unstyled text with no color (the
+/// terminal default foreground). See [`parse_styled_with`] for a variant that
+/// seeds a base style so tag-less text gets a default color.
+pub fn parse_styled<'a>(text: &'a str, theme: &Theme) -> Vec<Span<'a>> {
+    parse_styled_with(text, theme, Style::default())
 }
 
 fn apply_tag(tag: &str, current: Style, theme: &Theme) -> Style {
@@ -167,5 +180,25 @@ mod tests {
         for s in &spans {
             assert!(s.style.add_modifier.contains(Modifier::BOLD));
         }
+    }
+
+    #[test]
+    fn base_color_applies_to_tagless_text() {
+        let theme = Theme::default();
+        let spans = parse_styled_with("hi", &theme, Style::default().fg(Color::Yellow));
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].style.fg, Some(Color::Yellow));
+    }
+
+    #[test]
+    fn explicit_tag_wins_over_base_color() {
+        let theme = Theme::default();
+        let spans = parse_styled_with(
+            "<accent>x</accent>",
+            &theme,
+            Style::default().fg(Color::Yellow),
+        );
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].style.fg, Some(theme.accent));
     }
 }

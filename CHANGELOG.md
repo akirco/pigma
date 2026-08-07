@@ -1,3 +1,25 @@
+## [0.2.2] - 2026-08-07
+
+### 🚀 Features
+
+- *(sonar)* New fetch playlist api(get track_ids + lazy pagination) (akirco)
+- *(mode)* Add toast for mode switch (akirco)
+
+### 🐛 Bug Fixes
+
+- *(sonar)* Examples and new test for bibili search (akirco)
+- *(styled_text)* Styled_text is overrideden by default (akirco)
+
+### 🚜 Refactor
+
+- *(content)* Use built-in Row instead of manually (akirco)
+- *(playlist)* New data loading logic (akirco)
+- *(utils)* Remove unnecessary utils export (akirco)
+- *(playerbar)* Simplify code logic (akirco)
+
+### ⚙️ Miscellaneous Tasks
+
+- *(ci)* Fmt (akirco)
 ## [0.2.1] - 2026-08-06
 
 ### 🐛 Bug Fixes

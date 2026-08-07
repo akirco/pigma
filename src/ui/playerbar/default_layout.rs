@@ -1,53 +1,75 @@
 use ratatui::Frame;
-use ratatui::layout::Rect;
-use ratatui::widgets::Padding;
+use ratatui::layout::{Constraint, Layout, Rect};
 
 use crate::config::PlayerbarConfig;
+use crate::config::Theme;
 use crate::state::PlaybackState;
 
-use super::super::{BlockStyle, create_block};
-use super::build_layout;
+use super::LayoutArea;
+use super::Playerbar;
 use super::widgets;
 
-pub fn draw(
-    f: &mut Frame,
-    player: &PlaybackState,
-    _tick: u64,
-    bs: &BlockStyle<'_>,
-    config: &PlayerbarConfig,
-    area: Rect,
-) {
-    let colors = bs.colors;
-    let block = create_block("", bs, false).block_padding(Padding::horizontal(1));
-    let inner = block.inner(area);
-    f.render_widget(block, area);
+pub struct DefaultLayout;
 
-    if let Some(err) = &player.error {
-        use ratatui::style::Style;
-        use ratatui::widgets::Paragraph;
-        let text = format!(" \u{26a0}  {}", err);
-        f.render_widget(
-            Paragraph::new(text).style(Style::default().fg(colors.error)),
-            inner,
-        );
-        return;
+impl Playerbar for DefaultLayout {
+    fn layout(&self, area: Rect, _config: &PlayerbarConfig, _is_sixel: bool) -> LayoutArea {
+        let cols = Layout::horizontal([
+            Constraint::Length(20),
+            Constraint::Min(30),
+            Constraint::Length(3),
+            Constraint::Length(8),
+        ])
+        .split(area);
+
+        let mid = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(cols[1]);
+
+        let right = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .horizontal_margin(1)
+        .split(cols[3]);
+
+        LayoutArea {
+            song_info: cols[0],
+            controls: mid[0],
+            gauge: mid[2],
+            spinner: cols[2],
+            mode_icon: right[0],
+            volume: right[2],
+            ..Default::default()
+        }
     }
 
-    let layout = build_layout::build_default(inner);
+    fn render(
+        &self,
+        f: &mut Frame,
+        player: &PlaybackState,
+        colors: &Theme,
+        _tick: u64,
+        config: &PlayerbarConfig,
+        layout: &LayoutArea,
+    ) {
+        widgets::draw_song_info(f, player, colors, layout.song_info);
+        widgets::draw_controls(f, player, colors, layout.controls, true);
+        widgets::draw_gauge_with_label(f, player, colors, config, layout.gauge);
 
-    widgets::draw_song_info(f, player, colors, layout.song_info);
-    widgets::draw_controls(f, player, colors, layout.controls);
-    widgets::draw_gauge_with_label(f, player, colors, config, layout.gauge);
+        if config.visible.mode_icon {
+            widgets::draw_mode_icon(f, player, colors, layout.mode_icon);
+        }
 
-    if config.visible.mode_icon {
-        widgets::draw_mode_icon(f, player, colors, layout.mode_icon);
-    }
+        if config.visible.volume && layout.volume.width > 0 {
+            widgets::draw_volume(f, player, colors, layout.volume);
+        }
 
-    if config.visible.volume && layout.volume.width > 0 {
-        widgets::draw_volume(f, player, colors, layout.volume);
-    }
-
-    if player.seeking && config.visible.spinner {
-        widgets::draw_spinner(f, _tick, colors, layout.spinner);
+        if player.seeking && config.visible.spinner {
+            widgets::draw_spinner(f, _tick, colors, layout.spinner);
+        }
     }
 }

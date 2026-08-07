@@ -152,6 +152,8 @@ pub struct PlayListDetail {
     pub create_time: u64,
     pub track_update_time: u64,
     pub songs: Vec<SongInfo>,
+    /// 歌单内全部歌曲 id（来自 `playlist.trackIds`），用于惰性分页切片。
+    pub track_ids: Vec<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -228,7 +230,6 @@ pub(crate) fn parse_cloud_upload(value: &Value) -> Result<CloudUploadResult, Str
         raw: value.clone(),
     })
 }
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CloudDiskResult {
     pub songs: Vec<SongInfo>,
@@ -679,6 +680,10 @@ pub(crate) fn parse_playlist_detail(value: &Value) -> Result<PlayListDetail, Str
         create_time: playlist["createTime"].as_u64().unwrap_or(0),
         track_update_time: playlist["trackUpdateTime"].as_u64().unwrap_or(0),
         songs,
+        track_ids: playlist["trackIds"]
+            .as_array()
+            .map(|a| a.iter().filter_map(|v| v["id"].as_u64()).collect())
+            .unwrap_or_default(),
     })
 }
 

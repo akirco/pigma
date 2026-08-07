@@ -7,7 +7,7 @@ mod help;
 mod login;
 mod lyrics;
 mod navigation;
-mod playerbar;
+pub mod playerbar;
 mod queue;
 mod spinner;
 mod splash;
@@ -61,14 +61,17 @@ pub fn render_scrollbar(f: &mut Frame, total: usize, selected: usize, area: rata
     f.render_stateful_widget(scrollbar, area, &mut state);
 }
 
-/// Render a title template with `{name}` and `{count}` placeholders.
-pub fn render_title(template: &str, name: &str, count: usize) -> String {
+/// Render a title template with `{name}`, `{count}`, and `{total}` placeholders.
+/// `count` is the number of currently loaded items, `total` the server-side
+/// total (0 when unknown / non-paginated).
+pub fn render_title(template: &str, name: &str, count: usize, total: usize) -> String {
     if !template.contains('{') {
         return template.to_owned();
     }
     template
         .replace("{name}", name)
         .replace("{count}", &count.to_string())
+        .replace("{total}", &total.to_string())
 }
 
 pub fn draw(f: &mut Frame, app: &mut App) {
@@ -173,11 +176,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                             .get(focus)
                             .and_then(|st| st.selected());
                         let generation = nst.generation;
+                        let count = nst.content.len();
                         let cached = nst.title_cache.borrow();
-                        if let Some((ref title, f, s, g)) = *cached
+                        if let Some((ref title, f, s, g, c)) = *cached
                             && f == focus
                             && s == selected
                             && g == generation
+                            && c == count
                         {
                             title.clone()
                         } else {
@@ -185,13 +190,24 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                             let name = current_item
                                 .map(|item| item.name.as_str())
                                 .unwrap_or("SONGS");
-                            let count = nst.content.len();
+                            let total = nst
+                                .pagination
+                                .as_ref()
+                                .map(|p| p.total as usize)
+                                .unwrap_or(count);
+                            // 内容是分页加载（总数已知）时，像音乐云盘那样显示 `count/total`；
+                            // 非分页内容只显示已加载数。各导航项也可用 `title_template` 覆盖。
+                            let show_total = nst.pagination.as_ref().is_some_and(|p| p.total > 0);
                             let template = current_item
                                 .and_then(|item| item.title_template.as_deref())
-                                .unwrap_or("\u{25BA} {name} ({count}) \u{25C4}");
-                            let title = render_title(template, name, count);
+                                .unwrap_or(if show_total {
+                                    "\u{25BA} {name} ({count}/{total}) \u{25C4}"
+                                } else {
+                                    "\u{25BA} {name} ({count}) \u{25C4}"
+                                });
+                            let title = render_title(template, name, count, total);
                             *nst.title_cache.borrow_mut() =
-                                Some((title.clone(), focus, selected, generation));
+                                Some((title.clone(), focus, selected, generation, count));
                             title
                         }
                     };
@@ -206,7 +222,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         &app.state.navigation.content,
                         &app.config.columns,
                         api,
-                        &app.state.navigation.content_rows_cache,
                         &bs,
                         &mut app.state.navigation.table_state,
                         app.state.navigation.table_mode,
@@ -348,23 +363,31 @@ mod tests {
     #[test]
     fn title_with_count_suffix() {
         assert_eq!(
-            render_title("每日推荐 ({count})", "每日推荐", 12),
+            render_title("每日推荐 ({count})", "每日推荐", 12, 0),
             "每日推荐 (12)"
         );
     }
 
     #[test]
     fn title_name_then_count() {
-        assert_eq!(render_title("{name} ({count})", "歌单", 3), "歌单 (3)");
+        assert_eq!(render_title("{name} ({count})", "歌单", 3, 0), "歌单 (3)");
     }
 
     #[test]
     fn title_no_placeholder() {
-        assert_eq!(render_title("SONGS", "x", 0), "SONGS");
+        assert_eq!(render_title("SONGS", "x", 0, 0), "SONGS");
     }
 
     #[test]
     fn title_adjacent_placeholders() {
-        assert_eq!(render_title("{name}{count}", "A", 5), "A5");
+        assert_eq!(render_title("{name}{count}", "A", 5, 0), "A5");
+    }
+
+    #[test]
+    fn title_total_placeholder() {
+        assert_eq!(
+            render_title("{name} ({count}/{total})", "云盘", 50, 137),
+            "云盘 (50/137)"
+        );
     }
 }

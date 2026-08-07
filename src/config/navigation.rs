@@ -11,7 +11,7 @@ impl Default for NavConfig {
         Self {
             sections: vec![
                 NavSectionConfig {
-                    title: "<accent>▎</accent> <b>DISCOVER</b>".into(),
+                    title: "<accent>▎</accent> <accent>DISCOVER</accent>".into(),
                     items: vec![
                         NavItemConfig {
                             name: " 每日推荐".into(),
@@ -51,7 +51,7 @@ impl Default for NavConfig {
                     ],
                 },
                 NavSectionConfig {
-                    title: "<accent>▎</accent> <b>MY MUSIC</b>".into(),
+                    title: "<accent>▎</accent> <accent>MY MUSIC</accent>".into(),
                     items: vec![
                         NavItemConfig {
                             name: " 我喜欢的音乐".into(),

@@ -24,22 +24,31 @@ pub fn render_breadcrumb(f: &mut Frame, nav: &NavState, bs: &BlockStyle<'_>, are
         (s.title.as_str(), name)
     };
 
+    let muted = Style::default().fg(colors.muted);
+    let text_style = Style::default().fg(colors.text);
+
     let line = if let Some(sub) = &nav.subtitle {
-        let mut parts = styled_text::parse_styled(section, colors);
+        let mut line = Line::from(styled_text::parse_styled_with(section, colors, muted));
         if !item.is_empty() {
-            parts.push(Span::styled(" / ", Style::default().fg(colors.muted)));
-            parts.extend(styled_text::parse_styled(item, colors));
+            line.push_span(Span::styled(" / ", muted));
+            for s in styled_text::parse_styled_with(item, colors, muted) {
+                line.push_span(s);
+            }
         }
-        parts.push(Span::styled(" / ", Style::default().fg(colors.muted)));
-        parts.extend(styled_text::parse_styled(sub, colors));
-        Line::from(parts)
+        line.push_span(Span::styled(" / ", muted));
+        for s in styled_text::parse_styled_with(sub, colors, text_style) {
+            line.push_span(s);
+        }
+        line
     } else if item.is_empty() {
-        Line::from(styled_text::parse_styled(section, colors))
+        Line::from(styled_text::parse_styled_with(section, colors, text_style))
     } else {
-        let mut parts = styled_text::parse_styled(section, colors);
-        parts.push(Span::styled(" / ", Style::default().fg(colors.muted)));
-        parts.extend(styled_text::parse_styled(item, colors));
-        Line::from(parts)
+        let mut line = Line::from(styled_text::parse_styled_with(section, colors, muted));
+        line.push_span(Span::styled(" / ", muted));
+        for s in styled_text::parse_styled_with(item, colors, text_style) {
+            line.push_span(s);
+        }
+        line
     };
 
     let block = create_block("", bs, false);

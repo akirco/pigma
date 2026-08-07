@@ -20,6 +20,8 @@ use ncm_api::LoginInfo;
 use ratatui::layout::Rect;
 use ratatui::widgets::TableState;
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     config::{BorderConfig, Config, Theme, ThemeRegistry},
     event::EventHandler,
@@ -40,7 +42,7 @@ pub enum Page {
     Login,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PaginationInfo {
     pub api: String,
     pub offset: u32,
@@ -63,7 +65,8 @@ impl Default for PaginationInfo {
     }
 }
 
-type TitleCache = (String, usize, Option<usize>, u64);
+/// (rendered title, focus_section, selected_index, generation, content item count)
+type TitleCache = (String, usize, Option<usize>, u64, usize);
 
 #[derive(Clone)]
 pub struct BreadcrumbEntry {
@@ -94,10 +97,10 @@ pub struct NavigationState {
     /// True when the current `Songs` content is a search result (Enter plays
     /// only the selected song instead of appending the whole list to the queue).
     pub content_is_search: bool,
-    /// Cached rendered rows to avoid per-frame serde serialization.
-    /// Invalidated when `content` is replaced.
-    pub content_rows_cache: RefCell<Option<Vec<Vec<String>>>>,
-    /// Cached block title string, keyed by (focus_section, selected_index, generation).
+    /// Cached block title string, keyed by
+    /// (focus_section, selected_index, generation, content item count).
+    /// The item count is part of the key so incremental (paged) loads that
+    /// append to the current content re-render the `{count}` placeholder.
     pub title_cache: RefCell<Option<TitleCache>>,
 }
 
@@ -110,7 +113,6 @@ impl NavigationState {
         self.table_state = TableState::default();
         self.table_state.select_first();
         self.pagination = None;
-        *self.content_rows_cache.borrow_mut() = None;
         *self.title_cache.borrow_mut() = None;
     }
 
@@ -144,7 +146,6 @@ impl NavigationState {
             if let Some(api) = &entry.api {
                 self.nav.restore_focus_by_api(api);
             }
-            *self.content_rows_cache.borrow_mut() = None;
             *self.title_cache.borrow_mut() = None;
             true
         } else {
@@ -410,12 +411,16 @@ impl App {
 
         match crate::utils::terminal::best_image_protocol() {
             Some(crate::utils::terminal::ImageProtocol::Kitty) => {
+                log::debug!("ImageProtocol::Kitty");
                 picker.set_protocol_type(ratatui_image::picker::ProtocolType::Kitty);
             }
             Some(crate::utils::terminal::ImageProtocol::Sixel) => {
                 picker.set_protocol_type(ratatui_image::picker::ProtocolType::Sixel);
+                log::debug!("ImageProtocol::Sixel");
             }
-            None => {}
+            None => {
+                log::debug!("ImageProtocol::None");
+            }
         }
 
         let stream_client = {
@@ -460,7 +465,6 @@ impl App {
                 pagination: None,
                 generation: 0,
                 content_is_search: false,
-                content_rows_cache: RefCell::new(None),
                 title_cache: RefCell::new(None),
             },
             command_panel,

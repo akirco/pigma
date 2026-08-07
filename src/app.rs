@@ -207,7 +207,7 @@ impl App {
     fn handle_navigation_event(&mut self, event: NavigationEvent) {
         match event {
             NavigationEvent::NavSelect(api_str) => {
-                if let Err(e) = self.handle_nav_select(api_str) {
+                if let Err(e) = self.handle_nav_select(api_str, false) {
                     log::error!("NavSelect error: {e}");
                 }
             }
@@ -232,6 +232,11 @@ impl App {
                 }
             }
             NavigationEvent::LoadMore => self.handle_load_more(),
+            NavigationEvent::LoadMoreFailed => {
+                if let Some(ref mut pg) = self.state.navigation.pagination {
+                    pg.loading = false;
+                }
+            }
             NavigationEvent::UploadCachedSong(row) => self.handle_upload_cached_song(row),
         }
     }

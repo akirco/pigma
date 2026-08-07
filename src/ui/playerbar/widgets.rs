@@ -55,11 +55,22 @@ pub fn draw_song_info(f: &mut Frame, player: &PlaybackState, colors: &Theme, are
     }
 }
 
-pub fn draw_controls(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
+pub fn draw_controls(
+    f: &mut Frame,
+    player: &PlaybackState,
+    colors: &Theme,
+    area: Rect,
+    is_default: bool,
+) {
     let play_icon = if player.paused || !player.playing {
         "\u{f040a}"
     } else {
         "\u{f03e4}"
+    };
+    let alignment = if is_default {
+        Alignment::Center
+    } else {
+        Alignment::Left
     };
     let controls = Line::from(vec![
         Span::styled("\u{f049}", Style::default().fg(colors.muted)),
@@ -73,7 +84,7 @@ pub fn draw_controls(f: &mut Frame, player: &PlaybackState, colors: &Theme, area
         Span::raw("   "),
         Span::styled("\u{f050}", Style::default().fg(colors.muted)),
     ])
-    .alignment(Alignment::Center);
+    .alignment(alignment);
     f.render_widget(Paragraph::new(controls), area);
 }
 

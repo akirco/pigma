@@ -272,7 +272,7 @@ impl AudioSource {
         }
 
         // 2. Third-party (sonar) songs: direct provider, then cross-provider fallback.
-        if crate::utils::sonar::is_sonar_song_id(song.id) {
+        if sonar::is_sonar_song_id(song.id) {
             match self.resolve_by_provider(song).await {
                 Ok(input) => return Ok(input),
                 Err(e) => log::warn!("sonar 直接解析失败，改用兜底搜索: {e}"),

@@ -15,13 +15,14 @@ use crate::ui::styled_text;
 pub fn render_table(
     f: &mut Frame,
     headers: &[ColumnDef],
-    rows: &[Vec<String>],
+    rows: Vec<Row<'_>>,
     table_state: &mut TableState,
     table_mode: TableMode,
     colors: &Theme,
     area: Rect,
 ) {
-    if rows.is_empty() || headers.is_empty() {
+    let row_count = rows.len();
+    if row_count == 0 || headers.is_empty() {
         return;
     }
 
@@ -43,23 +44,7 @@ pub fn render_table(
 
     let sel = table_state.selected().unwrap_or(0);
 
-    let table_rows: Vec<Row> = rows
-        .iter()
-        .map(|cells| {
-            let styled_cells: Vec<Cell> = cells
-                .iter()
-                .map(|value| {
-                    let color = colors.muted;
-                    if value == "—" {
-                        Cell::from(value.as_str()).style(Style::default().fg(colors.error))
-                    } else {
-                        Cell::from(value.as_str()).style(Style::default().fg(color))
-                    }
-                })
-                .collect();
-            Row::new(styled_cells).height(1)
-        })
-        .collect();
+    let table = Table::new(rows, widths).header(header).column_spacing(2);
 
     match table_mode {
         TableMode::Row => {
@@ -68,11 +53,7 @@ pub fn render_table(
                 .bg(colors.accent)
                 .add_modifier(Modifier::BOLD);
 
-            let table = Table::new(table_rows, widths)
-                .header(header)
-                .column_spacing(2)
-                .row_highlight_style(row_style)
-                .highlight_symbol("");
+            let table = table.row_highlight_style(row_style).highlight_symbol("");
 
             f.render_stateful_widget(table, table_area, table_state);
         }
@@ -82,14 +63,11 @@ pub fn render_table(
                 .bg(colors.accent)
                 .add_modifier(Modifier::BOLD);
 
-            let table = Table::new(table_rows, widths)
-                .header(header)
-                .column_spacing(2)
-                .cell_highlight_style(cell_highlight);
+            let table = table.cell_highlight_style(cell_highlight);
 
             f.render_stateful_widget(table, table_area, table_state);
         }
     }
 
-    render_scrollbar(f, rows.len(), sel, scrollbar_area);
+    render_scrollbar(f, row_count, sel, scrollbar_area);
 }

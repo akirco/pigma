@@ -29,14 +29,14 @@ fn render_logo(f: &mut Frame, colors: &Theme, area: Rect) {
     let [row0, row1, row2] = Layout::vertical([Constraint::Length(1); 3]).areas(area);
     let rows = [row0, row1, row2];
     for (i, line) in LOGO.iter().enumerate() {
-        let spans = vec![Span::styled(
+        let span = Span::styled(
             line.to_string(),
             Style::default()
                 .fg(colors.accent)
                 .add_modifier(Modifier::BOLD),
-        )];
+        );
         f.render_widget(
-            Paragraph::new(Line::from(spans)).alignment(Alignment::Center),
+            Paragraph::new(Line::from(span)).alignment(Alignment::Center),
             rows[i],
         );
     }
@@ -50,17 +50,14 @@ fn render_progress(f: &mut Frame, splash: &SplashState, colors: &Theme, area: Re
     let filled = (bar_width as f64 * splash.progress) as usize;
     let empty = bar_width - filled;
 
-    let mut spans: Vec<Span> = Vec::new();
+    let mut line = Line::default();
     for _ in 0..filled {
-        spans.push(Span::styled("▍", Style::default().fg(colors.accent)));
+        line.push_span(Span::styled("▍", Style::default().fg(colors.accent)));
     }
     for _ in 0..empty {
-        spans.push(Span::styled("▍", Style::default().fg(colors.surface)));
+        line.push_span(Span::styled("▍", Style::default().fg(colors.surface)));
     }
-    f.render_widget(
-        Paragraph::new(Line::from(spans)).alignment(Alignment::Center),
-        bar_area,
-    );
+    f.render_widget(Paragraph::new(line).alignment(Alignment::Center), bar_area);
 
     let percent = (splash.progress * 100.0) as u32;
     let status_line = Line::from(vec![Span::styled(

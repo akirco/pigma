@@ -1,6 +1,5 @@
 pub mod format;
 pub mod gradient;
-pub mod sonar;
 pub mod terminal;
 pub mod time;
 

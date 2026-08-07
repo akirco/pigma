@@ -48,31 +48,31 @@ pub fn draw(
     ]);
     f.render_widget(Paragraph::new(logo), chunks[0]);
 
-    let mut right_spans = Vec::new();
+    let mut right_line = Line::default();
 
     if let Some(info) = user {
-        right_spans.push(Span::styled(
+        right_line.push_span(Span::styled(
             &info.nickname,
             Style::default().fg(colors.text),
         ));
-        right_spans.push(Span::styled("  ", Style::default()));
+        right_line.push_span(Span::styled("  ", Style::default()));
         match info.vip_type {
             10 | 11 => {
-                right_spans.push(Span::styled(
+                right_line.push_span(Span::styled(
                     "♛VIP",
                     Style::default()
                         .fg(colors.accent)
                         .add_modifier(Modifier::BOLD),
                 ));
-                right_spans.push(Span::styled("  ", Style::default()));
+                right_line.push_span(Span::styled("  ", Style::default()));
             }
             _ => {}
         }
     }
 
-    // right_spans.push(Span::styled("v0.1.0", Style::default().fg(colors.muted)));
+    // right_line.push(Span::styled("v0.1.0", Style::default().fg(colors.muted)));
 
-    let right_line = Line::from(right_spans).alignment(Alignment::Right);
+    let right_line = right_line.alignment(Alignment::Right);
     f.render_widget(Paragraph::new(right_line), chunks[2]);
 }
 

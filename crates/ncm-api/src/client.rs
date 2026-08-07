@@ -672,6 +672,49 @@ impl NcmClient {
         Ok(detail)
     }
 
+    /// 获取歌单元信息 + 完整 `trackIds`（用于惰性分页）。
+    ///
+    /// 与 `song_list_detail` 不同，这里只请求一次 `/weapi/v6/playlist/detail` 拿到
+    /// `trackIds` 全量 id；歌曲本体由 [`NcmClient::playlist_songs`] 按页切片走
+    /// `songs_detail` 获取，因此 >1000 首的歌单也不会一次拉完（对齐官方
+    /// `playlist_track_all` 的做法）。
+    pub async fn playlist_detail(
+        &self,
+        id: u64,
+    ) -> Result<(PlayListDetail, Vec<u64>), NcmError> {
+        let id_str = id.to_string();
+        let params = vec![
+            ("id", id_str.as_str()),
+            ("offset", "0"),
+            ("total", "true"),
+            ("limit", "1000"),
+            ("n", "1000"),
+        ];
+        let result = self
+            .request_weapi("/weapi/v6/playlist/detail", &params)
+            .await?;
+        let value: Value = serde_json::from_str(&result)?;
+        Self::check_api_code(&value)?;
+        let detail = parse_playlist_detail(&value).map_err(|e| NcmError::parse(e, &value))?;
+        let track_ids = detail.track_ids.clone();
+        Ok((detail, track_ids))
+    }
+
+    /// 按 `trackIds` 切片取本页歌曲（走 [`NcmClient::songs_detail`]）。
+    pub async fn playlist_songs(
+        &self,
+        track_ids: &[u64],
+        offset: u32,
+        limit: u32,
+    ) -> Result<Vec<SongInfo>, NcmError> {
+        let offset = (offset as usize).min(track_ids.len());
+        let end = (offset + limit as usize).min(track_ids.len());
+        if offset >= end {
+            return Ok(Vec::new());
+        }
+        self.songs_detail(&track_ids[offset..end]).await
+    }
+
     /// 获取我喜欢的歌曲
     pub async fn liked_songs(&self, uid: u64) -> Result<Vec<SongInfo>, NcmError> {
         let uid_str = uid.to_string();

@@ -11,17 +11,20 @@ use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
 use stream_download::storage::StorageProvider;
 
-use crate::state::ContentState;
+use crate::state::{ContentState, PaginationInfo};
 
 #[derive(Serialize, Deserialize)]
 struct ContentCacheEntry {
     data: ContentState,
+    #[serde(default)]
+    pagination: Option<PaginationInfo>,
     cached_at: u64,
 }
 
 #[derive(Serialize)]
 struct ContentCacheEntryRef<'a> {
     data: &'a ContentState,
+    pagination: Option<&'a PaginationInfo>,
     cached_at: u64,
 }
 
@@ -411,7 +414,11 @@ impl CacheManager {
         }
     }
 
-    pub async fn load_content_cache_async(&self, api: &str, ttl_secs: u64) -> Option<ContentState> {
+    pub async fn load_content_cache_async(
+        &self,
+        api: &str,
+        ttl_secs: u64,
+    ) -> Option<(ContentState, Option<PaginationInfo>)> {
         let path = self.content_path(api);
         tokio::task::spawn_blocking(move || {
             let data = fs::read_to_string(path).ok()?;
@@ -420,7 +427,7 @@ impl CacheManager {
             if now - entry.cached_at > ttl_secs {
                 return None;
             }
-            Some(entry.data)
+            Some((entry.data, entry.pagination))
         })
         .await
         .ok()
@@ -520,7 +527,12 @@ impl CacheManager {
         (stem.to_string(), String::new())
     }
 
-    pub fn save_content_cache(&self, api: &str, content: &ContentState) {
+    pub fn save_content_cache(
+        &self,
+        api: &str,
+        content: &ContentState,
+        pagination: Option<&PaginationInfo>,
+    ) {
         if let Err(e) = fs::create_dir_all(&self.content_dir) {
             log::warn!("Failed to create content cache dir: {e}");
             return;
@@ -531,6 +543,7 @@ impl CacheManager {
             .unwrap_or(0);
         let entry = ContentCacheEntryRef {
             data: content,
+            pagination,
             cached_at,
         };
         match serde_json::to_string(&entry) {

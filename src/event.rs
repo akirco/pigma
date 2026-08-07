@@ -88,6 +88,8 @@ pub enum NavigationEvent {
     ContentRestore,
     CellAction(usize, usize),
     LoadMore,
+    /// A paged load failed; clears the in-flight flag so it can be retried.
+    LoadMoreFailed,
     UploadCachedSong(usize),
 }
 

@@ -693,7 +693,7 @@ impl PlaybackEngine {
         self.playlist_id = Some(id);
     }
 
-    pub fn cycle_mode(&mut self) {
+    pub fn cycle_mode(&mut self) -> PlayMode {
         let next = match self.state.mode {
             PlayMode::Sequential => PlayMode::RepeatOne,
             PlayMode::RepeatOne => PlayMode::RepeatAll,
@@ -704,7 +704,8 @@ impl PlaybackEngine {
             },
             PlayMode::Heartbeat { .. } => PlayMode::Sequential,
         };
-        self.set_mode(next);
+        self.set_mode(next.clone());
+        next
     }
 
     pub fn set_mode(&mut self, mode: PlayMode) {

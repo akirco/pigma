@@ -41,9 +41,9 @@ pub fn draw_queue_table(
     let count = playback.queue_len();
     let key = playback.queue_key();
     let title = if key.is_empty() {
-        render_title(title_template, "", count)
+        render_title(title_template, "", count, 0)
     } else {
-        render_title(title_template, key, count)
+        render_title(title_template, key, count, 0)
     };
     let block = create_block(&title, bs, false);
     let inner = block.inner(area);
@@ -58,14 +58,14 @@ pub fn draw_queue_table(
         let [tabs_area, body] =
             Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).areas(inner);
 
-        let mut spans: Vec<Span> = Vec::new();
+        let mut line = Line::default();
         let mut total = 0usize;
         let mut selected_start = None;
         let mut selected_width = 0;
 
         for (i, k) in keys.iter().enumerate() {
             if i > 0 {
-                spans.push(Span::styled("  ", Style::default()));
+                line.push_span(Span::styled("  ", Style::default()));
                 total += 2;
             }
             let label = clip_long_text(k, 24);
@@ -77,12 +77,12 @@ pub fn draw_queue_table(
                 selected_width = label_w + 2;
             }
             total += 1;
-            spans.push(Span::styled(
+            line.push_span(Span::styled(
                 format!(" {} ", label),
                 tab_style(colors, is_selected, is_playing),
             ));
             total += label_w + 1;
-            spans.push(Span::styled(" ", Style::default()));
+            line.push_span(Span::styled(" ", Style::default()));
             total += 1;
         }
 
@@ -100,7 +100,6 @@ pub fn draw_queue_table(
             *tab_scroll = 0;
         }
 
-        let line = Line::from(spans);
         f.render_widget(Paragraph::new(line).scroll((0, *tab_scroll)), tabs_area);
         body
     };

@@ -6,7 +6,14 @@ use crate::event::NavigationEvent;
 use crate::state::ContentState;
 
 impl App {
-    pub(super) fn handle_nav_select(&mut self, api_str: String) -> color_eyre::Result<()> {
+    /// 重新加载当前导航项对应的内容。
+    ///
+    /// `force = true` 时跳过内容缓存、直接走 API 重新拉取并回写缓存（手动刷新）。
+    pub(super) fn handle_nav_select(
+        &mut self,
+        api_str: String,
+        force: bool,
+    ) -> color_eyre::Result<()> {
         let api = match ApiEndpoint::parse(&api_str) {
             Some(ep) => ep,
             None => {
@@ -28,7 +35,7 @@ impl App {
 
             tokio::spawn(async move {
                 if ttl > 0
-                    && let Some(cached) = cache.load_content_cache_async(&api_str, ttl).await
+                    && let Some((cached, _)) = cache.load_content_cache_async(&api_str, ttl).await
                 {
                     send_event(&sender, NavigationEvent::ContentLoaded(cached).into());
                     return;
@@ -42,7 +49,7 @@ impl App {
                 let state = if ttl > 0 {
                     let cache_clone = cache.clone();
                     tokio::task::spawn_blocking(move || {
-                        cache_clone.save_content_cache("__local_music__", &state);
+                        cache_clone.save_content_cache("__local_music__", &state, None);
                         state
                     })
                     .await
@@ -82,10 +89,23 @@ impl App {
             }
 
             if ttl > 0
+                && !force
                 && api != ApiEndpoint::Search
-                && let Some(cached) = cache.load_content_cache_async(&api_str, ttl).await
+                && let Some((cached, pg)) = cache.load_content_cache_async(&api_str, ttl).await
             {
-                send_event(&sender, NavigationEvent::ContentLoaded(cached).into());
+                if let Some(pg) = pg {
+                    send_event(
+                        &sender,
+                        NavigationEvent::ContentLoadedPaged {
+                            content: cached,
+                            pagination: pg,
+                            generation,
+                        }
+                        .into(),
+                    );
+                } else {
+                    send_event(&sender, NavigationEvent::ContentLoaded(cached).into());
+                }
                 return;
             }
 
@@ -97,7 +117,7 @@ impl App {
                 let state = if ttl > 0 && !matches!(state, ContentState::Error(_)) {
                     let cache_clone = cache.clone();
                     tokio::task::spawn_blocking(move || {
-                        cache_clone.save_content_cache("__liked__", &state);
+                        cache_clone.save_content_cache("__liked__", &state, None);
                         state
                     })
                     .await
@@ -122,8 +142,9 @@ impl App {
                 && !matches!(state, ContentState::Error(_))
             {
                 let cache_clone = cache.clone();
+                let pg_for_save = pagination.clone();
                 tokio::task::spawn_blocking(move || {
-                    cache_clone.save_content_cache(&api_str, &state);
+                    cache_clone.save_content_cache(&api_str, &state, pg_for_save.as_ref());
                     state
                 })
                 .await
@@ -290,5 +311,36 @@ impl App {
                 }
             }
         });
+    }
+
+    /// 手动刷新当前导航项：跳过缓存重新拉取并回写缓存。
+    pub(crate) fn reload_current_nav(&mut self) {
+        let api = self
+            .state
+            .navigation
+            .nav
+            .sections
+            .get(self.state.navigation.nav.focus_section)
+            .and_then(|s| {
+                let idx = self
+                    .state
+                    .navigation
+                    .nav
+                    .section_states
+                    .get(self.state.navigation.nav.focus_section)?
+                    .selected()?;
+                s.items.get(idx)
+            })
+            .and_then(|item| item.api.clone());
+
+        match api.as_deref() {
+            Some("__local_music__") => self.toast("↻ 刷新本地音乐".into()),
+            Some("__download__") => self.toast("↻ 刷新下载".into()),
+            Some(api_str) => {
+                let _ = self.handle_nav_select(api_str.to_string(), true);
+                self.toast("↻ 刷新当前内容".into());
+            }
+            None => self.toast("无可用内容刷新".into()),
+        }
     }
 }

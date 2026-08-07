@@ -6,14 +6,35 @@ use ratatui::{
     layout::Rect,
     style::Style,
     text::{Line, Span},
-    widgets::{Paragraph, TableState},
+    widgets::{Cell, Paragraph, Row, TableState},
 };
 
 use super::BlockStyle;
 use super::table;
 use crate::config::ColumnDef;
 use crate::config::ColumnsConfig;
+use crate::config::Theme;
 use crate::state::{ContentState, TableMode};
+
+const MISSING: &str = "—";
+
+thread_local! {
+    static WARNED_FIELDS: std::cell::RefCell<std::collections::HashSet<String>> =
+        std::cell::RefCell::new(std::collections::HashSet::new());
+}
+
+/// Warn once per process for an unknown column field. Rendering runs every
+/// frame on the main thread, so a per-call `HashSet` would re-log on every
+/// frame; the `thread_local` keeps it deduplicated across frames.
+fn warn_missing_field(field: &str) {
+    WARNED_FIELDS.with(|warned| {
+        let mut warned = warned.borrow_mut();
+        if !warned.contains(field) {
+            log::warn!("Missing field: \"{field}\" — showing \"{MISSING}\"");
+            warned.insert(field.to_string());
+        }
+    });
+}
 
 /// Look up a field value for a table row by its column field name.
 /// Returns `None` for unknown fields (rendered as "—").
@@ -54,48 +75,49 @@ fn singer_field<'a>(singer: &'a SingerInfo, field: &str) -> Option<Cow<'a, str>>
     }
 }
 
-/// Build table rows directly from a slice of items, avoiding the intermediate
-/// `HashMap` allocation that the old `compute_rows` path performed per row.
+/// Build table rows directly from a slice of items, borrowing each field into
+/// `Cell` instead of materializing a `String` per cell. Borrowed fields (e.g.
+/// `&song.name`) stay borrowed; only derived fields (`duration`, `id`) allocate.
 fn build_rows<'a, I>(
     items: &'a [I],
-    columns: &[ColumnDef],
+    columns: &'a [ColumnDef],
+    colors: &'a Theme,
     lookup: impl Fn(&'a I, &str) -> Option<Cow<'a, str>>,
-) -> Vec<Vec<String>> {
-    let mut warned = std::collections::HashSet::new();
+) -> Vec<Row<'a>> {
     items
         .iter()
         .map(|item| {
-            columns
-                .iter()
-                .map(|col| {
-                    lookup(item, &col.field)
-                        .map(Cow::into_owned)
-                        .unwrap_or_else(|| {
-                            if !warned.contains(&col.field) {
-                                log::warn!("Missing field: \"{}\" — showing \"—\"", col.field);
-                                warned.insert(col.field.clone());
-                            }
-                            "—".to_string()
-                        })
-                })
-                .collect()
+            Row::new(columns.iter().map(|col| match lookup(item, &col.field) {
+                Some(value) => Cell::from(value).style(Style::default().fg(colors.muted)),
+                None => {
+                    warn_missing_field(&col.field);
+                    Cell::from(MISSING).style(Style::default().fg(colors.error))
+                }
+            }))
+            .height(1)
         })
         .collect()
 }
 
-fn compute_rows(content: &ContentState, columns: &[ColumnDef]) -> Vec<Vec<String>> {
+fn build_content_rows<'a>(
+    content: &'a ContentState,
+    columns: &'a [ColumnDef],
+    colors: &'a Theme,
+) -> Vec<Row<'a>> {
     match content {
-        ContentState::Songs(songs) => build_rows(songs, columns, song_field),
-        ContentState::SongLists(lists) => build_rows(lists, columns, songlist_field),
-        ContentState::TopLists(lists) => build_rows(lists, columns, toplist_field),
-        ContentState::HotSearch(keywords) => build_rows(&keywords.0, columns, |kw, field| {
-            if field == "keyword" {
-                Some(Cow::Borrowed(kw.as_str()))
-            } else {
-                None
-            }
-        }),
-        ContentState::Singers(singers) => build_rows(singers, columns, singer_field),
+        ContentState::Songs(songs) => build_rows(songs, columns, colors, song_field),
+        ContentState::SongLists(lists) => build_rows(lists, columns, colors, songlist_field),
+        ContentState::TopLists(lists) => build_rows(lists, columns, colors, toplist_field),
+        ContentState::HotSearch(keywords) => {
+            build_rows(&keywords.0, columns, colors, |kw, field| {
+                if field == "keyword" {
+                    Some(Cow::Borrowed(kw.as_str()))
+                } else {
+                    None
+                }
+            })
+        }
+        ContentState::Singers(singers) => build_rows(singers, columns, colors, singer_field),
         _ => vec![],
     }
 }
@@ -106,7 +128,6 @@ pub fn render_content(
     content: &ContentState,
     columns: &ColumnsConfig,
     api: Option<&str>,
-    cache: &std::cell::RefCell<Option<Vec<Vec<String>>>>,
     bs: &BlockStyle<'_>,
     table_state: &mut TableState,
     table_mode: TableMode,
@@ -131,20 +152,8 @@ pub fn render_content(
         }
         _ => {
             let cols = columns.for_content(content.content_type(), api);
-            if cache.borrow().is_none() {
-                let rows = compute_rows(content, cols);
-                *cache.borrow_mut() = Some(rows);
-            }
-            let rows = cache.borrow();
-            table::render_table(
-                f,
-                cols,
-                rows.as_deref().unwrap_or(&[]),
-                table_state,
-                table_mode,
-                colors,
-                area,
-            );
+            let rows = build_content_rows(content, cols, colors);
+            table::render_table(f, cols, rows, table_state, table_mode, colors, area);
         }
     }
 }

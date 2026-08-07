@@ -13,6 +13,7 @@ use crate::state::NavState;
 
 pub fn draw(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, title: &str, area: Rect) {
     let colors = bs.colors;
+    let muted_style = Style::default().fg(colors.muted);
     let block = create_block(title, bs, false);
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -54,22 +55,22 @@ pub fn draw(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, title: &str,
                     .map(|s| UnicodeWidthStr::width(&*s.content))
                     .sum();
                 let padding_len = (inner.width as usize).saturating_sub(3 + name_width);
-                let mut spans = Vec::with_capacity(name_spans.len() + 3);
-                spans.push(Span::styled("\u{E0B2}", Style::default().fg(colors.accent)));
-                spans.push(Span::styled(" ", capsule));
+                let mut line = Line::default();
+                line.push_span(Span::styled("\u{E0B2}", Style::default().fg(colors.accent)));
+                line.push_span(Span::styled(" ", capsule));
                 for s in name_spans {
-                    spans.push(Span::styled(s.content, capsule));
+                    line.push_span(Span::styled(s.content, capsule));
                 }
-                spans.push(Span::styled(" ".repeat(padding_len), capsule));
-                spans.push(Span::styled("\u{E0B0}", Style::default().fg(colors.accent)));
-                Line::from(spans)
+                line.push_span(Span::styled(" ".repeat(padding_len), capsule));
+                line.push_span(Span::styled("\u{E0B0}", Style::default().fg(colors.accent)));
+                line
             } else {
-                let mut spans = Vec::with_capacity(name_spans.len() + 1);
-                spans.push(Span::styled("  ", Style::default().fg(colors.muted)));
+                let mut line = Line::default();
+                line.push_span(Span::styled("  ", Style::default().fg(colors.muted)));
                 for s in name_spans {
-                    spans.push(Span::styled(s.content, s.style.fg(colors.muted)));
+                    line.push_span(Span::styled(s.content, muted_style.patch(s.style)));
                 }
-                Line::from(spans)
+                line
             };
 
             list_items.push(ListItem::new(line));
@@ -89,13 +90,14 @@ pub fn draw(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, title: &str,
 /// 始终可见。
 pub fn draw_top(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, area: Rect) {
     let colors = bs.colors;
+    let muted_style = Style::default().fg(colors.muted);
     let block = create_block_surfaced("", bs, false);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
     let viewport = inner.width as usize;
 
-    let mut spans: Vec<Span> = Vec::new();
+    let mut line = Line::default();
     let mut total = 0usize;
     let mut selected_start = None;
     let mut selected_width = 0usize;
@@ -105,8 +107,8 @@ pub fn draw_top(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, area: Re
             let is_selected =
                 nav.focus_section == si && nav.section_states[si].selected() == Some(ii);
 
-            if !spans.is_empty() {
-                spans.push(Span::styled("  ", Style::default()));
+            if !line.spans.is_empty() {
+                line.push_span(Span::styled("  ", Style::default()));
                 total += 2;
             }
 
@@ -123,8 +125,8 @@ pub fn draw_top(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, area: Re
                     .add_modifier(Modifier::BOLD);
                 selected_start = Some(total);
                 selected_width = width + 4;
-                spans.push(Span::styled("\u{E0B2}", Style::default().fg(colors.accent)));
-                spans.push(Span::styled(" ", capsule));
+                line.push_span(Span::styled("\u{E0B2}", Style::default().fg(colors.accent)));
+                line.push_span(Span::styled(" ", capsule));
             }
 
             for s in name_spans {
@@ -134,17 +136,17 @@ pub fn draw_top(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, area: Re
                         .fg(colors.surface)
                         .add_modifier(Modifier::BOLD)
                 } else {
-                    s.style.fg(colors.muted)
+                    muted_style.patch(s.style)
                 };
-                spans.push(Span::styled(s.content, style));
+                line.push_span(Span::styled(s.content, style));
             }
             if is_selected {
                 let capsule = Style::default()
                     .bg(colors.accent)
                     .fg(colors.surface)
                     .add_modifier(Modifier::BOLD);
-                spans.push(Span::styled(" ", capsule));
-                spans.push(Span::styled("\u{E0B0}", Style::default().fg(colors.accent)));
+                line.push_span(Span::styled(" ", capsule));
+                line.push_span(Span::styled("\u{E0B0}", Style::default().fg(colors.accent)));
             }
             total += width + if is_selected { 4 } else { 0 };
         }
@@ -163,7 +165,6 @@ pub fn draw_top(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, area: Re
         nav.scroll_x = nav.scroll_x.min(max_scroll as u16);
     }
 
-    let line = Line::from(spans);
     f.render_widget(Paragraph::new(line).scroll((0, nav.scroll_x)), inner);
 }
 
@@ -189,6 +190,29 @@ pub fn keep_visible(
 #[cfg(test)]
 mod tests {
     use super::keep_visible;
+    use crate::config::Theme;
+    use crate::ui::styled_text;
+    use ratatui::style::Style;
+
+    #[test]
+    fn unselected_item_tag_wins_over_muted_default() {
+        let theme = Theme::default();
+        let muted_style = Style::default().fg(theme.muted);
+        let name_spans =
+            styled_text::parse_styled_with("<accent>歌单</accent>", &theme, Style::default());
+        // unselected items use patch() so an explicit color tag survives
+        let fg = muted_style.patch(name_spans[0].style).fg;
+        assert_eq!(fg, Some(theme.accent));
+    }
+
+    #[test]
+    fn unselected_plain_item_falls_back_to_muted() {
+        let theme = Theme::default();
+        let muted_style = Style::default().fg(theme.muted);
+        let name_spans = styled_text::parse_styled_with("歌单", &theme, Style::default());
+        let fg = muted_style.patch(name_spans[0].style).fg;
+        assert_eq!(fg, Some(theme.muted));
+    }
 
     #[test]
     fn content_fits_viewport_no_scroll() {
