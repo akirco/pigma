@@ -8,12 +8,12 @@ mod search;
 mod splash;
 mod table;
 
+use crate::app::App;
 use crate::event::{AppEvent, CommandEvent, CommandPanelAction};
-use crate::state::{App, Page};
+use crate::state::Page;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
 
 pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> color_eyre::Result<()> {
-    // Global keys — bypass all page dispatch
     if key_event.modifiers == KeyModifiers::CONTROL {
         match key_event.code {
             KeyCode::Char('c' | 'C') => {
@@ -35,7 +35,6 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> color_eyre::Resu
         }
     }
 
-    // `?` (Shift+/) toggles the help overlay anywhere.
     if key_event.code == KeyCode::Char('?') {
         app.state.help.toggle();
         return Ok(());

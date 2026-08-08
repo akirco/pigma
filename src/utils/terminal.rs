@@ -53,6 +53,10 @@ fn sixel_available() -> bool {
         return true;
     }
 
+    if env::var("WT_SESSION").is_ok() {
+        return true;
+    }
+
     match env::var("TERM_PROGRAM").as_deref() {
         Ok("vscode") => {
             if version_gte(

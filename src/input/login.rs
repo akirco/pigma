@@ -1,5 +1,5 @@
+use crate::app::App;
 use crate::event::{AppEvent, AuthEvent};
-use crate::state::App;
 use crossterm::event::{KeyCode, KeyEvent};
 
 pub(super) fn handle_login_key(app: &mut App, key_event: KeyEvent) -> bool {

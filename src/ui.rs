@@ -7,72 +7,27 @@ mod help;
 mod login;
 mod lyrics;
 mod navigation;
-pub mod playerbar;
+mod playerbar;
 mod queue;
+mod scrollbar;
 mod spinner;
 mod splash;
-pub mod styled_text;
-pub mod table;
+mod styled_text;
+mod table;
+mod title;
+mod toast;
 mod topbar;
 
-use ratatui::{
-    Frame,
-    layout::{Alignment, Rect},
-    style::{Color, Style},
-    widgets::{
-        Block, BorderType, Borders, Clear, Padding, Paragraph, Scrollbar, ScrollbarOrientation,
-        ScrollbarState,
-    },
-};
 use std::time::Duration;
 
-use self::block::CornerBlock;
+use ratatui::Frame;
 
-use crate::{
-    config::{BorderConfig, Theme},
-    layout,
-    state::{App, Page},
-};
-
-pub struct BlockStyle<'a> {
-    pub colors: &'a Theme,
-    pub border: &'a BorderConfig,
-    pub tick: u64,
-}
-
-pub fn calc_scroll_offset(selected: usize, visible_height: usize, total: usize) -> usize {
-    if total <= visible_height || visible_height == 0 {
-        return 0;
-    }
-    if selected < visible_height {
-        0
-    } else {
-        selected.saturating_sub(visible_height - 1)
-    }
-}
-
-pub fn render_scrollbar(f: &mut Frame, total: usize, selected: usize, area: ratatui::layout::Rect) {
-    let mut state = ScrollbarState::new(total).position(selected);
-    let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-        .begin_symbol(None)
-        .end_symbol(None)
-        .thumb_symbol("│")
-        .track_symbol(None);
-    f.render_stateful_widget(scrollbar, area, &mut state);
-}
-
-/// Render a title template with `{name}`, `{count}`, and `{total}` placeholders.
-/// `count` is the number of currently loaded items, `total` the server-side
-/// total (0 when unknown / non-paginated).
-pub fn render_title(template: &str, name: &str, count: usize, total: usize) -> String {
-    if !template.contains('{') {
-        return template.to_owned();
-    }
-    template
-        .replace("{name}", name)
-        .replace("{count}", &count.to_string())
-        .replace("{total}", &total.to_string())
-}
+use crate::app::App;
+use crate::config::{NavPosition, theme_fallback};
+use crate::layout;
+use crate::state::Page;
+use crate::ui::block::{BlockStyle, create_block};
+use crate::ui::title::render_title;
 
 pub fn draw(f: &mut Frame, app: &mut App) {
     let now = std::time::Instant::now();
@@ -94,7 +49,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         .or_else(|| app.theme_registry.get("default"))
         .unwrap_or_else(|| {
             log::error!("No theme found, using fallback");
-            crate::state::theme_fallback()
+            theme_fallback()
         });
 
     let bs = BlockStyle {
@@ -137,7 +92,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             match page {
                 Page::Main => {
                     match app.config.navigation_position {
-                        crate::config::NavPosition::Left | crate::config::NavPosition::Right => {
+                        NavPosition::Left | NavPosition::Right => {
                             if lay.sidebar.width > 0 {
                                 navigation::draw(
                                     f,
@@ -155,7 +110,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                                 lay.breadcrumb,
                             );
                         }
-                        crate::config::NavPosition::Top | crate::config::NavPosition::Bottom => {
+                        NavPosition::Top | NavPosition::Bottom => {
                             navigation::draw_top(f, &mut app.state.navigation.nav, &bs, lay.nav);
                         }
                     }
@@ -262,132 +217,5 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         help::draw(f, app, area);
     }
 
-    draw_toast(f, app, colors);
-}
-
-fn draw_toast(f: &mut Frame, app: &App, colors: &Theme) {
-    let Some(time) = app.state.toast_time else {
-        return;
-    };
-    if time.elapsed() > Duration::from_secs(2) {
-        return;
-    }
-
-    let area = f.area();
-    let display_w = unicode_width::UnicodeWidthStr::width(app.state.toast_msg.as_str());
-    let w = (display_w as u16 + 6).min(area.width);
-    let h = 3u16;
-    let x = area.x + (area.width.saturating_sub(w)) / 2;
-    let y = area.y + area.height.saturating_sub(10);
-
-    let toast_area = Rect {
-        x,
-        y,
-        width: w,
-        height: h,
-    };
-
-    f.render_widget(Clear, toast_area);
-
-    let block = Block::default()
-        .borders(Borders::TOP)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(colors.border))
-        .style(Style::default().bg(colors.surface));
-
-    let p = Paragraph::new(format!(" {} ", app.state.toast_msg))
-        .style(Style::default().fg(colors.text))
-        .block(block)
-        .alignment(Alignment::Center);
-    f.render_widget(p, toast_area);
-}
-
-pub(crate) fn create_block<'a>(
-    title: &'a str,
-    style: &'a BlockStyle<'a>,
-    _focused: bool,
-) -> CornerBlock<'a> {
-    create_block_bg(title, style, _focused, style.colors.bg)
-}
-
-pub(crate) fn create_block_surfaced<'a>(
-    title: &'a str,
-    style: &'a BlockStyle<'a>,
-    _focused: bool,
-) -> CornerBlock<'a> {
-    create_block_bg(title, style, _focused, style.colors.surface)
-}
-
-fn create_block_bg<'a>(
-    title: &'a str,
-    style: &'a BlockStyle<'a>,
-    _focused: bool,
-    no_border_bg: Color,
-) -> CornerBlock<'a> {
-    let border_color = style.colors.border;
-    let border_type = if style.border.rounded {
-        BorderType::Rounded
-    } else {
-        BorderType::Plain
-    };
-    let title_line = ratatui::text::Line::from(styled_text::parse_styled(title, style.colors));
-    let block = if style.border.enabled {
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(border_type)
-            .border_style(Style::default().fg(border_color))
-            .title(title_line)
-            .title_style(Style::default().fg(style.colors.muted))
-    } else {
-        Block::default()
-            .borders(Borders::NONE)
-            .border_style(Style::default().fg(border_color))
-            .style(Style::default().bg(no_border_bg))
-            .title(title_line)
-            .title_style(Style::default().fg(style.colors.muted))
-            .padding(Padding::horizontal(1))
-    };
-    CornerBlock::new(block)
-        .corner_color(style.colors.accent)
-        .corner_sizes(2, 1)
-        .follow_corner_color(style.border.follow_corner_color)
-        .border_gradient(style.border.border_gradient)
-        .border_gradient_speed(style.border.border_gradient_speed)
-        .tick(style.tick)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::render_title;
-
-    #[test]
-    fn title_with_count_suffix() {
-        assert_eq!(
-            render_title("每日推荐 ({count})", "每日推荐", 12, 0),
-            "每日推荐 (12)"
-        );
-    }
-
-    #[test]
-    fn title_name_then_count() {
-        assert_eq!(render_title("{name} ({count})", "歌单", 3, 0), "歌单 (3)");
-    }
-
-    #[test]
-    fn title_no_placeholder() {
-        assert_eq!(render_title("SONGS", "x", 0, 0), "SONGS");
-    }
-
-    #[test]
-    fn title_adjacent_placeholders() {
-        assert_eq!(render_title("{name}{count}", "A", 5, 0), "A5");
-    }
-
-    #[test]
-    fn title_total_placeholder() {
-        assert_eq!(
-            render_title("{name} ({count}/{total})", "云盘", 50, 137),
-            "云盘 (50/137)"
-        );
-    }
+    toast::draw_toast(f, app, colors);
 }

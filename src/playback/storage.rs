@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use super::PlayMode;
 use super::{NCM_SEARCH_QUEUE_KEY, THIRD_PARTY_QUEUE_KEY};
 
+use crate::utils::sanitize_filename;
+
 /// File name for the unified NCM search queue.
 pub const NCM_SEARCH_FILE: &str = "ncm_search.json";
 /// Stable id for the NCM search queue: a single shared file, no date/hash.
@@ -122,12 +124,10 @@ pub struct PlaylistStorage {
 }
 
 impl PlaylistStorage {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new() -> Self {
-        let base_dir = dirs::cache_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("pigma")
-            .join("playlists");
+    /// `base_dir` is the pigma cache root (`~/.cache/pigma`); playlists live in
+    /// its `playlists/` subdirectory.
+    pub fn new(base_dir: PathBuf) -> Self {
+        let base_dir = base_dir.join("playlists");
         let _ = fs::create_dir_all(&base_dir);
         Self { base_dir }
     }
@@ -157,13 +157,7 @@ impl PlaylistStorage {
             return self.base_dir.join(file);
         }
         self.base_dir
-            .join(format!("{id}-{}.json", Self::sanitize_for_file(display)))
-    }
-
-    fn sanitize_for_file(s: &str) -> String {
-        s.chars()
-            .map(|c| if "/\\:*?\"<>|".contains(c) { '_' } else { c })
-            .collect()
+            .join(format!("{id}-{}.json", sanitize_filename(display)))
     }
 
     fn queue_hash(key: &str) -> String {

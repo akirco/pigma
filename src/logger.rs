@@ -5,6 +5,7 @@ use std::io::Write;
 use std::sync::Mutex;
 
 use crate::config::Config;
+use crate::utils::{local_timestamp, pigma_config_dir};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Logger {
@@ -17,9 +18,7 @@ fn log_file() -> PathBuf {
     if cfg!(debug_assertions) {
         PathBuf::from("debug.log")
     } else {
-        dirs::config_dir()
-            .map(|d| d.join("pigma").join("debug.log"))
-            .unwrap_or_else(|| PathBuf::from("debug.log"))
+        pigma_config_dir().join("debug.log")
     }
 }
 
@@ -44,7 +43,7 @@ impl Log for FileLogger {
         if !self.enabled(record.metadata()) {
             return;
         }
-        let ts = crate::utils::local_timestamp();
+        let ts = local_timestamp();
         let mut file = self.file.lock().unwrap();
         let _ = writeln!(
             file,

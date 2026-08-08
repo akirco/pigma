@@ -15,6 +15,7 @@ use crate::config::ColumnDef;
 use crate::config::ColumnsConfig;
 use crate::config::Theme;
 use crate::state::{ContentState, TableMode};
+use crate::utils::format_duration;
 
 const MISSING: &str = "—";
 
@@ -43,7 +44,7 @@ fn song_field<'a>(song: &'a SongInfo, field: &str) -> Option<Cow<'a, str>> {
         "name" => Some(Cow::Borrowed(&song.name)),
         "singer" => Some(Cow::Borrowed(&song.singer)),
         "album" => Some(Cow::Borrowed(&song.album)),
-        "duration" => Some(Cow::Owned(crate::utils::format_duration(song.duration))),
+        "duration" => Some(Cow::Owned(format_duration(song.duration))),
         "id" => Some(Cow::Owned(song.id.to_string())),
         _ => None,
     }

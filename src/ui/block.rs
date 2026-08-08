@@ -210,3 +210,72 @@ impl<'a> Widget for CornerBlock<'a> {
         }
     }
 }
+
+// create block fn
+
+use ratatui::style::Style;
+use ratatui::widgets::{BorderType, Borders, Padding};
+
+use crate::config::{BorderConfig, Theme};
+
+use super::styled_text;
+
+pub struct BlockStyle<'a> {
+    pub colors: &'a Theme,
+    pub border: &'a BorderConfig,
+    pub tick: u64,
+}
+
+pub(crate) fn create_block<'a>(
+    title: &'a str,
+    style: &'a BlockStyle<'a>,
+    _focused: bool,
+) -> CornerBlock<'a> {
+    create_block_bg(title, style, _focused, style.colors.bg)
+}
+
+pub(crate) fn create_block_surfaced<'a>(
+    title: &'a str,
+    style: &'a BlockStyle<'a>,
+    _focused: bool,
+) -> CornerBlock<'a> {
+    create_block_bg(title, style, _focused, style.colors.surface)
+}
+
+fn create_block_bg<'a>(
+    title: &'a str,
+    style: &'a BlockStyle<'a>,
+    _focused: bool,
+    no_border_bg: Color,
+) -> CornerBlock<'a> {
+    let border_color = style.colors.border;
+    let border_type = if style.border.rounded {
+        BorderType::Rounded
+    } else {
+        BorderType::Plain
+    };
+    let title_line = ratatui::text::Line::from(styled_text::parse_styled(title, style.colors));
+    let block = if style.border.enabled {
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(border_type)
+            .border_style(Style::default().fg(border_color))
+            .title(title_line)
+            .title_style(Style::default().fg(style.colors.muted))
+    } else {
+        Block::default()
+            .borders(Borders::NONE)
+            .border_style(Style::default().fg(border_color))
+            .style(Style::default().bg(no_border_bg))
+            .title(title_line)
+            .title_style(Style::default().fg(style.colors.muted))
+            .padding(Padding::horizontal(1))
+    };
+    CornerBlock::new(block)
+        .corner_color(style.colors.accent)
+        .corner_sizes(2, 1)
+        .follow_corner_color(style.border.follow_corner_color)
+        .border_gradient(style.border.border_gradient)
+        .border_gradient_speed(style.border.border_gradient_speed)
+        .tick(style.tick)
+}

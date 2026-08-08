@@ -8,12 +8,12 @@ use stream_download::http::HttpStream;
 use stream_download::{Settings, StreamDownload, StreamPhase};
 use tokio::sync::mpsc;
 
+#[cfg(target_os = "linux")]
+use super::engine::mem_rss_kb;
 use super::player::{AudioInput, SharedReader};
 use super::stream_client::HeadersClient;
 use crate::cache::CacheManager;
 use crate::event::{Event, PlaybackEvent};
-#[cfg(target_os = "linux")]
-use crate::playback::mem_rss_kb;
 use crate::service::ApiService;
 
 /// Resolves audio inputs for songs via local files, NCM streaming, or sonar fallback.

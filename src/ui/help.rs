@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use super::BlockStyle;
-use crate::state::App;
+use crate::{app::App, ui::block::create_block_surfaced};
 
 const HELP_ITEMS: &[(&str, &str)] = &[
     ("Ctrl+C/q", "退出程序"),
@@ -53,7 +53,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         border: &app.state.border,
         tick: app.state.tick,
     };
-    let block = super::create_block_surfaced("\u{25BA} HELP \u{25C4}", &style, false);
+    let block = create_block_surfaced("\u{25BA} HELP \u{25C4}", &style, false);
     let inner = block.inner(popup_area);
 
     f.render_widget(Clear, popup_area);

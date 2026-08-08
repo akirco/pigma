@@ -3,6 +3,7 @@ use crate::state::LogLevel;
 use super::App;
 use crate::event::{Event, SplashEvent};
 use crate::state::SplashLogEntry;
+use crate::utils::clock_time;
 
 pub(crate) fn send_event(tx: &tokio::sync::mpsc::UnboundedSender<Event>, event: Event) {
     if tx.send(event).is_err() {
@@ -39,7 +40,7 @@ impl App {
                     SplashEvent::Tick {
                         progress,
                         log: Some(SplashLogEntry {
-                            time: crate::utils::clock_time(),
+                            time: clock_time(),
                             text: text.to_string(),
                             level,
                         }),

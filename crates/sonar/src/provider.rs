@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::model::{SonarSource, PlayUrlResult, Quality, SearchQuery, SearchResult, Song};
+use crate::model::{PlayUrlResult, Quality, SearchQuery, SearchResult, SonarSource, Song};
 use async_trait::async_trait;
 
 #[async_trait]

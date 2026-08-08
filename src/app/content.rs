@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use super::{App, send_event};
 use crate::event::{NavigationEvent, PlaybackEvent};
-use crate::playback::parse_lyric_lines;
+use crate::playback::{CoverState, NCM_SEARCH_QUEUE_KEY, THIRD_PARTY_QUEUE_KEY, parse_lyric_lines};
 use crate::state::{ContentState, PaginationInfo};
 use image::GenericImageView;
 
@@ -156,18 +156,12 @@ impl App {
             if let ContentState::Songs(songs) = self.state.navigation.content.as_ref() {
                 if self.state.navigation.content_is_search && sonar::is_sonar_song_id(id) {
                     // 第三方搜索统一进同一个队列，不复用按关键词/日期建的队列
-                    self.playback.append_and_play_key(
-                        crate::playback::THIRD_PARTY_QUEUE_KEY,
-                        &songs[pos..=pos],
-                        0,
-                    );
+                    self.playback
+                        .append_and_play_key(THIRD_PARTY_QUEUE_KEY, &songs[pos..=pos], 0);
                 } else if self.state.navigation.content_is_search {
                     // 网易云搜索统一进"官方搜索"队列
-                    self.playback.append_and_play_key(
-                        crate::playback::NCM_SEARCH_QUEUE_KEY,
-                        &songs[pos..=pos],
-                        0,
-                    );
+                    self.playback
+                        .append_and_play_key(NCM_SEARCH_QUEUE_KEY, &songs[pos..=pos], 0);
                 } else {
                     let key = self.current_queue_key();
                     self.playback.play_songs(&key, songs.to_vec(), pos);
@@ -408,7 +402,7 @@ fn build_cover_protocol(
 /// Apply a freshly loaded cover protocol, dropping it if the song changed while
 /// it was loading (a stale loader must not overwrite a newer cover).
 fn apply_cover(
-    cover: &crate::playback::CoverState,
+    cover: &CoverState,
     song_id: u64,
     protocol: ratatui_image::protocol::StatefulProtocol,
 ) {

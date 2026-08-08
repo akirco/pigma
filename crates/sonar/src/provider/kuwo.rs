@@ -1,6 +1,6 @@
-use crate::error::{SonarError, Result};
+use crate::error::{Result, SonarError};
 use crate::model::{
-    SonarSource, PlayUrlResult, Quality, SearchQuery, SearchResult, Song, SongMeta, make_song_id,
+    PlayUrlResult, Quality, SearchQuery, SearchResult, SonarSource, Song, SongMeta, make_song_id,
 };
 use crate::provider::SonarProvider;
 use async_trait::async_trait;

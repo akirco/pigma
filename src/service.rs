@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::api::ApiEndpoint;
 use crate::cache::CacheManager;
-use crate::state::{ContentState, PaginationInfo};
+use crate::state::{ContentState, HotSearchKeywords, PaginationInfo};
 
 /// Centralized API service that handles endpoint resolution, caching, and error mapping.
 ///
@@ -13,8 +13,6 @@ use crate::state::{ContentState, PaginationInfo};
 pub struct ApiService {
     client: Arc<ncm_api::NcmClient>,
     cache: CacheManager,
-    /// 歌单的完整 trackIds 缓存（按歌单 id），用于歌单内歌曲的惰性分页
-    /// （先取全量 id，再按页切片走 `songs_detail`，避免 >1000 首一次拉完）。
     playlist_track_ids: Arc<std::sync::Mutex<HashMap<u64, Vec<u64>>>>,
 }
 
@@ -115,7 +113,7 @@ impl ApiService {
             },
             ApiEndpoint::Search => match self.client.search_hot().await {
                 Ok(items) => (
-                    ContentState::HotSearch(crate::state::HotSearchKeywords(
+                    ContentState::HotSearch(HotSearchKeywords(
                         items.into_iter().map(|h| h.keyword).collect(),
                     )),
                     None,

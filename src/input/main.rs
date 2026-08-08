@@ -1,5 +1,8 @@
-use crate::event::{CommandEvent, NavigationEvent, PlaybackEvent};
-use crate::state::{App, ContentState, Page, TableMode};
+use crate::app::App;
+use crate::event::{AppEvent, CommandEvent, NavigationEvent, PlaybackEvent};
+use crate::playback::mode_icon;
+use crate::state::{ContentState, Page, TableMode};
+use crate::text_input::TextInput;
 use crossterm::event::{KeyCode, KeyEvent, MouseEventKind};
 use std::sync::Arc;
 
@@ -16,7 +19,7 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
         KeyCode::Esc => {
             app.state.events.send(NavigationEvent::ContentRestore);
         }
-        KeyCode::Char('q') => app.state.events.send(crate::event::AppEvent::Quit),
+        KeyCode::Char('q') => app.state.events.send(AppEvent::Quit),
         KeyCode::Tab if app.state.navigation.page == Page::Playlist => {
             if let Some(key) = app.playback.switch_queue(true) {
                 app.state.navigation.playlist_selected =
@@ -129,7 +132,7 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
                 let songs = app.playback.queue_songs();
                 app.state.navigation.search.unfiltered_songs = Some(songs.to_vec());
                 app.state.navigation.search.active = true;
-                app.state.navigation.search.input = crate::text_input::TextInput::new();
+                app.state.navigation.search.input = TextInput::new();
             } else if app.state.navigation.page == Page::Lyrics {
                 return Ok(());
             } else {
@@ -152,7 +155,7 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
         }
         KeyCode::Char('m') => {
             let mode = app.playback.cycle_mode();
-            let (icon, label) = crate::ui::playerbar::widgets::mode_icon(&mode);
+            let (icon, label) = mode_icon(&mode);
             app.toast(format!("{icon} 循环: {label}"));
         }
         KeyCode::Char('S') => {

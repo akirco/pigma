@@ -1,4 +1,4 @@
-use crate::state::App;
+use crate::app::App;
 use crossterm::event::{KeyCode, KeyEvent, MouseEventKind};
 
 pub(super) fn handle_help_key(app: &mut App, key_event: KeyEvent) {

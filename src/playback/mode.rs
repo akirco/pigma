@@ -1,6 +1,15 @@
 use rand::seq::SliceRandom;
+use serde::{Deserialize, Serialize};
 
-use super::PlayMode;
+/// 播放模式。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PlayMode {
+    Sequential,
+    RepeatOne,
+    RepeatAll,
+    Shuffle,
+    Heartbeat { playlist_id: u64 },
+}
 
 pub trait PlayStrategy: Send {
     fn next(&mut self, current_index: Option<usize>, queue_len: usize) -> Option<usize>;
@@ -89,5 +98,15 @@ pub fn create_strategy(
             pos: 0,
         },
         PlayMode::Heartbeat { .. } => Strategy::Heartbeat,
+    }
+}
+
+pub fn mode_icon(mode: &PlayMode) -> (&str, &str) {
+    match mode {
+        PlayMode::Sequential => ("\u{F049E}", "顺序"),
+        PlayMode::RepeatOne => ("\u{F0458}", "单曲"),
+        PlayMode::RepeatAll => ("\u{f0456}", "列表"),
+        PlayMode::Shuffle => ("\u{F049F}", "随机"),
+        PlayMode::Heartbeat { .. } => ("\u{F0430}", "心动"),
     }
 }

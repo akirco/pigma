@@ -367,3 +367,10 @@ impl ThemeRegistry {
         names
     }
 }
+
+/// Last-resort hardcoded theme used when neither the configured theme nor the
+/// built-in `default` theme is available.
+pub fn theme_fallback() -> &'static Theme {
+    static FALLBACK: OnceLock<Theme> = OnceLock::new();
+    FALLBACK.get_or_init(Theme::default)
+}

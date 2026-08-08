@@ -22,10 +22,10 @@ lyric_gradient = "rainbow"
 # 代理地址, 支持 http:// https:// socks5://
 proxy = "http://127.0.0.1:7890"
 
-# 代理目标: "yt" (默认, 代理 YouTube), "ncm" (代理网易云), "both" (都代理)
-# 海外用户: proxy_target = "ncm"  (NCM 走代理, YouTube 直连)
-# 国内用户: proxy_target = "yt"   (NCM 直连, YouTube 走代理)
-proxy_target = "yt"
+# 代理目标: "normal" (默认, 代理 YouTube), "reversed" (代理网易云,bilibili,kuwo,kugou), "both" (都代理)
+# 海外用户: proxy_target = "reversed"  (NCM 走代理, YouTube 直连)
+# 国内用户: proxy_target = "normal"   (NCM 直连, YouTube 走代理)
+proxy_target = "normal"
 
 # =============================================================================
 # 缓存配置
@@ -72,6 +72,7 @@ border_gradient_speed = 0.005
 # =============================================================================
 [playerbar]
 # 播放栏布局: "default", "modern", "minimal"
+# modern 仅有封面
 layout = "modern"
 
 # 进度条填充符号

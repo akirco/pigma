@@ -1,6 +1,7 @@
 use super::{App, send_event};
 use crate::event::NavigationEvent;
 use crate::state::{ContentState, SearchProvider};
+use crate::text_input::TextInput;
 
 impl App {
     pub(super) fn handle_search_song(&mut self, keyword: String) {
@@ -68,7 +69,7 @@ impl App {
     pub(super) fn handle_search_activate(&mut self) {
         let nav = &mut self.state.navigation;
         nav.search.active = true;
-        nav.search.input = crate::text_input::TextInput::new();
+        nav.search.input = TextInput::new();
         nav.search.filter_queue_only = false;
         nav.search.unfiltered_songs = None;
         nav.search.provider = SearchProvider::Ncm;
@@ -106,7 +107,7 @@ impl App {
             nav.pop_breadcrumb();
         }
         nav.search.active = false;
-        nav.search.input = crate::text_input::TextInput::new();
+        nav.search.input = TextInput::new();
         nav.nav.subtitle = None;
     }
 

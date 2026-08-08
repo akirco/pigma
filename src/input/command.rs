@@ -1,5 +1,5 @@
+use crate::app::App;
 use crate::event::{CommandEvent, CommandPanelAction};
-use crate::state::App;
 use crossterm::event::{KeyCode, KeyEvent, MouseEventKind};
 
 pub(super) fn handle_command_key(app: &mut App, key_event: KeyEvent) {

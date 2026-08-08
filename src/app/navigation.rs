@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 use super::{App, send_event};
 use crate::api::ApiEndpoint;
-use crate::event::NavigationEvent;
+use crate::event::{AppEvent, NavigationEvent, PlaybackEvent};
+use crate::playback::scan_local_music;
 use crate::state::ContentState;
 
 impl App {
@@ -40,11 +41,9 @@ impl App {
                     send_event(&sender, NavigationEvent::ContentLoaded(cached).into());
                     return;
                 }
-                let songs = tokio::task::spawn_blocking(move || {
-                    crate::playback::scan_local_music(&music_dir)
-                })
-                .await
-                .unwrap_or_default();
+                let songs = tokio::task::spawn_blocking(move || scan_local_music(&music_dir))
+                    .await
+                    .unwrap_or_default();
                 let state = ContentState::Songs(songs);
                 let state = if ttl > 0 {
                     let cache_clone = cache.clone();
@@ -127,10 +126,7 @@ impl App {
                 };
                 send_event(&sender, NavigationEvent::ContentLoaded(state).into());
                 if let Some(id) = playlist_id {
-                    send_event(
-                        &sender,
-                        crate::event::PlaybackEvent::SetPlaylistId(id).into(),
-                    );
+                    send_event(&sender, PlaybackEvent::SetPlaylistId(id).into());
                 }
                 return;
             }
@@ -277,10 +273,7 @@ impl App {
             let path = match cached_path {
                 Some(p) => p,
                 None => {
-                    send_event(
-                        &sender,
-                        crate::event::AppEvent::Toast("未找到文件".into()).into(),
-                    );
+                    send_event(&sender, AppEvent::Toast("未找到文件".into()).into());
                     return;
                 }
             };
@@ -298,16 +291,12 @@ impl App {
                     );
                     send_event(
                         &sender,
-                        crate::event::AppEvent::Toast(format!("⬆ 上传成功: {}", result.song_name))
-                            .into(),
+                        AppEvent::Toast(format!("⬆ 上传成功: {}", result.song_name)).into(),
                     );
                 }
                 Err(e) => {
                     log::error!("Upload failed for song_id={song_id}: {e}");
-                    send_event(
-                        &sender,
-                        crate::event::AppEvent::Toast(format!("⬆ 上传失败: {e}")).into(),
-                    );
+                    send_event(&sender, AppEvent::Toast(format!("⬆ 上传失败: {e}")).into());
                 }
             }
         });

@@ -6,11 +6,10 @@ use ratatui::{
     widgets::{Cell, Row, Table, TableState},
 };
 
-use crate::config::ColumnDef;
 use crate::config::Theme;
 use crate::state::TableMode;
-use crate::ui::render_scrollbar;
 use crate::ui::styled_text;
+use crate::{config::ColumnDef, ui::scrollbar::render_scrollbar};
 
 pub fn render_table(
     f: &mut Frame,

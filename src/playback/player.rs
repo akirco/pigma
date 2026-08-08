@@ -3,9 +3,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use rodio::Source;
-use rodio::cpal::traits::{DeviceTrait, HostTrait};
 use rodio::mixer::Mixer;
 use tokio::sync::mpsc;
+
+#[cfg(target_os = "linux")]
+use super::engine::mem_rss_kb;
+#[cfg(target_os = "linux")]
+use rodio::cpal::traits::{DeviceTrait, HostTrait};
 
 use crate::event::{Event, PlaybackEvent};
 
@@ -140,10 +144,7 @@ pub fn run(
                         total_duration = None;
                         seek_offset = Duration::default();
                         #[cfg(target_os = "linux")]
-                        log::info!(
-                            "[HEAP] after ControlCmd::Stop: {} kB",
-                            crate::playback::mem_rss_kb()
-                        );
+                        log::info!("[HEAP] after ControlCmd::Stop: {} kB", mem_rss_kb());
                     }
                     ControlCmd::Pause => {
                         if let Some(ref p) = player {
@@ -171,7 +172,7 @@ pub fn run(
                     #[cfg(target_os = "linux")]
                     log::info!(
                         "[HEAP] song finished (playback complete): {} kB",
-                        crate::playback::mem_rss_kb()
+                        mem_rss_kb()
                     );
                     let _ = event_tx.send(PlaybackEvent::Finished.into());
                     p.stop();
@@ -179,10 +180,7 @@ pub fn run(
                     total_duration = None;
                     seek_offset = Duration::default();
                     #[cfg(target_os = "linux")]
-                    log::info!(
-                        "[HEAP] after player drop on finish: {} kB",
-                        crate::playback::mem_rss_kb()
-                    );
+                    log::info!("[HEAP] after player drop on finish: {} kB", mem_rss_kb());
                     continue;
                 }
 

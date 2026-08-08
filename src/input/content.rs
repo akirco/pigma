@@ -1,5 +1,5 @@
-use crate::event::NavigationEvent;
-use crate::state::App;
+use crate::app::App;
+use crate::event::{NavigationEvent, PlaybackEvent};
 use crate::state::ContentState;
 
 pub(super) fn content_item_count(app: &App) -> usize {
@@ -110,9 +110,7 @@ pub(super) fn row_enter_action(app: &mut App) {
         }
         ContentState::Songs(songs) => {
             if let Some(song) = songs.get(sel) {
-                app.state
-                    .events
-                    .send(crate::event::PlaybackEvent::SongPlay(song.id));
+                app.state.events.send(PlaybackEvent::SongPlay(song.id));
             }
         }
         ContentState::Singers(_) => {

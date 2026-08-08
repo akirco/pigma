@@ -8,8 +8,13 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use super::BlockStyle;
-use super::{create_block, create_block_surfaced, styled_text};
-use crate::state::NavState;
+use crate::{
+    state::NavState,
+    ui::{
+        block::{create_block, create_block_surfaced},
+        styled_text,
+    },
+};
 
 pub fn draw(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, title: &str, area: Rect) {
     let colors = bs.colors;

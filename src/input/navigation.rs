@@ -1,5 +1,5 @@
+use crate::app::App;
 use crate::event::NavigationEvent;
-use crate::state::App;
 
 pub(super) fn navigate_nav_up(app: &mut App) {
     let nav = &mut app.state.navigation.nav;

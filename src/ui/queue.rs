@@ -10,11 +10,14 @@ use super::BlockStyle;
 use super::create_block;
 use super::navigation::keep_visible;
 
+use crate::config::Theme;
 use crate::playback::PlaybackEngine;
-use crate::ui::{calc_scroll_offset, render_scrollbar, render_title};
+use crate::ui::scrollbar::{calc_scroll_offset, render_scrollbar};
+use crate::ui::title::render_title;
 use crate::utils::format::clip_long_text;
+use crate::utils::format_duration_into;
 
-fn tab_style(colors: &crate::config::theme::Theme, selected: bool, playing: bool) -> Style {
+fn tab_style(colors: &Theme, selected: bool, playing: bool) -> Style {
     if !selected && !playing {
         return Style::default().fg(colors.muted);
     }
@@ -159,7 +162,7 @@ pub fn draw_queue_table(
             };
 
             let mut dur_buf = String::with_capacity(8);
-            crate::utils::format_duration_into(song.duration, &mut dur_buf);
+            format_duration_into(song.duration, &mut dur_buf);
 
             Row::new(vec![
                 Cell::from(num).style(Style::default().fg(colors.muted)),

@@ -7,24 +7,13 @@ use ratatui::{
 };
 use ratatui_image::{Resize, StatefulImage};
 
-use crate::config::PlayerbarConfig;
 use crate::config::Theme;
-use crate::playback::PlayMode;
 use crate::state::PlaybackState;
 use crate::ui::gradient_line_gauge::GradientLineGauge;
 use crate::ui::spinner::Spinner;
 use crate::utils::format_duration_into;
 use crate::utils::time::format_duration;
-
-pub fn mode_icon(mode: &PlayMode) -> (&str, &str) {
-    match mode {
-        PlayMode::Sequential => ("\u{F049E}", "顺序"),
-        PlayMode::RepeatOne => ("\u{F0458}", "单曲"),
-        PlayMode::RepeatAll => ("\u{f0456}", "列表"),
-        PlayMode::Shuffle => ("\u{F049F}", "随机"),
-        PlayMode::Heartbeat { .. } => ("\u{F0430}", "心动"),
-    }
-}
+use crate::{config::PlayerbarConfig, playback::mode_icon};
 
 pub fn draw_song_info(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     if let Some(song) = &player.current_song {

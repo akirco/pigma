@@ -1,3 +1,14 @@
+## [0.2.3] - 2026-08-08
+
+### 🐛 Bug Fixes
+
+- *(cover)* Wt img capability check (akirco)
+
+### ⚙️ Miscellaneous Tasks
+
+- Adjust file and code structure (akirco)
+- Update config example (akirco)
+- *(ci)* Fmt (akirco)
 ## [0.2.2] - 2026-08-07
 
 ### 🚀 Features

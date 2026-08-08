@@ -1,5 +1,5 @@
+use crate::app::App;
 use crate::event::NavigationEvent;
-use crate::state::App;
 use crate::state::ContentState;
 use crossterm::event::{KeyCode, KeyEvent};
 

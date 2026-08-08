@@ -11,7 +11,7 @@ pub use cache::*;
 pub use column::*;
 pub use navigation::*;
 pub use playerbar::*;
-pub use theme::{Theme, ThemeRegistry};
+pub use theme::{Theme, ThemeRegistry, theme_fallback};
 pub use titles::*;
 
 use serde::{Deserialize, Serialize};
@@ -146,38 +146,32 @@ impl Default for Config {
 
 impl Config {
     pub fn load() -> Self {
-        let config_dir = dirs::config_dir().map(|d| d.join("pigma"));
-        let config_path = config_dir.as_ref().map(|d| d.join("config.toml"));
+        let config_dir = utils::pigma_config_dir();
+        let config_path = config_dir.join("config.toml");
 
         let default = Config::default();
-        let config = if let Some(path) = &config_path {
-            if path.exists() {
-                match fs::read_to_string(path) {
-                    Ok(content) => match toml_edit::de::from_str(&content) {
-                        Ok(cfg) => cfg,
-                        Err(e) => {
-                            log::warn!("Failed to parse config.toml: {e}, using defaults");
-                            default
-                        }
-                    },
+        let config = if config_path.exists() {
+            match fs::read_to_string(&config_path) {
+                Ok(content) => match toml_edit::de::from_str(&content) {
+                    Ok(cfg) => cfg,
                     Err(e) => {
-                        log::warn!("Failed to read config.toml: {e}, using defaults");
+                        log::warn!("Failed to parse config.toml: {e}, using defaults");
                         default
                     }
+                },
+                Err(e) => {
+                    log::warn!("Failed to read config.toml: {e}, using defaults");
+                    default
                 }
-            } else {
-                default
             }
         } else {
             default
         };
 
-        if let Some(dir) = &config_dir
-            && !dir.join("config.toml").exists()
-        {
-            let _ = fs::create_dir_all(dir);
+        if !config_path.exists() {
+            let _ = fs::create_dir_all(&config_dir);
             let content = config.to_toml();
-            if let Err(e) = fs::write(dir.join("config.toml"), content) {
+            if let Err(e) = fs::write(config_path, content) {
                 log::warn!("Failed to write default config: {e}");
             }
         }
@@ -185,15 +179,14 @@ impl Config {
     }
 
     pub fn save(&self) {
-        if let Some(dir) = dirs::config_dir().map(|d| d.join("pigma")) {
-            if let Err(e) = fs::create_dir_all(&dir) {
-                log::error!("Failed to create config directory: {e}");
-                return;
-            }
-            let content = self.to_toml();
-            if let Err(e) = fs::write(dir.join("config.toml"), content) {
-                log::error!("Failed to write config.toml: {e}");
-            }
+        let dir = utils::pigma_config_dir();
+        if let Err(e) = fs::create_dir_all(&dir) {
+            log::error!("Failed to create config directory: {e}");
+            return;
+        }
+        let content = self.to_toml();
+        if let Err(e) = fs::write(dir.join("config.toml"), content) {
+            log::error!("Failed to write config.toml: {e}");
         }
     }
 

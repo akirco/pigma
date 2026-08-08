@@ -1,7 +1,7 @@
 use crate::crypto::kugou_md5_key;
-use crate::error::{SonarError, Result};
+use crate::error::{Result, SonarError};
 use crate::model::{
-    SonarSource, PlayUrlResult, Quality, SearchQuery, SearchResult, Song, SongMeta, make_song_id,
+    PlayUrlResult, Quality, SearchQuery, SearchResult, SonarSource, Song, SongMeta, make_song_id,
 };
 use crate::provider::SonarProvider;
 use async_trait::async_trait;
@@ -20,8 +20,8 @@ impl KugouProvider {
     }
 
     pub fn with_proxy(enable_flac: bool, proxy_url: &str) -> Self {
-        let mut builder = Client::builder()
-            .user_agent("Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36");
+        let mut builder =
+            Client::builder().user_agent("Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36");
         if !proxy_url.is_empty() {
             builder = builder.proxy(reqwest::Proxy::all(proxy_url).expect("invalid proxy url"));
         }
@@ -53,7 +53,11 @@ impl KugouProvider {
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
                 .map(String::from),
-            album_id: song.get("album_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            album_id: song
+                .get("album_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
         }
     }
 
@@ -82,7 +86,10 @@ impl KugouProvider {
                 .or(song.meta.high_hash.as_deref())
                 .or(Some(song.source_id.as_str()))
         } else {
-            song.meta.high_hash.as_deref().or(Some(song.source_id.as_str()))
+            song.meta
+                .high_hash
+                .as_deref()
+                .or(Some(song.source_id.as_str()))
         }
     }
 
@@ -234,7 +241,9 @@ impl SonarProvider for KugouProvider {
             .and_then(|arr| arr.first())
             .ok_or(SonarError::NoLyrics)?;
         let id = candidate["id"].as_str().ok_or(SonarError::NoLyrics)?;
-        let accesskey = candidate["accesskey"].as_str().ok_or(SonarError::NoLyrics)?;
+        let accesskey = candidate["accesskey"]
+            .as_str()
+            .ok_or(SonarError::NoLyrics)?;
 
         // Step 2: download the LRC (base64-encoded in `content`).
         let download_url = "http://lyrics.kugou.com/download";
@@ -264,7 +273,7 @@ impl SonarProvider for KugouProvider {
 #[cfg(test)]
 mod tests {
     use super::KugouProvider;
-    use crate::model::{SonarSource, Quality, Song, SongMeta};
+    use crate::model::{Quality, SonarSource, Song, SongMeta};
     use serde_json::json;
 
     fn ensure_crypto() {

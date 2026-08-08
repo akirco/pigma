@@ -2336,7 +2336,7 @@ dependencies = [
 
 [[package]]
 name = "pigma"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "color-eyre",
  "crossterm 0.29.0",
