@@ -318,6 +318,18 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_song_id_list_like_get() {
+        // /api/song/like/get 真实响应形态（含 code 与 ids）。
+        let v = json!({
+            "code": 200,
+            "ids": [100, 200, 300, 400],
+            "count": 4
+        });
+        let ids = parse_song_id_list(&v).unwrap();
+        assert_eq!(ids, vec![100, 200, 300, 400]);
+    }
+
+    #[test]
     fn test_parse_song_id_list_missing() {
         let v = json!({});
         assert!(parse_song_id_list(&v).is_err());

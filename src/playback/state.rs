@@ -20,6 +20,7 @@ pub struct PlaybackState {
     pub translated_lyrics: Option<Vec<LyricLine>>,
     pub mode: PlayMode,
     pub cached: bool,
+    pub liked: bool,
     pub cover: CoverState,
 }
 
@@ -37,6 +38,7 @@ impl Default for PlaybackState {
             translated_lyrics: None,
             mode: PlayMode::Sequential,
             cached: false,
+            liked: false,
             cover: CoverState::default(),
         }
     }

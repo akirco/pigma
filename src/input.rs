@@ -29,6 +29,13 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> color_eyre::Resu
             KeyCode::Char('l' | 'L') => {
                 app.playback.clear_queue();
                 app.toast("   已清空播放队列".into());
+                if app.state.navigation.page == Page::Playlist
+                    && let Some(key) = app.playback.switch_queue(false)
+                {
+                    app.state.navigation.playlist_selected =
+                        app.playback.queue_current_index().unwrap_or(0);
+                    app.toast(format!("▣ 队列: {key}"));
+                }
                 return Ok(());
             }
             _ => {}

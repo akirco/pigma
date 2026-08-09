@@ -62,9 +62,11 @@ pub enum PlaybackEvent {
     HeartbeatSong(SongInfo),
     HeartbeatFallback,
     SetPlaylistId(u64),
-    LikeSong(u64),
+    LikeSong(u64, bool),
     DislikeSong(u64),
     Cached(u64),
+    /// 云端"我喜欢的音乐"列表已拉取/更新，主线程据此刷新 `PlaybackState.liked`。
+    LikedUpdated,
     /// Append lazily-paged songs to the queue identified by `key` (background
     /// full-list load after Enter on a playlist page).
     QueueAppend {

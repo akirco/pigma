@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -70,6 +70,8 @@ pub struct PlaybackEngine {
     pub(super) service: ApiService,
     playlist_id: Option<u64>,
     consecutive_errors: u32,
+    /// 用户"我喜欢的音乐"歌曲 ID 集合（与 `App` 共享同一 `Arc`）。
+    liked_ids: Arc<std::sync::Mutex<HashSet<u64>>>,
 }
 
 impl PlaybackEngine {
@@ -85,6 +87,7 @@ impl PlaybackEngine {
         finder: Arc<sonar::SonarFinder>,
         sonar_enabled: bool,
         sonar_songs: Arc<std::sync::Mutex<HashMap<u64, Arc<sonar::Song>>>>,
+        liked_ids: Arc<std::sync::Mutex<HashSet<u64>>>,
     ) -> Self {
         let storage = PlaylistStorage::new(base_dir);
         let mut this = Self {
@@ -113,6 +116,7 @@ impl PlaybackEngine {
             service,
             playlist_id: None,
             consecutive_errors: 0,
+            liked_ids,
         };
         this.restore_session();
         this
@@ -120,6 +124,21 @@ impl PlaybackEngine {
 
     pub fn current_song(&self) -> Option<Arc<SongInfo>> {
         self.state.current_song.clone()
+    }
+
+    /// 根据当前歌曲是否在"我喜欢的音乐"集合中，刷新 `state.liked` 供播放栏渲染。
+    pub fn update_liked_status(&mut self) {
+        self.state.liked = self
+            .state
+            .current_song
+            .as_ref()
+            .map(|s| {
+                self.liked_ids
+                    .lock()
+                    .map(|g| g.contains(&s.id))
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false);
     }
 
     pub fn is_currently_playing(&self, song_id: u64) -> bool {
@@ -667,6 +686,7 @@ impl PlaybackEngine {
             }
         }
         self.refresh_queue_keys();
+        self.update_liked_status();
     }
 
     pub(super) fn start_current_song(&mut self, seek_time: Option<Duration>) {
@@ -681,6 +701,7 @@ impl PlaybackEngine {
         self.state.current_song = Some(song.clone());
         self.state.error = None;
         self.state.cached = self.source.cache.is_cached(song.id, "mp3");
+        self.update_liked_status();
 
         if let Some(t) = seek_time {
             let total_secs = song.duration as f64 / 1000.0;

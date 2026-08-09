@@ -1,3 +1,14 @@
+## [0.2.5] - 2026-08-09
+
+### 🚀 Features
+
+- Add keyboard shortcuts for manual refresh and help panel (akirco)
+- Enhance song liking functionality with improved event handling and user feedback (akirco)
+- Implement liked songs functionality with cloud sync and UI updates (akirco)
+
+### 🐛 Bug Fixes
+
+- *(ci)* Fmt (akirco)
 ## [0.2.4] - 2026-08-09
 
 ### 🚀 Features

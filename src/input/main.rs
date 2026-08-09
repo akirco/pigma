@@ -160,7 +160,9 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
         }
         KeyCode::Char('S') => {
             if let Some(song) = app.playback.current_song() {
-                app.state.events.send(PlaybackEvent::LikeSong(song.id));
+                app.state
+                    .events
+                    .send(PlaybackEvent::LikeSong(song.id, true));
                 app.toast(format!("♥  {}", song.name));
             }
         }
@@ -168,7 +170,9 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
             if let ContentState::Songs(songs) = app.state.navigation.content.as_ref() {
                 let sel = app.state.navigation.content_selected;
                 if let Some(song) = songs.get(sel) {
-                    app.state.events.send(PlaybackEvent::LikeSong(song.id));
+                    app.state
+                        .events
+                        .send(PlaybackEvent::LikeSong(song.id, true));
                     app.toast(format!("♥  {}", song.name));
                 }
             }
@@ -191,7 +195,7 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
                 app.toast(format!("⏭  下一首: {}", song.name));
             }
         }
-        KeyCode::Char('d' | 'D') => {
+        KeyCode::Char('d') => {
             if is_daily_recommend(app)
                 && let ContentState::Songs(songs) = app.state.navigation.content.as_ref()
             {
@@ -200,6 +204,22 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
                     app.state.events.send(PlaybackEvent::DislikeSong(song.id));
                     app.toast(format!("✕  {}", song.name));
                 }
+            } else if let ContentState::Songs(songs) = app.state.navigation.content.as_ref() {
+                let sel = app.state.navigation.content_selected;
+                if let Some(song) = songs.get(sel) {
+                    app.state
+                        .events
+                        .send(PlaybackEvent::LikeSong(song.id, false));
+                    app.toast(format!("♡ 已取消喜欢: {}", song.name));
+                }
+            }
+        }
+        KeyCode::Char('D') => {
+            if let Some(song) = app.playback.current_song() {
+                app.state
+                    .events
+                    .send(PlaybackEvent::LikeSong(song.id, false));
+                app.toast(format!("♡ 已取消喜欢: {}", song.name));
             }
         }
         KeyCode::Char('r' | 'R') => {

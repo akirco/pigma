@@ -17,6 +17,12 @@ use crate::{config::PlayerbarConfig, playback::mode_icon};
 
 pub(super) fn draw_song_info(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     if let Some(song) = &player.current_song {
+        let like_icon = if player.liked { "\u{f004}" } else { "\u{f08a}" };
+        let like_color = if player.liked {
+            colors.accent
+        } else {
+            colors.muted
+        };
         let info_lines = vec![
             Line::from(vec![
                 Span::styled("\u{266a} ", Style::default().fg(colors.accent)),
@@ -28,7 +34,8 @@ pub(super) fn draw_song_info(f: &mut Frame, player: &PlaybackState, colors: &The
                 ),
             ]),
             Line::from(vec![
-                Span::styled("\u{25C8} ", Style::default().fg(colors.muted)),
+                Span::styled(like_icon, Style::default().fg(like_color)),
+                Span::raw(" "),
                 Span::styled(
                     &song.singer,
                     Style::default()
@@ -219,8 +226,15 @@ pub(super) fn draw_gauge_with_label(
 
 pub(super) fn draw_song_detail(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     if let Some(song) = &player.current_song {
+        let like_icon = if player.liked { "\u{f004}" } else { "\u{f08a}" };
+        let like_color = if player.liked {
+            colors.accent
+        } else {
+            colors.muted
+        };
         let detail = Line::from(vec![
-            Span::styled("\u{25C8} ", Style::default().fg(colors.muted)),
+            Span::styled(like_icon, Style::default().fg(like_color)),
+            Span::raw(" "),
             Span::styled(
                 &song.singer,
                 Style::default()

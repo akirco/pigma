@@ -324,6 +324,15 @@ impl ApiService {
         self.client.like(song_id, like).await.map(|_| ())
     }
 
+    /// 拉取"我喜欢的音乐"的歌曲 ID 集合，用于本地维护 liked 状态。
+    pub async fn load_liked_song_ids(
+        &self,
+        uid: u64,
+    ) -> Result<std::collections::HashSet<u64>, ncm_api::NcmError> {
+        let ids = self.client.liked_song_ids(uid).await?;
+        Ok(ids.into_iter().collect())
+    }
+
     pub async fn dislike_song(&self, song_id: u64) -> Result<(), ncm_api::NcmError> {
         self.client
             .recommend_song_dislike(song_id)

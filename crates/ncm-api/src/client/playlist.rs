@@ -95,6 +95,19 @@ impl NcmClient {
         self.songs_detail(&track_ids[offset..end]).await
     }
 
+    /// 获取我喜欢的歌曲 ID 列表（不含歌曲详情，适合大歌单轻量同步）。
+    ///
+    /// * `uid` — 用户 ID
+    pub async fn liked_song_ids(&self, uid: u64) -> Result<Vec<u64>, NcmError> {
+        let uid_str = uid.to_string();
+        let result = self
+            .request_weapi("/api/song/like/get", &[("uid", &uid_str)])
+            .await?;
+        let value: Value = serde_json::from_str(&result)?;
+        Self::check_api_code(&value)?;
+        parse_song_id_list(&value).map_err(|e| NcmError::parse(e, &value))
+    }
+
     /// 获取我喜欢的歌曲
     pub async fn liked_songs(&self, uid: u64) -> Result<Vec<SongInfo>, NcmError> {
         let uid_str = uid.to_string();

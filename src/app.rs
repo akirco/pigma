@@ -52,6 +52,8 @@ pub struct App {
     pub finder: Arc<SonarFinder>,
     /// Original sonar songs for search results, keyed by synthetic song id.
     pub sonar_songs: Arc<Mutex<HashMap<u64, Arc<Song>>>>,
+    /// 用户"我喜欢的音乐"歌曲 ID 集合，与 `PlaybackEngine` 共享同一 `Arc`。
+    pub liked_ids: Arc<Mutex<HashSet<u64>>>,
     /// 惰性分页歌单：已把全量曲目并入播放队列的歌单 ID，避免重复回车重复拉取/截断队列。
     queued_playlists: HashSet<u64>,
 }
@@ -228,6 +230,7 @@ impl App {
         let sonar_enabled = config.source_fallback.enabled;
         let sonar_songs: Arc<Mutex<HashMap<u64, Arc<sonar::Song>>>> =
             Arc::new(Mutex::new(HashMap::new()));
+        let liked_ids: Arc<Mutex<HashSet<u64>>> = Arc::new(Mutex::new(HashSet::new()));
         let mut state = State {
             running: true,
             events,
@@ -276,6 +279,7 @@ impl App {
                 Arc::clone(&finder),
                 sonar_enabled,
                 Arc::clone(&sonar_songs),
+                Arc::clone(&liked_ids),
             ),
             state,
             theme_registry,
@@ -283,6 +287,7 @@ impl App {
             cover_http,
             finder,
             sonar_songs,
+            liked_ids,
             queued_playlists: HashSet::new(),
         })
     }
@@ -522,11 +527,31 @@ impl App {
                 self.queued_playlists.remove(&id);
                 self.playback.set_playlist_id(id);
             }
-            PlaybackEvent::LikeSong(id) => {
+            PlaybackEvent::LikeSong(id, like) => {
+                // 立即更新本地集合并刷新图标（无论云端结果如何，与现有行为一致）。
+                if let Ok(mut guard) = self.liked_ids.lock() {
+                    if like {
+                        guard.insert(id);
+                    } else {
+                        guard.remove(&id);
+                    }
+                }
+                if self
+                    .playback
+                    .state
+                    .current_song
+                    .as_ref()
+                    .is_some_and(|s| s.id == id)
+                {
+                    self.playback.update_liked_status();
+                }
                 let service = self.service.clone();
                 tokio::spawn(async move {
-                    let _ = service.like_song(id, true).await;
+                    let _ = service.like_song(id, like).await;
                 });
+            }
+            PlaybackEvent::LikedUpdated => {
+                self.playback.update_liked_status();
             }
             PlaybackEvent::DislikeSong(id) => {
                 let service = self.service.clone();

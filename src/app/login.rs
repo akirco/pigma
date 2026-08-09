@@ -1,6 +1,7 @@
 use super::{App, send_event};
-use crate::event::AuthEvent;
+use crate::event::{AuthEvent, PlaybackEvent};
 use crate::state::Page;
+use std::sync::Arc;
 
 use tokio::time::{Duration, sleep};
 
@@ -28,11 +29,28 @@ impl App {
     pub(super) fn handle_login_success(&mut self, info: ncm_api::LoginInfo) {
         self.toast(format!("登录成功: {}", info.nickname));
         self.state.navigation.login.loading = false;
-        self.state.navigation.user = Some(info);
+        self.state.navigation.user = Some(info.clone());
         self.service.client().flush_cookies();
         if self.state.navigation.page == Page::Login {
             self.navigate_to_main();
         }
+
+        // 登录后从云端拉取"我喜欢的音乐"列表，本地集合与播放栏图标即时同步。
+        let uid = info.uid;
+        let service = self.service.clone();
+        let liked_ids = Arc::clone(&self.liked_ids);
+        let sender = self.state.events.sender();
+        tokio::spawn(async move {
+            match service.load_liked_song_ids(uid).await {
+                Ok(ids) => {
+                    if let Ok(mut guard) = liked_ids.lock() {
+                        *guard = ids;
+                    }
+                    send_event(&sender, PlaybackEvent::LikedUpdated.into());
+                }
+                Err(e) => log::warn!("Failed to load liked song ids: {e}"),
+            }
+        });
     }
 
     pub(super) fn handle_login_error(&mut self, e: String) {
