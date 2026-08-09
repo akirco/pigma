@@ -10,10 +10,10 @@ use super::BlockStyle;
 use super::create_block;
 use super::navigation::keep_visible;
 
+use super::scrollbar::{calc_scroll_offset, render_scrollbar};
+use super::title::render_title;
 use crate::config::Theme;
 use crate::playback::PlaybackEngine;
-use crate::ui::scrollbar::{calc_scroll_offset, render_scrollbar};
-use crate::ui::title::render_title;
 use crate::utils::format::clip_long_text;
 use crate::utils::format_duration_into;
 
@@ -31,7 +31,7 @@ fn tab_style(colors: &Theme, selected: bool, playing: bool) -> Style {
         .add_modifier(Modifier::BOLD)
 }
 
-pub fn draw_queue_table(
+pub(super) fn draw_queue_table(
     f: &mut Frame,
     playback: &PlaybackEngine,
     selected: usize,

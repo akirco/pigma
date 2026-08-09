@@ -1,6 +1,6 @@
 [package]
 name = "pigma"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2024"
 description = "A netease cloud music client"
 repository = "https://github.com/akirco/pigma.git"
@@ -64,7 +64,7 @@ sonar = { path = "crates/sonar" }
 stream-download = {
   version = "0.24.3",
   default-features = false,
-  features = ["async-read", "reqwest"]
+  features = ["async-read", "reqwest", "temp-storage"]
 }
 time = {
   version = "0.3.55",

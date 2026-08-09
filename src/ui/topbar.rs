@@ -11,7 +11,7 @@ use crate::state::SearchState;
 use ncm_api::LoginInfo;
 use unicode_width::UnicodeWidthStr;
 
-pub fn draw(
+pub(super) fn draw(
     f: &mut Frame,
     user: Option<&LoginInfo>,
     search: &SearchState,

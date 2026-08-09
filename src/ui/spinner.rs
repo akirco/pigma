@@ -20,7 +20,7 @@ pub struct Spinner {
 }
 
 impl Spinner {
-    pub fn new(tick: u64) -> Self {
+    pub(super) fn new(tick: u64) -> Self {
         Self {
             tick,
             filled_color: Style::default(),
@@ -28,12 +28,12 @@ impl Spinner {
         }
     }
 
-    pub fn active_color(mut self, style: Style) -> Self {
+    pub(super) fn active_color(mut self, style: Style) -> Self {
         self.filled_color = style;
         self
     }
 
-    pub fn inactive_color(mut self, style: Style) -> Self {
+    pub(super) fn inactive_color(mut self, style: Style) -> Self {
         self.empty_color = style;
         self
     }

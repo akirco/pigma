@@ -22,7 +22,7 @@ pub struct CornerBlock<'a> {
 }
 
 impl<'a> CornerBlock<'a> {
-    pub fn new(block: Block<'a>) -> Self {
+    pub(super) fn new(block: Block<'a>) -> Self {
         Self {
             block,
             tl_color: Color::White,
@@ -38,7 +38,7 @@ impl<'a> CornerBlock<'a> {
         }
     }
 
-    pub fn corner_color(mut self, color: Color) -> Self {
+    pub(super) fn corner_color(mut self, color: Color) -> Self {
         self.tl_color = color;
         self.tr_color = color;
         self.bl_color = color;
@@ -46,38 +46,38 @@ impl<'a> CornerBlock<'a> {
         self
     }
 
-    pub fn corner_sizes(mut self, horizontal: u16, vertical: u16) -> Self {
+    pub(super) fn corner_sizes(mut self, horizontal: u16, vertical: u16) -> Self {
         self.h_size = horizontal;
         self.v_size = vertical;
         self
     }
 
-    pub fn follow_corner_color(mut self, follow: bool) -> Self {
+    fn follow_corner_color(mut self, follow: bool) -> Self {
         self.follow_corner_color = follow;
         self
     }
 
-    pub fn border_gradient(mut self, preset: Option<GradientPreset>) -> Self {
+    fn border_gradient(mut self, preset: Option<GradientPreset>) -> Self {
         self.border_gradient = preset;
         self
     }
 
-    pub fn border_gradient_speed(mut self, speed: f64) -> Self {
+    fn border_gradient_speed(mut self, speed: f64) -> Self {
         self.border_gradient_speed = speed;
         self
     }
 
-    pub fn tick(mut self, tick: u64) -> Self {
+    fn tick(mut self, tick: u64) -> Self {
         self.tick = tick;
         self
     }
 
-    pub fn block_padding(mut self, padding: ratatui::widgets::Padding) -> Self {
+    pub(super) fn block_padding(mut self, padding: ratatui::widgets::Padding) -> Self {
         self.block = self.block.padding(padding);
         self
     }
 
-    pub fn inner(&self, area: Rect) -> Rect {
+    pub(super) fn inner(&self, area: Rect) -> Rect {
         self.block.inner(area)
     }
 }
@@ -226,7 +226,7 @@ pub struct BlockStyle<'a> {
     pub tick: u64,
 }
 
-pub(crate) fn create_block<'a>(
+pub(super) fn create_block<'a>(
     title: &'a str,
     style: &'a BlockStyle<'a>,
     _focused: bool,
@@ -234,7 +234,7 @@ pub(crate) fn create_block<'a>(
     create_block_bg(title, style, _focused, style.colors.bg)
 }
 
-pub(crate) fn create_block_surfaced<'a>(
+pub(super) fn create_block_surfaced<'a>(
     title: &'a str,
     style: &'a BlockStyle<'a>,
     _focused: bool,

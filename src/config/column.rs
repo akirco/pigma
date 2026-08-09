@@ -53,7 +53,7 @@ impl ColumnDef {
     }
 }
 
-pub fn default_song_columns() -> Vec<ColumnDef> {
+fn default_song_columns() -> Vec<ColumnDef> {
     vec![
         ColumnDef {
             header: "TITLE".into(),
@@ -86,7 +86,7 @@ pub fn default_song_columns() -> Vec<ColumnDef> {
     ]
 }
 
-pub fn default_songlist_columns() -> Vec<ColumnDef> {
+fn default_songlist_columns() -> Vec<ColumnDef> {
     vec![
         ColumnDef {
             header: "NAME".into(),
@@ -105,7 +105,7 @@ pub fn default_songlist_columns() -> Vec<ColumnDef> {
     ]
 }
 
-pub fn default_toplist_columns() -> Vec<ColumnDef> {
+fn default_toplist_columns() -> Vec<ColumnDef> {
     vec![
         ColumnDef {
             header: "NAME".into(),
@@ -124,7 +124,7 @@ pub fn default_toplist_columns() -> Vec<ColumnDef> {
     ]
 }
 
-pub fn default_hotsearch_columns() -> Vec<ColumnDef> {
+fn default_hotsearch_columns() -> Vec<ColumnDef> {
     vec![ColumnDef {
         header: "HOT SEARCH".into(),
         field: "keyword".into(),
@@ -134,7 +134,7 @@ pub fn default_hotsearch_columns() -> Vec<ColumnDef> {
     }]
 }
 
-pub fn default_download_columns() -> Vec<ColumnDef> {
+fn default_download_columns() -> Vec<ColumnDef> {
     vec![
         ColumnDef {
             header: "TITLE".into(),
@@ -153,7 +153,7 @@ pub fn default_download_columns() -> Vec<ColumnDef> {
     ]
 }
 
-pub fn default_singer_columns() -> Vec<ColumnDef> {
+fn default_singer_columns() -> Vec<ColumnDef> {
     vec![
         ColumnDef {
             header: "ARTIST".into(),

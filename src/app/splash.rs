@@ -5,13 +5,13 @@ use crate::event::{Event, SplashEvent};
 use crate::state::SplashLogEntry;
 use crate::utils::clock_time;
 
-pub(crate) fn send_event(tx: &tokio::sync::mpsc::UnboundedSender<Event>, event: Event) {
+pub(super) fn send_event(tx: &tokio::sync::mpsc::UnboundedSender<Event>, event: Event) {
     if tx.send(event).is_err() {
         log::error!("Failed to send event: receiver dropped");
     }
 }
 
-pub(super) fn splash_status(progress: f64) -> &'static str {
+fn splash_status(progress: f64) -> &'static str {
     if progress < 0.3 {
         "INITIALIZING SYSTEM..."
     } else if progress < 0.6 {
@@ -23,7 +23,7 @@ pub(super) fn splash_status(progress: f64) -> &'static str {
     }
 }
 
-pub(super) async fn check_network(_api: &ncm_api::NcmClient) -> bool {
+async fn check_network(_api: &ncm_api::NcmClient) -> bool {
     use tokio::net::TcpStream;
     TcpStream::connect("music.163.com:443").await.is_ok()
 }

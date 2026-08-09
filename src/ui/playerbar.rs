@@ -1,7 +1,7 @@
 mod default_layout;
 mod minimal_layout;
 mod modern_layout;
-pub mod widgets;
+mod widgets;
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -11,13 +11,13 @@ use ratatui::widgets::{Padding, Paragraph};
 use crate::config::LayoutType;
 use crate::config::PlayerbarConfig;
 use crate::config::Theme;
-use crate::state::PlaybackState;
+use crate::playback::PlaybackState;
 
 use super::BlockStyle;
 use super::create_block;
 
 #[derive(Debug, Clone, Default)]
-pub struct LayoutArea {
+pub(super) struct LayoutArea {
     pub progress_time_left: Rect,
     pub progress_bar: Rect,
     pub progress_time_right: Rect,
@@ -31,7 +31,7 @@ pub struct LayoutArea {
     pub volume: Rect,
 }
 
-pub trait Playerbar {
+pub(super) trait Playerbar {
     /// Build the concrete sub-areas from the already-inner area.
     fn layout(&self, area: Rect, config: &PlayerbarConfig, is_sixel: bool) -> LayoutArea;
 
@@ -74,7 +74,7 @@ pub trait Playerbar {
     }
 }
 
-pub fn draw(
+pub(super) fn draw(
     f: &mut Frame,
     player: &PlaybackState,
     tick: u64,

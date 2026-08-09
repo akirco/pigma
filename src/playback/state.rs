@@ -43,7 +43,7 @@ impl Default for PlaybackState {
 }
 
 impl PlaybackState {
-    pub fn on_started(&mut self) {
+    pub(super) fn on_started(&mut self) {
         self.error = None;
         self.paused = false;
         self.playing = true;
@@ -51,7 +51,7 @@ impl PlaybackState {
         self.translated_lyrics = None;
     }
 
-    pub fn on_progress(&mut self, position: Duration, total: Option<Duration>) {
+    pub(super) fn on_progress(&mut self, position: Duration, total: Option<Duration>) {
         self.seeking = false;
         let total_secs = match total {
             Some(t) => t.as_secs_f64(),
@@ -67,18 +67,18 @@ impl PlaybackState {
     }
 
     /// Resets progress. Returns `true` if the caller should advance to the next song.
-    pub fn on_finished(&mut self) -> bool {
+    pub(super) fn on_finished(&mut self) -> bool {
         self.progress = 0.0;
         self.playing
     }
 
-    pub fn clear_after_stopped(&mut self) {
+    pub(super) fn clear_after_stopped(&mut self) {
         self.current_song = None;
         self.error = None;
         self.paused = false;
     }
 
-    pub fn on_error(&mut self, err: String) {
+    pub(super) fn on_error(&mut self, err: String) {
         log::error!("Playback error: {}", err);
         // buffer underrun/overrun is transient — rodio recovers automatically
         if err.contains("buffer underrun") || err.contains("overrun") {
@@ -87,7 +87,7 @@ impl PlaybackState {
         self.error = Some(err);
     }
 
-    pub fn on_lyrics_loaded(
+    pub(super) fn on_lyrics_loaded(
         &mut self,
         song_id: u64,
         lyrics: Vec<LyricLine>,

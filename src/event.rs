@@ -65,6 +65,17 @@ pub enum PlaybackEvent {
     LikeSong(u64),
     DislikeSong(u64),
     Cached(u64),
+    /// Append lazily-paged songs to the queue identified by `key` (background
+    /// full-list load after Enter on a playlist page).
+    QueueAppend {
+        key: String,
+        songs: Vec<SongInfo>,
+    },
+    /// The full song list for `playlist_id` has been queued; subsequent Enter
+    /// presses on the same playlist can jump within the queue without reloading.
+    QueueLoadDone {
+        playlist_id: u64,
+    },
 }
 
 #[derive(Clone, Debug)]

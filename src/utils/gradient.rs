@@ -60,7 +60,7 @@ impl FromStr for GradientPreset {
 
 impl GradientPreset {
     /// Parse with fallback to `Rainbow` for unrecognized names.
-    pub fn from_str_or_rainbow(s: &str) -> Self {
+    fn from_str_or_rainbow(s: &str) -> Self {
         s.parse().unwrap_or_default()
     }
 

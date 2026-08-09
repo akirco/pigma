@@ -126,7 +126,7 @@ pub struct PlaylistStorage {
 impl PlaylistStorage {
     /// `base_dir` is the pigma cache root (`~/.cache/pigma`); playlists live in
     /// its `playlists/` subdirectory.
-    pub fn new(base_dir: PathBuf) -> Self {
+    pub(super) fn new(base_dir: PathBuf) -> Self {
         let base_dir = base_dir.join("playlists");
         let _ = fs::create_dir_all(&base_dir);
         Self { base_dir }
@@ -141,7 +141,7 @@ impl PlaylistStorage {
     /// search queues. This is the real index used by `active_queue.txt` and for
     /// loading/saving; display names are only for humans and must never be
     /// re-hashed as the id.
-    pub fn queue_id(key: &str) -> String {
+    pub(super) fn queue_id(key: &str) -> String {
         if let Some((id, _)) = special_queue(key) {
             id.to_string()
         } else {
@@ -171,7 +171,7 @@ impl PlaylistStorage {
 
     /// All persisted queues as `(id, display)` pairs, for the Playlist page tab
     /// bar and queue switching. The id is canonical; display is for humans.
-    pub fn list_queues(&self) -> Vec<(String, String)> {
+    pub(super) fn list_queues(&self) -> Vec<(String, String)> {
         let mut queues = Vec::new();
         if let Ok(entries) = fs::read_dir(&self.base_dir) {
             for entry in entries.filter_map(|e| e.ok()) {
@@ -211,7 +211,7 @@ impl PlaylistStorage {
     }
 
     /// Resolve a `q_<hash>` id to its display name (or a fixed search label).
-    pub fn display_for_id(&self, id: &str) -> Option<String> {
+    pub(super) fn display_for_id(&self, id: &str) -> Option<String> {
         if let Some((display, file)) = special_queue_by_id(id) {
             return self
                 .base_dir
@@ -236,7 +236,7 @@ impl PlaylistStorage {
 
     /// The id that was active at last shutdown, if any. Tolerates legacy files
     /// that recorded the display name directly.
-    pub fn load_active_id(&self) -> Option<String> {
+    pub(super) fn load_active_id(&self) -> Option<String> {
         let path = self.active_path();
         if !path.exists() {
             return None;
@@ -255,7 +255,7 @@ impl PlaylistStorage {
     /// Persist `id`'s queue (displayed as `display`) and record its id as the
     /// active one.
     #[allow(clippy::too_many_arguments)]
-    pub fn save_queue(
+    pub(super) fn save_queue(
         &self,
         id: &str,
         display: &str,
@@ -292,7 +292,7 @@ impl PlaylistStorage {
     /// a detached `spawn_blocking` task might not run before the runtime is torn
     /// down. Serializes then writes on the calling thread.
     #[allow(clippy::too_many_arguments)]
-    pub fn save_queue_sync(
+    pub(super) fn save_queue_sync(
         &self,
         id: &str,
         display: &str,
@@ -321,7 +321,7 @@ impl PlaylistStorage {
     }
 
     /// Load a queue by its canonical id (returns `None` when unknown).
-    pub fn load_queue_by_id(&self, id: &str) -> Option<SavedQueue> {
+    pub(super) fn load_queue_by_id(&self, id: &str) -> Option<SavedQueue> {
         let path = if let Some((_, file)) = special_queue_by_id(id) {
             self.base_dir.join(file)
         } else {
@@ -348,7 +348,7 @@ impl PlaylistStorage {
 
     /// Remove a queue file. If it was the active queue, clear the
     /// `active_queue.txt` marker so a later restart doesn't point at it.
-    pub fn delete_queue(&self, id: &str, display: &str) {
+    pub(super) fn delete_queue(&self, id: &str, display: &str) {
         if id.is_empty() {
             return;
         }

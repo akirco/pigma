@@ -6,12 +6,12 @@ use ratatui::{
     widgets::{Cell, Row, Table, TableState},
 };
 
+use super::styled_text;
 use crate::config::Theme;
 use crate::state::TableMode;
-use crate::ui::styled_text;
 use crate::{config::ColumnDef, ui::scrollbar::render_scrollbar};
 
-pub fn render_table(
+pub(super) fn render_table(
     f: &mut Frame,
     headers: &[ColumnDef],
     rows: Vec<Row<'_>>,

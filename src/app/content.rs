@@ -84,6 +84,8 @@ impl App {
     pub(super) fn handle_playlist_select(&mut self, id: u64, name: Option<String>) {
         self.state.navigation.push_breadcrumb();
         self.state.navigation.set_content(ContentState::Loading);
+        // 歌单重新加载（内容可能已变化），作废之前的"全量已入队"标记。
+        self.queued_playlists.remove(&id);
 
         let selected_api = self
             .state
@@ -164,7 +166,70 @@ impl App {
                         .append_and_play_key(NCM_SEARCH_QUEUE_KEY, &songs[pos..=pos], 0);
                 } else {
                     let key = self.current_queue_key();
-                    self.playback.play_songs(&key, songs.to_vec(), pos);
+                    let pg = self.state.navigation.pagination.clone();
+                    let lazy_id = pg
+                        .as_ref()
+                        .filter(|p| p.has_more)
+                        .and_then(|p| p.api.strip_prefix("playlist:"))
+                        .and_then(|s| s.parse::<u64>().ok());
+
+                    if let Some(id) = lazy_id {
+                        if self.queued_playlists.contains(&id) {
+                            // 全量曲目此前已并入该歌单队列（内存或已持久化），
+                            // 直接激活队列并定位播放，避免重建截断或重复拉取。
+                            let qkey = self.playback.queue_key_for(&key);
+                            self.playback.activate_queue(&qkey);
+                            self.playback.play_index(pos);
+                        } else {
+                            // 惰性分页歌单：首屏立即播放，剩余曲目后台分批并入同一队列。
+                            self.playback.play_songs(&key, songs.to_vec(), pos);
+                            let pg = pg.expect("lazy_id implies pagination is Some");
+                            let qkey = self.playback.queue_key_for(&key);
+                            let service = self.service.clone();
+                            let sender = self.state.events.sender();
+                            let api = pg.api.clone();
+                            let limit = pg.limit;
+                            let start = songs.len() as u32;
+                            let total = pg.total;
+                            tokio::spawn(async move {
+                                let mut offset = start;
+                                let mut completed = true;
+                                loop {
+                                    match service.load_more(&api, offset, limit).await {
+                                        Some((ContentState::Songs(page), next_pg)) => {
+                                            if page.is_empty() {
+                                                break;
+                                            }
+                                            send_event(
+                                                &sender,
+                                                PlaybackEvent::QueueAppend {
+                                                    key: qkey.clone(),
+                                                    songs: page,
+                                                }
+                                                .into(),
+                                            );
+                                            offset = next_pg.offset + next_pg.limit;
+                                            if !next_pg.has_more || u64::from(offset) >= total {
+                                                break;
+                                            }
+                                        }
+                                        _ => {
+                                            completed = false;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if completed {
+                                    send_event(
+                                        &sender,
+                                        PlaybackEvent::QueueLoadDone { playlist_id: id }.into(),
+                                    );
+                                }
+                            });
+                        }
+                    } else {
+                        self.playback.play_songs(&key, songs.to_vec(), pos);
+                    }
                 }
             }
             self.toast(format!("▶  {}", name));

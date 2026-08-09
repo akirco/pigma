@@ -57,7 +57,7 @@ pub fn format_duration_into(ms: u64, out: &mut String) {
 
 /// Parse a `MM:SS` / `HH:MM:SS` duration string into total seconds.
 #[cfg(test)]
-pub(crate) fn parse_duration_secs(s: &str) -> Option<u64> {
+fn parse_duration_secs(s: &str) -> Option<u64> {
     let parts: Vec<&str> = s.split(':').collect();
     let mut secs: u64 = 0;
     for (i, p) in parts.iter().rev().enumerate() {

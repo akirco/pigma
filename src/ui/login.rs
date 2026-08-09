@@ -13,7 +13,7 @@ use crate::config::Theme;
 use crate::layout::LoginLayout;
 use crate::state::LoginState;
 
-pub fn draw(f: &mut Frame, login: &LoginState, bs: &BlockStyle<'_>, layout: &LoginLayout) {
+pub(super) fn draw(f: &mut Frame, login: &LoginState, bs: &BlockStyle<'_>, layout: &LoginLayout) {
     let colors = bs.colors;
     render_status(f, colors, layout.status);
     render_box(f, login, colors, bs.border.enabled, layout.login_box);

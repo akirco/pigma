@@ -9,7 +9,7 @@ use ratatui::{
 
 use crate::{app::App, config::Theme};
 
-pub fn draw_toast(f: &mut Frame, app: &App, colors: &Theme) {
+pub(super) fn draw_toast(f: &mut Frame, app: &App, colors: &Theme) {
     let Some(time) = app.state.toast_time else {
         return;
     };

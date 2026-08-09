@@ -10,6 +10,7 @@ use ratatui::{
 };
 
 use super::BlockStyle;
+use super::skeleton::Skeleton;
 use super::table;
 use crate::config::ColumnDef;
 use crate::config::ColumnsConfig;
@@ -124,7 +125,7 @@ fn build_content_rows<'a>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn render_content(
+pub(super) fn render_content(
     f: &mut Frame,
     content: &ContentState,
     columns: &ColumnsConfig,
@@ -141,8 +142,7 @@ pub fn render_content(
             f.render_widget(Paragraph::new(text), area);
         }
         ContentState::Loading => {
-            let text = Line::from(Span::styled("加载中...", Style::default().fg(colors.muted)));
-            f.render_widget(Paragraph::new(text), area);
+            f.render_widget(Skeleton::new().bg(colors.bg).surface(colors.surface), area);
         }
         ContentState::Error(e) => {
             let text = Line::from(Span::styled(

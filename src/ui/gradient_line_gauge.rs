@@ -19,7 +19,7 @@ pub struct GradientLineGauge<'a> {
 }
 
 impl<'a> GradientLineGauge<'a> {
-    pub fn new(preset: GradientPreset) -> Self {
+    pub(super) fn new(preset: GradientPreset) -> Self {
         Self {
             ratio: 0.0,
             label: None,
@@ -30,27 +30,27 @@ impl<'a> GradientLineGauge<'a> {
         }
     }
 
-    pub fn ratio(mut self, r: f64) -> Self {
+    pub(super) fn ratio(mut self, r: f64) -> Self {
         self.ratio = r.clamp(0.0, 1.0);
         self
     }
 
-    pub fn label(mut self, l: Line<'a>) -> Self {
+    pub(super) fn label(mut self, l: Line<'a>) -> Self {
         self.label = Some(l);
         self
     }
 
-    pub fn filled_symbol(mut self, s: &str) -> Self {
+    pub(super) fn filled_symbol(mut self, s: &str) -> Self {
         self.filled_symbol = s.to_string();
         self
     }
 
-    pub fn unfilled_symbol(mut self, s: &str) -> Self {
+    pub(super) fn unfilled_symbol(mut self, s: &str) -> Self {
         self.unfilled_symbol = s.to_string();
         self
     }
 
-    pub fn unfilled_style(mut self, s: Style) -> Self {
+    pub(super) fn unfilled_style(mut self, s: Style) -> Self {
         self.unfilled_style = s;
         self
     }

@@ -62,7 +62,7 @@ pub enum ControlCmd {
 /// and stays alive across songs — new sources are fed via ControlCmd::Switch.
 /// The `mixer` is obtained from a long-lived `MixerDeviceSink` managed by the
 /// controller, so the audio device is opened only once across songs.
-pub fn run(
+pub(super) fn run(
     initial_reader: SharedReader,
     initial_seek_time: Option<Duration>,
     initial_volume: f32,
@@ -242,7 +242,7 @@ impl Drop for StderrGuard {
 /// Open the audio device while suppressing ALSA stderr noise (Linux only).
 /// The returned sink should be kept alive across songs so the device is
 /// opened only once.
-pub fn create_sink() -> Result<rodio::MixerDeviceSink, rodio::DeviceSinkError> {
+pub(super) fn create_sink() -> Result<rodio::MixerDeviceSink, rodio::DeviceSinkError> {
     #[cfg(target_os = "linux")]
     {
         let _ = StderrGuard::new().map_err(|e| {

@@ -223,3 +223,18 @@ impl Config {
         doc.to_string()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_serializes_save_on_play() {
+        let cfg = Config::default();
+        let toml = cfg.to_toml();
+        assert!(
+            toml.contains("save_on_play = true"),
+            "missing save_on_play in default config:\n{toml}"
+        );
+    }
+}

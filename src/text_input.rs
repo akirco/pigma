@@ -55,7 +55,7 @@ impl TextInput {
         }
     }
 
-    pub fn cursor_width(&self, password: bool) -> u16 {
+    fn cursor_width(&self, password: bool) -> u16 {
         if password {
             self.cursor as u16
         } else {

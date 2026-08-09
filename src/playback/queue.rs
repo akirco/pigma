@@ -16,7 +16,7 @@ pub struct PlaylistQueue {
 }
 
 impl PlaylistQueue {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             songs: Vec::new(),
             id_index: HashMap::new(),
@@ -25,7 +25,7 @@ impl PlaylistQueue {
         }
     }
 
-    pub fn from_songs(songs: Vec<Arc<SongInfo>>, index: usize) -> Self {
+    pub(super) fn from_songs(songs: Vec<Arc<SongInfo>>, index: usize) -> Self {
         let mut q = Self {
             songs,
             id_index: HashMap::new(),
@@ -39,7 +39,7 @@ impl PlaylistQueue {
     /// Reconstruct the id→index lookup from the current `songs`. Cheap enough to
     /// call after any structural change; `or_insert` keeps the first (lowest)
     /// index for duplicate ids, matching the previous linear `position` scan.
-    pub(crate) fn rebuild_index(&mut self) {
+    pub(super) fn rebuild_index(&mut self) {
         self.id_index.clear();
         for (i, s) in self.songs.iter().enumerate() {
             self.id_index.entry(s.id).or_insert(i);
@@ -47,7 +47,7 @@ impl PlaylistQueue {
     }
 
     /// Build a queue from restored parts, rebuilding the index afterwards.
-    pub fn from_parts(
+    pub(super) fn from_parts(
         songs: Vec<Arc<SongInfo>>,
         history: Vec<u64>,
         current_index: Option<usize>,
@@ -63,24 +63,24 @@ impl PlaylistQueue {
     }
 
     /// Replace the song list and rebuild the id→index lookup.
-    pub fn set_songs(&mut self, songs: Vec<Arc<SongInfo>>) {
+    pub(super) fn set_songs(&mut self, songs: Vec<Arc<SongInfo>>) {
         self.songs = songs;
         self.rebuild_index();
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(super) fn is_empty(&self) -> bool {
         self.songs.is_empty()
     }
 
-    pub fn len(&self) -> usize {
+    pub(super) fn len(&self) -> usize {
         self.songs.len()
     }
 
-    pub fn current_song(&self) -> Option<&Arc<SongInfo>> {
+    pub(super) fn current_song(&self) -> Option<&Arc<SongInfo>> {
         self.current_index.and_then(|i| self.songs.get(i))
     }
 
-    pub fn push_to_history(&mut self) {
+    pub(super) fn push_to_history(&mut self) {
         if let Some(i) = self.current_index
             && let Some(song) = self.songs.get(i)
         {
@@ -92,13 +92,18 @@ impl PlaylistQueue {
         }
     }
 
-    pub fn pop_history(&mut self) -> Option<u64> {
+    pub(super) fn pop_history(&mut self) -> Option<u64> {
         self.history.pop()
     }
 
-    pub fn append(&mut self, songs: &[SongInfo]) -> usize {
+    pub(super) fn append(&mut self, songs: &[SongInfo]) -> usize {
         let offset = self.songs.len();
-        self.songs.extend(songs.iter().map(|s| Arc::new(s.clone())));
+        self.songs.extend(
+            songs
+                .iter()
+                .filter(|s| !self.id_index.contains_key(&s.id))
+                .map(|s| Arc::new(s.clone())),
+        );
         self.rebuild_index();
         offset
     }
@@ -106,7 +111,7 @@ impl PlaylistQueue {
     /// Insert `songs` right after the currently playing song so they play next.
     /// When nothing is playing, insert at the front. Returns the index of the
     /// first inserted song.
-    pub fn insert_next(&mut self, songs: Vec<Arc<SongInfo>>) -> usize {
+    pub(super) fn insert_next(&mut self, songs: Vec<Arc<SongInfo>>) -> usize {
         let insert_at = self.current_index.map(|i| i + 1).unwrap_or(0);
         for (n, s) in songs.into_iter().enumerate() {
             self.songs.insert(insert_at + n, s);
@@ -115,19 +120,19 @@ impl PlaylistQueue {
         insert_at
     }
 
-    pub fn find_song_index(&self, song_id: u64) -> Option<usize> {
+    pub(super) fn find_song_index(&self, song_id: u64) -> Option<usize> {
         self.id_index.get(&song_id).copied()
     }
 
-    pub fn next_index(&self, strategy: &mut dyn PlayStrategy) -> Option<usize> {
+    pub(super) fn next_index(&self, strategy: &mut dyn PlayStrategy) -> Option<usize> {
         strategy.next(self.current_index, self.songs.len())
     }
 
-    pub fn prev_index(&self, strategy: &mut dyn PlayStrategy) -> Option<usize> {
+    pub(super) fn prev_index(&self, strategy: &mut dyn PlayStrategy) -> Option<usize> {
         strategy.prev(self.current_index, self.songs.len())
     }
 
-    pub fn advance_to(&mut self, index: usize) {
+    pub(super) fn advance_to(&mut self, index: usize) {
         if Some(index) != self.current_index {
             self.push_to_history();
         }

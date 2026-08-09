@@ -22,8 +22,6 @@ use serde::{Deserialize, Serialize};
 use crate::config::BorderConfig;
 use crate::event::EventHandler;
 
-pub use crate::playback::PlaybackState;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     Splash,

@@ -5,12 +5,13 @@ use std::sync::{Arc, Mutex};
 use ncm_api::{NcmError, SongInfo, SongQuality};
 use sonar::{PlayUrlResult, Quality, SearchQuery, SonarFinder, Song};
 use stream_download::http::HttpStream;
+use stream_download::storage::temp::TempStorageProvider;
 use stream_download::{Settings, StreamDownload, StreamPhase};
 use tokio::sync::mpsc;
 
 #[cfg(target_os = "linux")]
 use super::engine::mem_rss_kb;
-use super::player::{AudioInput, SharedReader};
+use super::player::{AudioInput, AudioReader, SharedReader};
 use super::stream_client::HeadersClient;
 use crate::cache::CacheManager;
 use crate::event::{Event, PlaybackEvent};
@@ -22,6 +23,8 @@ pub struct AudioSource {
     service: ApiService,
     pub cache: CacheManager,
     quality: SongQuality,
+    /// 边听边存：true 时流式播放并把文件写入下载缓存，false 时只流到临时文件。
+    save_on_play: bool,
     finder: Arc<SonarFinder>,
     sonar_enabled: bool,
     /// HTTP client used for streaming play URLs (proxy + headers applied).
@@ -29,15 +32,16 @@ pub struct AudioSource {
     event_tx: mpsc::UnboundedSender<Event>,
     /// Original sonar songs for search results, keyed by the synthetic
     /// `SongInfo` id so playback can resolve the source via the same provider.
-    pub(crate) sonar_songs: Arc<Mutex<HashMap<u64, Arc<Song>>>>,
+    pub(super) sonar_songs: Arc<Mutex<HashMap<u64, Arc<Song>>>>,
 }
 
 impl AudioSource {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub(super) fn new(
         service: ApiService,
         cache: CacheManager,
         quality: SongQuality,
+        save_on_play: bool,
         stream_client: reqwest::Client,
         finder: Arc<SonarFinder>,
         sonar_enabled: bool,
@@ -48,12 +52,18 @@ impl AudioSource {
             service,
             cache,
             quality,
+            save_on_play,
             finder,
             sonar_enabled,
             stream_client,
             event_tx,
             sonar_songs,
         }
+    }
+
+    /// 运行时切换边听边存：true 时流式播放并把文件写入下载缓存，false 时只流到临时文件。
+    pub(super) fn set_save_on_play(&mut self, enabled: bool) {
+        self.save_on_play = enabled;
     }
 
     /// Build stream-download settings that persist the cache entry and notify
@@ -77,6 +87,49 @@ impl AudioSource {
                 let _ = event_tx.send(PlaybackEvent::Cached(song.id).into());
             }
         })
+    }
+
+    /// Stream `url` through the cache layer. When "边听边存" is enabled the file is
+    /// persisted to the download cache (and indexed on completion); otherwise it is
+    /// streamed to a temporary file that is cleaned up when playback ends.
+    async fn build_stream(
+        &self,
+        url: url::Url,
+        song: &SongInfo,
+        ext: &'static str,
+        msong: Option<sonar::Song>,
+    ) -> Result<AudioInput, String> {
+        let stream = HttpStream::new(HeadersClient::new(self.stream_client.clone()), url)
+            .await
+            .map_err(|e| format!("流初始化失败: {e}"))?;
+
+        let reader: Box<dyn AudioReader> = if self.save_on_play {
+            let provider = self
+                .cache
+                .create_provider(song, ext)
+                .map_err(|e| format!("缓存创建失败: {e}"))?;
+            Box::new(
+                StreamDownload::from_stream(
+                    stream,
+                    provider,
+                    self.download_settings(song, ext, msong),
+                )
+                .await
+                .map_err(|e| format!("流下载失败: {e}"))?,
+            )
+        } else {
+            Box::new(
+                StreamDownload::from_stream(
+                    stream,
+                    TempStorageProvider::default(),
+                    Settings::default(),
+                )
+                .await
+                .map_err(|e| format!("流下载失败: {e}"))?,
+            )
+        };
+
+        Ok(SharedReader(Arc::new(Mutex::new(reader))))
     }
 
     /// Derive a file extension from a streaming URL.
@@ -118,26 +171,8 @@ impl AudioSource {
         play: PlayUrlResult,
     ) -> Result<AudioInput, String> {
         let url = url::Url::parse(&play.url).map_err(|e| format!("sonar URL解析失败: {e}"))?;
-
         let ext = Self::ext_from_url(&play.url);
-        let provider = self
-            .cache
-            .create_provider(song, ext)
-            .map_err(|e| format!("缓存创建失败: {e}"))?;
-
-        let stream = HttpStream::new(HeadersClient::new(self.stream_client.clone()), url)
-            .await
-            .map_err(|e| format!("sonar 流初始化失败: {e}"))?;
-
-        let reader = StreamDownload::from_stream(
-            stream,
-            provider,
-            self.download_settings(song, ext, msong.cloned()),
-        )
-        .await
-        .map_err(|e| format!("sonar 流下载失败: {e}"))?;
-
-        Ok(SharedReader(Arc::new(Mutex::new(Box::new(reader)))))
+        self.build_stream(url, song, ext, msong.cloned()).await
     }
 
     /// Search all configured sonar sources for the best playable match and
@@ -219,21 +254,7 @@ impl AudioSource {
         let url = url::Url::parse(url_str).map_err(|e| format!("URL解析失败: {e}"))?;
         let ext = Self::ext_from_url(url_str);
 
-        let provider = self
-            .cache
-            .create_provider(song, ext)
-            .map_err(|e| format!("缓存创建失败: {e}"))?;
-
-        let stream = HttpStream::new(HeadersClient::new(self.stream_client.clone()), url)
-            .await
-            .map_err(|e| format!("流初始化失败: {e}"))?;
-
-        let reader =
-            StreamDownload::from_stream(stream, provider, self.download_settings(song, ext, None))
-                .await
-                .map_err(|e| format!("流下载失败: {e}"))?;
-
-        Ok(SharedReader(Arc::new(Mutex::new(Box::new(reader)))))
+        self.build_stream(url, song, ext, None).await
     }
 
     /// Return a previously cached audio file for `song`, if one exists.
@@ -265,7 +286,7 @@ impl AudioSource {
         Some(SharedReader(Arc::new(Mutex::new(Box::new(file)))))
     }
 
-    pub async fn resolve(&self, song: &SongInfo) -> Result<AudioInput, String> {
+    pub(super) async fn resolve(&self, song: &SongInfo) -> Result<AudioInput, String> {
         // 1. Cache wins for every source.
         if let Some(input) = self.resolve_cached(song).await {
             return Ok(input);

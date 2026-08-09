@@ -130,25 +130,86 @@ impl ApiService {
         }
     }
 
-    /// Load liked songs and the user's liked playlist ID (for heartbeat mode).
-    pub async fn load_liked_songs(&self, uid: u64, limit: u16) -> (ContentState, Option<u64>) {
-        match self.client.liked_songs(uid).await {
-            Ok(songs) => {
-                let playlist_id = self
-                    .client
-                    .user_song_list(uid, 0, limit)
-                    .await
-                    .ok()
-                    .and_then(|lists| {
-                        lists
-                            .iter()
-                            .find(|l| l.name == "我喜欢的音乐")
-                            .map(|l| l.id)
-                    });
-                (ContentState::Songs(songs), playlist_id)
-            }
-            Err(e) => (ContentState::Error(e.to_string()), None),
+    /// Load liked songs through the user's created "我喜欢的音乐" playlist so the
+    /// lazy `trackIds` pagination path is reused.
+    ///
+    /// 返回 `(内容, 分页信息, 歌单 ID)`：
+    /// - 内容只含首屏歌曲，后续靠 [`Self::load_more`] 按 `trackIds` 惰性切片；
+    /// - 歌单 ID 供心动模式（heartbeat）使用。
+    ///
+    /// 旧接口 `/api/song/like/get` 无法分页，音乐一多会一次拉全导致卡顿。
+    pub async fn load_liked_songs(
+        &self,
+        uid: u64,
+        limit: u16,
+    ) -> (ContentState, Option<PaginationInfo>, Option<u64>) {
+        // 先在我创建的歌单里找"我喜欢的音乐"（红心歌单），兼容被重命名的名字。
+        let mut playlist_id = self
+            .client
+            .user_created_playlist(uid, 0, limit)
+            .await
+            .ok()
+            .and_then(|lists| find_liked_playlist(&lists));
+
+        // 创建歌单接口不可用/没找到时，回退到通用歌单接口再找一次。
+        if playlist_id.is_none() {
+            playlist_id = self
+                .client
+                .user_song_list(uid, 0, limit)
+                .await
+                .ok()
+                .and_then(|lists| find_liked_playlist(&lists));
         }
+
+        let Some(id) = playlist_id else {
+            // 仍找不到红心歌单：回退旧接口（一次拉全，无分页）。
+            return match self.client.liked_songs(uid).await {
+                Ok(songs) => (ContentState::Songs(songs), None, None),
+                Err(e) => (ContentState::Error(e.to_string()), None, None),
+            };
+        };
+
+        let (songs, total) = match self.client.playlist_detail(id).await {
+            Ok((_detail, track_ids)) => {
+                // 缓存全量 trackIds，供后续惰性分页（LoadMore）切片使用。
+                if let Ok(mut guard) = self.playlist_track_ids.lock() {
+                    guard.insert(id, track_ids.clone());
+                }
+                let total = track_ids.len() as u64;
+                let page_limit = limit as u32;
+                let songs = match self.client.playlist_songs(&track_ids, 0, page_limit).await {
+                    Ok(s) => s,
+                    Err(e) => return (ContentState::Error(e.to_string()), None, Some(id)),
+                };
+                (songs, total)
+            }
+            Err(e) => return (ContentState::Error(e.to_string()), None, Some(id)),
+        };
+
+        let limit = limit as u32;
+        let pagination = PaginationInfo {
+            api: format!("playlist:{id}"),
+            offset: 0,
+            limit,
+            has_more: total > limit as u64,
+            total,
+            loading: false,
+        };
+        (ContentState::Songs(songs), Some(pagination), Some(id))
+    }
+
+    /// 确保歌单的 `trackIds` 已在内存缓存（供 `load_more` 惰性分页切片）。
+    ///
+    /// 内容从磁盘缓存恢复时 `playlist_track_ids` 尚未填充，滚动加载更多前先补齐。
+    pub async fn ensure_playlist_track_ids(&self, id: u64) -> Option<Vec<u64>> {
+        if self.playlist_track_ids.lock().ok()?.contains_key(&id) {
+            return None;
+        }
+        let (_, track_ids) = self.client.playlist_detail(id).await.ok()?;
+        if let Ok(mut guard) = self.playlist_track_ids.lock() {
+            guard.insert(id, track_ids.clone());
+        }
+        Some(track_ids)
     }
 
     /// Load lyrics for a song, with cache integration.
@@ -361,4 +422,14 @@ impl ApiService {
         log::error!("load_more: unsupported api {api}");
         None
     }
+}
+
+/// 在歌单列表中查找"我喜欢的音乐"红心歌单：优先精确匹配，其次兼容重命名
+/// （如"柚子白纸喜欢的音乐"）。
+fn find_liked_playlist(lists: &[ncm_api::SongList]) -> Option<u64> {
+    lists
+        .iter()
+        .find(|l| l.name == "我喜欢的音乐")
+        .or_else(|| lists.iter().find(|l| l.name.ends_with("喜欢的音乐")))
+        .map(|l| l.id)
 }

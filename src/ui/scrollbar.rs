@@ -4,7 +4,7 @@ use ratatui::{
     widgets::{Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
 
-pub fn calc_scroll_offset(selected: usize, visible_height: usize, total: usize) -> usize {
+pub(super) fn calc_scroll_offset(selected: usize, visible_height: usize, total: usize) -> usize {
     if total <= visible_height || visible_height == 0 {
         return 0;
     }
@@ -15,7 +15,7 @@ pub fn calc_scroll_offset(selected: usize, visible_height: usize, total: usize) 
     }
 }
 
-pub fn render_scrollbar(f: &mut Frame, total: usize, selected: usize, area: Rect) {
+pub(super) fn render_scrollbar(f: &mut Frame, total: usize, selected: usize, area: Rect) {
     let mut state = ScrollbarState::new(total).position(selected);
     let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
         .begin_symbol(None)

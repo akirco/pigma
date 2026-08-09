@@ -30,7 +30,7 @@ serde_json = "1.0.151"
 
 dirs = "6.0.0"
 log = "0.4.33"
-thiserror = "2.0.18"
+thiserror = "2.0.20"
 
 [dev-dependencies]
 qrcode = "0.14.1"

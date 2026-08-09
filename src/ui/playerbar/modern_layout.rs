@@ -3,13 +3,13 @@ use ratatui::layout::{Constraint, Flex, Layout, Rect};
 
 use crate::config::PlayerbarConfig;
 use crate::config::Theme;
-use crate::state::PlaybackState;
+use crate::playback::PlaybackState;
 
 use super::LayoutArea;
 use super::Playerbar;
 use super::widgets;
 
-pub struct ModernLayout;
+pub(super) struct ModernLayout;
 
 impl Playerbar for ModernLayout {
     fn layout(&self, area: Rect, config: &PlayerbarConfig, is_sixel: bool) -> LayoutArea {

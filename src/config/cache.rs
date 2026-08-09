@@ -13,6 +13,13 @@ pub struct CacheConfig {
     pub cache_template: String,
     /// 边听边存音质等级：standard / higher / exhigh / lossless / hires。
     pub quality: String,
+    /// 边听边存：播放时自动写入下载缓存。设为 false 则只流式播放、不落盘。
+    #[serde(default = "default_save_on_play")]
+    pub save_on_play: bool,
+}
+
+fn default_save_on_play() -> bool {
+    true
 }
 
 impl Default for CacheConfig {
@@ -22,6 +29,7 @@ impl Default for CacheConfig {
             cache_dir: "downloads".into(),
             cache_template: "{name}-{singer}".into(),
             quality: "standard".into(),
+            save_on_play: default_save_on_play(),
         }
     }
 }

@@ -10,6 +10,7 @@ mod navigation;
 mod playerbar;
 mod queue;
 mod scrollbar;
+mod skeleton;
 mod spinner;
 mod splash;
 mod styled_text;

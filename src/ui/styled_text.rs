@@ -20,7 +20,7 @@ use crate::utils::gradient_color;
 /// tag always wins. Pass `Style::default()` to get the original behavior where
 /// unstyled text is rendered with no color and falls back to the terminal
 /// default foreground.
-pub fn parse_styled_with<'a>(text: &'a str, theme: &Theme, base: Style) -> Vec<Span<'a>> {
+pub(super) fn parse_styled_with<'a>(text: &'a str, theme: &Theme, base: Style) -> Vec<Span<'a>> {
     let mut spans = Vec::new();
     let mut tag_stack: Vec<Style> = Vec::new();
     let mut current_style = base;
@@ -102,7 +102,7 @@ pub fn parse_styled_with<'a>(text: &'a str, theme: &Theme, base: Style) -> Vec<S
 /// Parse markup into styled spans, leaving unstyled text with no color (the
 /// terminal default foreground). See [`parse_styled_with`] for a variant that
 /// seeds a base style so tag-less text gets a default color.
-pub fn parse_styled<'a>(text: &'a str, theme: &Theme) -> Vec<Span<'a>> {
+pub(super) fn parse_styled<'a>(text: &'a str, theme: &Theme) -> Vec<Span<'a>> {
     parse_styled_with(text, theme, Style::default())
 }
 

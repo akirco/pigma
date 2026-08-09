@@ -25,7 +25,7 @@ enum PlayerCmd {
 }
 
 impl PlaybackHandle {
-    pub fn new(event_tx: tokio_mpsc::UnboundedSender<Event>) -> Self {
+    pub(super) fn new(event_tx: tokio_mpsc::UnboundedSender<Event>) -> Self {
         let (cmd_tx, mut cmd_rx) = tokio_mpsc::unbounded_channel::<PlayerCmd>();
 
         tokio::spawn(async move {
@@ -102,7 +102,7 @@ impl PlaybackHandle {
         Self { cmd_tx }
     }
 
-    pub fn request(&self, input: AudioInput, seek_time: Option<Duration>) {
+    pub(super) fn request(&self, input: AudioInput, seek_time: Option<Duration>) {
         if self
             .cmd_tx
             .send(PlayerCmd::Play { input, seek_time })
@@ -112,31 +112,31 @@ impl PlaybackHandle {
         }
     }
 
-    pub fn pause(&self) {
+    pub(super) fn pause(&self) {
         if self.cmd_tx.send(PlayerCmd::Pause).is_err() {
             log::error!("PlaybackHandle: failed to send Pause command (channel closed)");
         }
     }
 
-    pub fn resume(&self) {
+    pub(super) fn resume(&self) {
         if self.cmd_tx.send(PlayerCmd::Resume).is_err() {
             log::error!("PlaybackHandle: failed to send Resume command (channel closed)");
         }
     }
 
-    pub fn seek_to(&self, seek_time: Duration) {
+    pub(super) fn seek_to(&self, seek_time: Duration) {
         if self.cmd_tx.send(PlayerCmd::SeekTo(seek_time)).is_err() {
             log::error!("PlaybackHandle: failed to send SeekTo command (channel closed)");
         }
     }
 
-    pub fn stop(&self) {
+    pub(super) fn stop(&self) {
         if self.cmd_tx.send(PlayerCmd::Stop).is_err() {
             log::error!("PlaybackHandle: failed to send Stop command (channel closed)");
         }
     }
 
-    pub fn set_volume(&self, volume: f32) {
+    pub(super) fn set_volume(&self, volume: f32) {
         if self.cmd_tx.send(PlayerCmd::SetVolume(volume)).is_err() {
             log::error!("PlaybackHandle: failed to send SetVolume command (channel closed)");
         }

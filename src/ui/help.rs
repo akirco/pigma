@@ -39,7 +39,7 @@ const POPUP_WIDTH: u16 = 64;
 const POPUP_HEIGHT: u16 = 24;
 const KEY_COL_WIDTH: usize = 16;
 
-pub fn draw(f: &mut Frame, app: &App, area: Rect) {
+pub(super) fn draw(f: &mut Frame, app: &App, area: Rect) {
     let help = &app.state.help;
     let colors = app.current_theme();
 

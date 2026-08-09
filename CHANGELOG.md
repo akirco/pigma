@@ -1,3 +1,14 @@
+## [0.2.4] - 2026-08-09
+
+### 🚀 Features
+
+- Add 'save_on_play' configuration and related functionality (akirco)
+- Add Skeleton widget for loading state representation (akirco)
+
+### 🚜 Refactor
+
+- *(ncm-api)* Rewrite ncm-api (akirco)
+- Update imports to use playback module for PlaybackState (akirco)
 ## [0.2.3] - 2026-08-08
 
 ### 🐛 Bug Fixes

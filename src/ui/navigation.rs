@@ -16,7 +16,13 @@ use crate::{
     },
 };
 
-pub fn draw(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, title: &str, area: Rect) {
+pub(super) fn draw(
+    f: &mut Frame,
+    nav: &mut NavState,
+    bs: &BlockStyle<'_>,
+    title: &str,
+    area: Rect,
+) {
     let colors = bs.colors;
     let muted_style = Style::default().fg(colors.muted);
     let block = create_block(title, bs, false);
@@ -93,7 +99,7 @@ pub fn draw(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, title: &str,
 /// 顶部/底部导航模式：所有 item 跨 section 平铺成一行，选中项以 accent 底色
 /// 高亮并带左右拼接字符，超宽时按 `NavState::scroll_x` 横向滚动，保证选中项
 /// 始终可见。
-pub fn draw_top(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, area: Rect) {
+pub(super) fn draw_top(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, area: Rect) {
     let colors = bs.colors;
     let muted_style = Style::default().fg(colors.muted);
     let block = create_block_surfaced("", bs, false);
@@ -175,7 +181,7 @@ pub fn draw_top(f: &mut Frame, nav: &mut NavState, bs: &BlockStyle<'_>, area: Re
 
 /// 计算横向滚动偏移，使 `[start, start+width)` 的选中项在 `viewport` 内可见，
 /// 且尽量保持当前滚动位置不动（仅当选中项越界时才滚动）。
-pub fn keep_visible(
+pub(super) fn keep_visible(
     scroll: usize,
     start: usize,
     width: usize,
@@ -195,8 +201,8 @@ pub fn keep_visible(
 #[cfg(test)]
 mod tests {
     use super::keep_visible;
+    use super::styled_text;
     use crate::config::Theme;
-    use crate::ui::styled_text;
     use ratatui::style::Style;
 
     #[test]

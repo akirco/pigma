@@ -11,7 +11,7 @@ const MAX_HEARTBEAT_SONGS: usize = 500;
 const KEEP_RECENT: usize = 100;
 
 impl PlaybackEngine {
-    pub fn next_heartbeat(&mut self) {
+    pub(super) fn next_heartbeat(&mut self) {
         let song = match self.queue.current_song() {
             Some(s) => s.clone(),
             None => return,

@@ -77,7 +77,7 @@ impl PlayStrategy for Strategy {
     }
 }
 
-pub fn create_strategy(
+pub(super) fn create_strategy(
     mode: &PlayMode,
     queue_len: usize,
     current_index: Option<usize>,

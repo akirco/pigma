@@ -18,7 +18,7 @@ pub struct Theme {
     pub error: Color,
 }
 
-pub fn cstr(s: &str) -> Color {
+fn cstr(s: &str) -> Color {
     Color::from_str(s).unwrap_or_else(|e| {
         log::warn!("Invalid color '{}' in theme, using fallback: {}", s, e);
         Color::Reset
@@ -41,7 +41,7 @@ impl Default for Theme {
 }
 
 impl Theme {
-    pub fn terminal() -> Self {
+    fn terminal() -> Self {
         Self {
             name: "terminal".to_string(),
             bg: Color::Indexed(0),
@@ -54,7 +54,7 @@ impl Theme {
         }
     }
 
-    pub fn dracula() -> Self {
+    fn dracula() -> Self {
         Self {
             name: "dracula".to_string(),
             bg: cstr("#282a36"),
@@ -67,7 +67,7 @@ impl Theme {
         }
     }
 
-    pub fn nord() -> Self {
+    fn nord() -> Self {
         Self {
             name: "nord".to_string(),
             bg: cstr("#2e3440"),
@@ -80,7 +80,7 @@ impl Theme {
         }
     }
 
-    pub fn gruvbox_dark() -> Self {
+    fn gruvbox_dark() -> Self {
         Self {
             name: "gruvbox".to_string(),
             bg: cstr("#282828"),
@@ -93,7 +93,7 @@ impl Theme {
         }
     }
 
-    pub fn solarized_dark() -> Self {
+    fn solarized_dark() -> Self {
         Self {
             name: "solarized".to_string(),
             bg: cstr("#002b36"),
@@ -106,7 +106,7 @@ impl Theme {
         }
     }
 
-    pub fn tokyo_night() -> Self {
+    fn tokyo_night() -> Self {
         Self {
             name: "tokyo-night".to_string(),
             bg: cstr("#1a1b26"),
@@ -119,7 +119,7 @@ impl Theme {
         }
     }
 
-    pub fn catppuccin_mocha() -> Self {
+    fn catppuccin_mocha() -> Self {
         Self {
             name: "catppuccin".to_string(),
             bg: cstr("#1e1e2e"),
@@ -132,7 +132,7 @@ impl Theme {
         }
     }
 
-    pub fn one_dark() -> Self {
+    fn one_dark() -> Self {
         Self {
             name: "one-dark".to_string(),
             bg: cstr("#282c34"),
@@ -145,7 +145,7 @@ impl Theme {
         }
     }
 
-    pub fn monokai() -> Self {
+    fn monokai() -> Self {
         Self {
             name: "monokai".to_string(),
             bg: cstr("#272822"),
@@ -158,7 +158,7 @@ impl Theme {
         }
     }
 
-    pub fn rose_pine() -> Self {
+    fn rose_pine() -> Self {
         Self {
             name: "rose-pine".to_string(),
             bg: cstr("#191724"),
@@ -171,7 +171,7 @@ impl Theme {
         }
     }
 
-    pub fn kanagawa() -> Self {
+    fn kanagawa() -> Self {
         Self {
             name: "kanagawa".to_string(),
             bg: cstr("#1f1f28"),
@@ -185,7 +185,7 @@ impl Theme {
     }
 
     //light theme
-    pub fn solarized_light() -> Self {
+    fn solarized_light() -> Self {
         Self {
             name: "solarized-light".to_string(),
             bg: cstr("#fdf6e3"),
@@ -198,7 +198,7 @@ impl Theme {
         }
     }
 
-    pub fn catppuccin_latte() -> Self {
+    fn catppuccin_latte() -> Self {
         Self {
             name: "catppuccin-latte".to_string(),
             bg: cstr("#eff1f5"),
@@ -211,7 +211,7 @@ impl Theme {
         }
     }
 
-    pub fn one_light() -> Self {
+    fn one_light() -> Self {
         Self {
             name: "one-light".to_string(),
             bg: cstr("#fafafa"),
@@ -224,7 +224,7 @@ impl Theme {
         }
     }
 
-    pub fn github_light() -> Self {
+    fn github_light() -> Self {
         Self {
             name: "github-light".to_string(),
             bg: cstr("#ffffff"),
@@ -237,7 +237,7 @@ impl Theme {
         }
     }
 
-    pub fn gruvbox_light() -> Self {
+    fn gruvbox_light() -> Self {
         Self {
             name: "gruvbox-light".to_string(),
             bg: cstr("#fbf1c7"),
@@ -250,7 +250,7 @@ impl Theme {
         }
     }
 
-    pub fn cyberpunk_hot() -> Self {
+    fn cyberpunk_hot() -> Self {
         Self {
             name: "cyberpunk-hot".to_string(),
             bg: cstr("#0a0b10"),
@@ -263,7 +263,7 @@ impl Theme {
         }
     }
 
-    pub fn cyberpunk_fury() -> Self {
+    fn cyberpunk_fury() -> Self {
         Self {
             name: "cyberpunk-fury".to_string(),
             bg: cstr("#0d0a14"),
@@ -276,7 +276,7 @@ impl Theme {
         }
     }
 
-    pub fn cyberpunk_volt() -> Self {
+    fn cyberpunk_volt() -> Self {
         Self {
             name: "cyberpunk-volt".to_string(),
             bg: cstr("#080c14"),

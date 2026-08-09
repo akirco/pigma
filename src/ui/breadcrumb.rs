@@ -10,7 +10,7 @@ use super::BlockStyle;
 use super::{create_block, styled_text};
 use crate::state::NavState;
 
-pub fn render_breadcrumb(f: &mut Frame, nav: &NavState, bs: &BlockStyle<'_>, area: Rect) {
+pub(super) fn render_breadcrumb(f: &mut Frame, nav: &NavState, bs: &BlockStyle<'_>, area: Rect) {
     let colors = bs.colors;
 
     let (section, item) = if nav.sections.is_empty() {

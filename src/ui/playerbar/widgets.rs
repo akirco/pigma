@@ -8,14 +8,14 @@ use ratatui::{
 use ratatui_image::{Resize, StatefulImage};
 
 use crate::config::Theme;
-use crate::state::PlaybackState;
+use crate::playback::PlaybackState;
 use crate::ui::gradient_line_gauge::GradientLineGauge;
 use crate::ui::spinner::Spinner;
 use crate::utils::format_duration_into;
 use crate::utils::time::format_duration;
 use crate::{config::PlayerbarConfig, playback::mode_icon};
 
-pub fn draw_song_info(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
+pub(super) fn draw_song_info(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     if let Some(song) = &player.current_song {
         let info_lines = vec![
             Line::from(vec![
@@ -44,7 +44,7 @@ pub fn draw_song_info(f: &mut Frame, player: &PlaybackState, colors: &Theme, are
     }
 }
 
-pub fn draw_controls(
+pub(super) fn draw_controls(
     f: &mut Frame,
     player: &PlaybackState,
     colors: &Theme,
@@ -77,7 +77,7 @@ pub fn draw_controls(
     f.render_widget(Paragraph::new(controls), area);
 }
 
-pub fn draw_mode_icon(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
+pub(super) fn draw_mode_icon(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     let (icon, _) = mode_icon(&player.mode);
     f.render_widget(
         Paragraph::new(Line::from(Span::styled(
@@ -89,7 +89,7 @@ pub fn draw_mode_icon(f: &mut Frame, player: &PlaybackState, colors: &Theme, are
     );
 }
 
-pub fn draw_spinner(f: &mut Frame, tick: u64, colors: &Theme, area: Rect) {
+pub(super) fn draw_spinner(f: &mut Frame, tick: u64, colors: &Theme, area: Rect) {
     f.render_widget(
         Spinner::new(tick)
             .active_color(Style::default().fg(colors.accent))
@@ -98,7 +98,7 @@ pub fn draw_spinner(f: &mut Frame, tick: u64, colors: &Theme, area: Rect) {
     );
 }
 
-pub fn draw_current_time(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
+pub(super) fn draw_current_time(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     if let Some(song) = &player.current_song {
         let cur_ms = (player.progress * song.duration as f64) as u64;
         let mut buf = String::with_capacity(8);
@@ -112,7 +112,7 @@ pub fn draw_current_time(f: &mut Frame, player: &PlaybackState, colors: &Theme, 
     }
 }
 
-pub fn draw_total_time(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
+pub(super) fn draw_total_time(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     if let Some(song) = &player.current_song {
         let mut buf = String::with_capacity(8);
         format_duration_into(song.duration, &mut buf);
@@ -125,7 +125,7 @@ pub fn draw_total_time(f: &mut Frame, player: &PlaybackState, colors: &Theme, ar
     }
 }
 
-pub fn draw_gauge_bar(
+pub(super) fn draw_gauge_bar(
     f: &mut Frame,
     player: &PlaybackState,
     colors: &Theme,
@@ -165,7 +165,7 @@ pub fn draw_gauge_bar(
     }
 }
 
-pub fn draw_gauge_with_label(
+pub(super) fn draw_gauge_with_label(
     f: &mut Frame,
     player: &PlaybackState,
     colors: &Theme,
@@ -217,7 +217,7 @@ pub fn draw_gauge_with_label(
     }
 }
 
-pub fn draw_song_detail(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
+pub(super) fn draw_song_detail(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     if let Some(song) = &player.current_song {
         let detail = Line::from(vec![
             Span::styled("\u{25C8} ", Style::default().fg(colors.muted)),
@@ -232,7 +232,7 @@ pub fn draw_song_detail(f: &mut Frame, player: &PlaybackState, colors: &Theme, a
         f.render_widget(Paragraph::new(detail), area);
     }
 }
-pub fn draw_volume(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
+pub(super) fn draw_volume(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     let icon = if player.volume <= 0.30 {
         ""
     } else if player.volume <= 0.60 {
@@ -251,7 +251,7 @@ pub fn draw_volume(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: 
     );
 }
 
-pub fn draw_cover(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
+pub(super) fn draw_cover(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     if player.current_song.is_some() {
         // Try to render real cover image if available
         if let Ok(mut borrow) = player.cover.protocol.lock()

@@ -18,7 +18,7 @@ pub struct HeadersClient {
 }
 
 impl HeadersClient {
-    pub fn new(inner: reqwest::Client) -> Self {
+    pub(super) fn new(inner: reqwest::Client) -> Self {
         Self { inner }
     }
 

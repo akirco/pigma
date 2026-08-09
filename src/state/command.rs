@@ -1,6 +1,7 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandAction {
     ToggleBordered,
+    ToggleSaveOnPlay,
     SwitchTheme(String),
 }
 

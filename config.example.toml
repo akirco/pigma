@@ -40,6 +40,8 @@ quality = "standard"
 cache_dir = "downloads"
 # 缓存文件命名模板, 可用变量: {id}, {name}, {singer}, {album}
 cache_template = "{name}-{singer}"
+# 边听边存: 播放时自动写入下载缓存, false 则只流式播放、不落盘
+save_on_play = true
 
 # =============================================================================
 # 兜底源配置 (NCM 播放失败时的多源兜底, 基于 sonar)

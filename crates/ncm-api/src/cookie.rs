@@ -286,7 +286,10 @@ mod tests {
         let store = CookieStore::new(path.clone());
         let id = store.device_id().to_string();
         assert_eq!(id.len(), 52);
-        assert!(id.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()));
+        assert!(
+            id.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase())
+        );
 
         // header 里带上指纹
         let header = store.build_cookie_header(false);

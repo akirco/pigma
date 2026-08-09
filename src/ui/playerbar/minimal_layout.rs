@@ -6,13 +6,13 @@ use ratatui::widgets::Paragraph;
 
 use crate::config::PlayerbarConfig;
 use crate::config::Theme;
-use crate::state::PlaybackState;
+use crate::playback::PlaybackState;
 
 use super::LayoutArea;
 use super::Playerbar;
 use super::widgets;
 
-pub struct MinimalLayout;
+pub(super) struct MinimalLayout;
 
 impl Playerbar for MinimalLayout {
     fn layout(&self, area: Rect, _config: &PlayerbarConfig, _is_sixel: bool) -> LayoutArea {

@@ -1,11 +1,11 @@
-pub(crate) mod content;
-pub(crate) mod login;
-pub(crate) mod navigation;
-pub(crate) mod search;
-pub(crate) mod splash;
+mod content;
+mod login;
+mod navigation;
+mod search;
+mod splash;
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -36,7 +36,7 @@ use crate::ui;
 use crate::utils::pigma_cache_dir;
 use crate::utils::terminal::{ImageProtocol, best_image_protocol};
 
-pub(crate) use splash::send_event;
+use splash::send_event;
 
 /// Main application state and entry point for the pigma TUI.
 pub struct App {
@@ -52,6 +52,8 @@ pub struct App {
     pub finder: Arc<SonarFinder>,
     /// Original sonar songs for search results, keyed by synthetic song id.
     pub sonar_songs: Arc<Mutex<HashMap<u64, Arc<Song>>>>,
+    /// 惰性分页歌单：已把全量曲目并入播放队列的歌单 ID，避免重复回车重复拉取/截断队列。
+    queued_playlists: HashSet<u64>,
 }
 
 impl App {
@@ -85,6 +87,10 @@ impl App {
             CommandItem::Action {
                 name: "Toggle Border Mode".into(),
                 action: CommandAction::ToggleBordered,
+            },
+            CommandItem::Action {
+                name: "Toggle Save on Play".into(),
+                action: CommandAction::ToggleSaveOnPlay,
             },
         ];
 
@@ -129,6 +135,7 @@ impl App {
 
         let quality = ncm_api::SongQuality::from_level(&config.cache.quality)
             .unwrap_or(ncm_api::SongQuality::Higher);
+        let save_on_play = config.cache.save_on_play;
 
         let cache_dir = {
             let path = std::path::Path::new(&config.cache.cache_dir);
@@ -264,6 +271,7 @@ impl App {
                 cache,
                 base_dir,
                 quality,
+                save_on_play,
                 stream_client,
                 Arc::clone(&finder),
                 sonar_enabled,
@@ -275,6 +283,7 @@ impl App {
             cover_http,
             finder,
             sonar_songs,
+            queued_playlists: HashSet::new(),
         })
     }
 
@@ -312,6 +321,13 @@ impl App {
                     }
                 ));
             }
+            CommandAction::ToggleSaveOnPlay => {
+                let enabled = !self.config.cache.save_on_play;
+                self.config.cache.save_on_play = enabled;
+                self.playback.set_save_on_play(enabled);
+                self.config.save();
+                self.toast(format!("边听边存: {}", if enabled { "ON" } else { "OFF" }));
+            }
             CommandAction::SwitchTheme(name) => {
                 let msg = format!("THEME: {name}");
                 self.config.default_theme = name;
@@ -329,7 +345,7 @@ impl App {
     /// Breadcrumb key for the current page: the last breadcrumb level's
     /// subtitle, falling back to the focused nav item's name. Distinct pages
     /// get distinct playback queues.
-    pub fn current_queue_key(&self) -> String {
+    pub(super) fn current_queue_key(&self) -> String {
         let nav = &self.state.navigation;
         if let Some(sub) = nav.nav.subtitle.clone().filter(|s| !s.trim().is_empty()) {
             return sub;
@@ -401,7 +417,7 @@ impl App {
         self.state.navigation.content_selected = 0;
     }
 
-    pub(crate) fn navigate_to_main(&mut self) {
+    fn navigate_to_main(&mut self) {
         self.state.navigation.page = Page::Main;
 
         let api = self
@@ -501,7 +517,11 @@ impl App {
             PlaybackEvent::HeartbeatFallback => {
                 self.playback.on_heartbeat_fallback();
             }
-            PlaybackEvent::SetPlaylistId(id) => self.playback.set_playlist_id(id),
+            PlaybackEvent::SetPlaylistId(id) => {
+                // 内容（重新）加载后，之前的"全量已入队"标记失效。
+                self.queued_playlists.remove(&id);
+                self.playback.set_playlist_id(id);
+            }
             PlaybackEvent::LikeSong(id) => {
                 let service = self.service.clone();
                 tokio::spawn(async move {
@@ -527,6 +547,12 @@ impl App {
                 {
                     self.playback.state.cached = true;
                 }
+            }
+            PlaybackEvent::QueueAppend { key, songs } => {
+                self.playback.append_songs_to_key(&key, songs);
+            }
+            PlaybackEvent::QueueLoadDone { playlist_id } => {
+                self.queued_playlists.insert(playlist_id);
             }
         }
     }

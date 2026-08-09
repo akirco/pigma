@@ -1,4 +1,4 @@
-pub fn render_title(template: &str, name: &str, count: usize, total: usize) -> String {
+pub(super) fn render_title(template: &str, name: &str, count: usize, total: usize) -> String {
     if !template.contains('{') {
         return template.to_owned();
     }

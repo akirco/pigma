@@ -10,7 +10,7 @@ use super::BlockStyle;
 use super::create_block;
 use crate::config::Theme;
 use crate::playback::LyricLine;
-use crate::state::PlaybackState;
+use crate::playback::PlaybackState;
 use crate::utils::GradientPreset;
 
 thread_local! {
@@ -41,7 +41,7 @@ fn find_current_line(lyrics: &[LyricLine], cur_ms: f64) -> usize {
     })
 }
 
-pub fn draw(
+pub(super) fn draw(
     f: &mut Frame,
     player: &PlaybackState,
     bs: &BlockStyle<'_>,

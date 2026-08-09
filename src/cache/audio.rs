@@ -76,7 +76,7 @@ impl CacheManager {
         None
     }
 
-    pub fn ensure_dir(&self) -> io::Result<()> {
+    fn ensure_dir(&self) -> io::Result<()> {
         fs::create_dir_all(&self.downloads_dir)
     }
 
@@ -229,7 +229,7 @@ impl CacheManager {
         (stem.to_string(), String::new())
     }
 
-    pub fn evict(&self) -> usize {
+    fn evict(&self) -> usize {
         let total_bytes = self.cached_total_bytes.load(Ordering::Relaxed);
         if total_bytes <= self.max_cache_bytes {
             return 0;

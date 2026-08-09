@@ -91,7 +91,21 @@ impl App {
                 && !force
                 && api != ApiEndpoint::Search
                 && let Some((cached, pg)) = cache.load_content_cache_async(&api_str, ttl).await
+                && (api != ApiEndpoint::LikedSongs || pg.is_some())
             {
+                // 从缓存恢复歌单分页时补齐 trackIds，否则惰性分页（LoadMore）无法切片。
+                if let Some(pg) = &pg
+                    && let Some(id_str) = pg.api.strip_prefix("playlist:")
+                    && let Ok(id) = id_str.parse::<u64>()
+                {
+                    let service = service.clone();
+                    tokio::spawn(async move {
+                        if let Some(ids) = service.ensure_playlist_track_ids(id).await {
+                            log::debug!("refetched trackIds for playlist {id}: {} ids", ids.len());
+                        }
+                    });
+                }
+
                 if let Some(pg) = pg {
                     send_event(
                         &sender,
@@ -108,15 +122,17 @@ impl App {
                 return;
             }
 
-            // Handle LikedSongs separately: also fetch playlist ID for heartbeat mode
+            // Handle LikedSongs separately: also fetch playlist ID for heartbeat mode.
+            // 通过"我喜欢的音乐"歌单的 trackIds 惰性分页，避免一次拉全卡顿。
             if api == ApiEndpoint::LikedSongs
                 && let Some(uid) = uid
             {
-                let (state, playlist_id) = service.load_liked_songs(uid, limit).await;
+                let (state, pagination, playlist_id) = service.load_liked_songs(uid, limit).await;
                 let state = if ttl > 0 && !matches!(state, ContentState::Error(_)) {
                     let cache_clone = cache.clone();
+                    let pg_for_save = pagination.clone();
                     tokio::task::spawn_blocking(move || {
-                        cache_clone.save_content_cache("__liked__", &state, None);
+                        cache_clone.save_content_cache("__liked__", &state, pg_for_save.as_ref());
                         state
                     })
                     .await
@@ -124,7 +140,19 @@ impl App {
                 } else {
                     state
                 };
-                send_event(&sender, NavigationEvent::ContentLoaded(state).into());
+                if let Some(pg) = pagination {
+                    send_event(
+                        &sender,
+                        NavigationEvent::ContentLoadedPaged {
+                            content: state,
+                            pagination: pg,
+                            generation,
+                        }
+                        .into(),
+                    );
+                } else {
+                    send_event(&sender, NavigationEvent::ContentLoaded(state).into());
+                }
                 if let Some(id) = playlist_id {
                     send_event(&sender, PlaybackEvent::SetPlaylistId(id).into());
                 }
