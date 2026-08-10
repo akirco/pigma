@@ -22,10 +22,6 @@ pub(super) struct CacheEntry {
     pub(super) pic_url: String,
     #[serde(default)]
     pub(super) uploaded_at: u64,
-    /// Original sonar search-result song, present only for third-party songs
-    /// that have actually been played and cached. Lets playback/lyrics/covers
-    /// be re-resolved via the original provider after a restart without
-    /// re-searching or persisting a separate registry.
     #[serde(default)]
     pub(super) thirdparty: Option<sonar::Song>,
 }
@@ -109,20 +105,36 @@ impl CacheManager {
     }
 
     /// Snapshot the index under a read lock, then serialize and write to disk
-    /// without holding any lock.
+    /// without holding any lock. Runs on a blocking task so a large index never
+    /// stalls the caller (e.g. the stream-completion callback).
     pub(super) fn save_index(&self) {
-        if let Err(e) = fs::create_dir_all(&self.downloads_dir) {
+        let index = Arc::clone(&self.index);
+        let downloads_dir = self.downloads_dir.clone();
+        tokio::task::spawn_blocking(move || {
+            Self::write_index(&index, &downloads_dir);
+        });
+    }
+
+    /// Blocking variant of [`Self::save_index`], used on the shutdown path where
+    /// a detached `spawn_blocking` task might not run before the runtime is torn
+    /// down. Serializes and writes on the calling thread.
+    pub(super) fn save_index_sync(&self) {
+        Self::write_index(&self.index, &self.downloads_dir);
+    }
+
+    fn write_index(index: &RwLock<CacheIndex>, downloads_dir: &Path) {
+        if let Err(e) = fs::create_dir_all(downloads_dir) {
             log::warn!("Failed to create downloads dir: {e}");
             return;
         }
         let snapshot = {
-            let index = self.index.read().unwrap_or_else(|e| e.into_inner());
+            let index = index.read().unwrap_or_else(|e| e.into_inner());
             let file = CacheIndexFile {
                 songs: index.clone(),
             };
             serde_json::to_string(&file).unwrap_or_default()
         };
-        let path = Self::index_path(&self.downloads_dir);
+        let path = Self::index_path(downloads_dir);
         if let Err(e) = fs::write(&path, snapshot) {
             log::warn!("Failed to write cache index: {e}");
         }
@@ -162,31 +174,38 @@ impl CacheManager {
         }
     }
 
-    /// Persist the in-memory cache index to disk.
+    /// Persist the in-memory cache index to disk. Synchronous — safe for the
+    /// shutdown path where detached tasks might not run before runtime teardown.
     pub fn flush_index(&self) {
-        self.save_index();
+        self.save_index_sync();
     }
 
     /// Remove index entries whose files no longer exist or are empty.
     pub fn cleanup_index(&self) {
-        let mut index = self.index.write().unwrap_or_else(|e| e.into_inner());
-        let stale: Vec<u64> = index
-            .iter()
-            .filter(|(_, entry)| {
-                let path = self.downloads_dir.join(&entry.filename);
-                match fs::metadata(&path) {
-                    Ok(m) => m.len() == 0,
-                    Err(_) => true,
-                }
-            })
-            .map(|(id, _)| *id)
-            .collect();
-        for id in &stale {
-            index.remove(id);
+        let stale: Vec<(u64, String)> = {
+            let index = self.index.read().unwrap_or_else(|e| e.into_inner());
+            index
+                .iter()
+                .filter(|(_, entry)| {
+                    let path = self.downloads_dir.join(&entry.filename);
+                    match fs::metadata(&path) {
+                        Ok(m) => m.len() == 0,
+                        Err(_) => true,
+                    }
+                })
+                .map(|(id, entry)| (*id, entry.filename.clone()))
+                .collect()
+        };
+        if stale.is_empty() {
+            return;
         }
-        if !stale.is_empty() {
-            log::info!("Cleaned up {} stale cache entries", stale.len());
+        {
+            let mut index = self.index.write().unwrap_or_else(|e| e.into_inner());
+            for (id, _) in &stale {
+                index.remove(id);
+            }
         }
+        log::info!("Cleaned up {} stale cache entries", stale.len());
     }
 }
 

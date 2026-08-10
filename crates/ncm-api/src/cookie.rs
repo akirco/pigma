@@ -184,14 +184,21 @@ impl CookieStore {
             let _ = std::fs::create_dir_all(parent);
         }
         if let Ok(json) = serde_json::to_string_pretty(&persisted) {
-            if let Err(e) = std::fs::write(&self.path, &json) {
-                log::warn!("failed to write cookie file {:?}: {}", self.path, e);
-            }
             #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ =
-                    std::fs::set_permissions(&self.path, std::fs::Permissions::from_mode(0o600));
+            let written = {
+                use std::os::unix::fs::OpenOptionsExt;
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .truncate(true)
+                    .mode(0o600)
+                    .open(&self.path)
+                    .and_then(|mut f| std::io::Write::write_all(&mut f, json.as_bytes()))
+            };
+            #[cfg(not(unix))]
+            let written = std::fs::write(&self.path, &json);
+            if let Err(e) = written {
+                log::warn!("failed to write cookie file {:?}: {}", self.path, e);
             }
         }
         self.last_save = Instant::now();

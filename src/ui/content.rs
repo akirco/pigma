@@ -107,7 +107,9 @@ fn build_content_rows<'a>(
     colors: &'a Theme,
 ) -> Vec<Row<'a>> {
     match content {
-        ContentState::Songs(songs) => build_rows(songs, columns, colors, song_field),
+        ContentState::Songs(songs) => build_rows(songs, columns, colors, |song, field| {
+            song_field(song, field)
+        }),
         ContentState::SongLists(lists) => build_rows(lists, columns, colors, songlist_field),
         ContentState::TopLists(lists) => build_rows(lists, columns, colors, toplist_field),
         ContentState::HotSearch(keywords) => {

@@ -33,8 +33,8 @@ use crate::state::{
     NavigationState, Page, SearchProvider, SearchState, SplashState, State, TableMode,
 };
 use crate::ui;
-use crate::utils::pigma_cache_dir;
 use crate::utils::terminal::{ImageProtocol, best_image_protocol};
+use crate::utils::{pigma_cache_dir, pigma_config_dir};
 
 use splash::send_event;
 
@@ -58,6 +58,14 @@ pub struct App {
     queued_playlists: HashSet<u64>,
 }
 
+/// 服务组，用于按 `ProxyTarget` 计算是否启用代理。
+enum ProxyKind {
+    /// 非 YouTube 服务（网易云、sonar 搜索、封面、流媒体），在 `Reversed`/`Both` 下走代理。
+    NonYoutube,
+    /// YouTube 服务，在 `Normal`/`Both` 下走代理。
+    Youtube,
+}
+
 impl App {
     pub fn new(config: Config) -> color_eyre::Result<Self> {
         let border = config.border.clone();
@@ -66,74 +74,21 @@ impl App {
         let tx = events.sender();
 
         let theme_registry = ThemeRegistry::new(config.themes.clone());
+        let command_panel = Self::build_command_panel(&theme_registry);
 
-        let theme_names: Vec<String> = theme_registry
-            .all_names()
-            .into_iter()
-            .map(|s| s.to_string())
-            .collect();
-
-        let theme_children: Vec<CommandItem> = theme_names
-            .into_iter()
-            .map(|name| {
-                let action = CommandAction::SwitchTheme(name.clone());
-                CommandItem::Action { name, action }
-            })
-            .collect();
-
-        let commands = vec![
-            CommandItem::SubMenu {
-                name: "Switch Theme".into(),
-                children: theme_children,
-            },
-            CommandItem::Action {
-                name: "Toggle Border Mode".into(),
-                action: CommandAction::ToggleBordered,
-            },
-            CommandItem::Action {
-                name: "Toggle Save on Play".into(),
-                action: CommandAction::ToggleSaveOnPlay,
-            },
-        ];
-
-        let mut command_panel = CommandPanel::new();
-        command_panel.levels = vec![commands];
-
-        let proxy = config.proxy.as_str();
-        let empty = proxy.is_empty();
         // `normal`（国内默认）：仅 YouTube 走代理；`reversed`（海外）：除 YouTube
         // 外全部走代理；`both`：全部走代理。
-        let ncm_proxy = if !empty
-            && matches!(
-                config.proxy_target,
-                ProxyTarget::Reversed | ProxyTarget::Both
-            ) {
-            proxy
-        } else {
-            ""
-        };
-        let search_proxy = if !empty
-            && matches!(
-                config.proxy_target,
-                ProxyTarget::Reversed | ProxyTarget::Both
-            ) {
-            proxy
-        } else {
-            ""
-        };
-        let youtube_proxy =
-            if !empty && matches!(config.proxy_target, ProxyTarget::Normal | ProxyTarget::Both) {
-                proxy
-            } else {
-                ""
-            };
+        let ncm_proxy = Self::proxy_for(&config, ProxyKind::NonYoutube);
+        let search_proxy = Self::proxy_for(&config, ProxyKind::NonYoutube);
+        let youtube_proxy = Self::proxy_for(&config, ProxyKind::Youtube);
         let stream_proxy = search_proxy;
 
-        let api = if ncm_proxy.is_empty() {
-            Arc::new(ncm_api::NcmClient::new()?)
-        } else {
-            Arc::new(ncm_api::NcmClient::builder().proxy(ncm_proxy).build()?)
-        };
+        let cookie_path = pigma_config_dir().join("cookies.json");
+        let mut api_builder = ncm_api::NcmClient::builder().cookie_path(cookie_path);
+        if !ncm_proxy.is_empty() {
+            api_builder = api_builder.proxy(ncm_proxy);
+        }
+        let api = Arc::new(api_builder.build()?);
 
         let quality = ncm_api::SongQuality::from_level(&config.cache.quality)
             .unwrap_or(ncm_api::SongQuality::Higher);
@@ -149,27 +104,7 @@ impl App {
         };
         let base_dir = pigma_cache_dir();
 
-        let finder = Arc::new({
-            let mut sources: Vec<sonar::SonarSource> = Vec::new();
-            for name in &config.source_fallback.providers {
-                let source = match name.as_str() {
-                    "kuwo" => sonar::SonarSource::Kuwo,
-                    "kugou" => sonar::SonarSource::Kugou,
-                    "bilivideo" => sonar::SonarSource::BiliVideo,
-                    "youtube" => sonar::SonarSource::Youtube,
-                    _ => continue,
-                };
-                if !sources.contains(&source) {
-                    sources.push(source);
-                }
-            }
-            let search_config = sonar::SearchConfig::new()
-                .with_providers(sources)
-                .with_timeout(config.source_fallback.timeout_ms)
-                .with_search_proxy(search_proxy.to_string())
-                .with_youtube_proxy(youtube_proxy.to_string());
-            sonar::SonarFinder::new(search_config)
-        });
+        let finder = Self::build_finder(&config, search_proxy, youtube_proxy);
 
         // Search providers offered in the search bar: 网易云 always first,
         // followed by the configured sonar fallback sources.
@@ -192,40 +127,10 @@ impl App {
 
         let service = ApiService::new(api.clone(), cache.clone());
 
-        let mut picker = ratatui_image::picker::Picker::from_query_stdio()
-            .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks());
+        let picker = Self::build_picker();
 
-        match best_image_protocol() {
-            Some(ImageProtocol::Kitty) => {
-                log::debug!("ImageProtocol::Kitty");
-                picker.set_protocol_type(ratatui_image::picker::ProtocolType::Kitty);
-            }
-            Some(ImageProtocol::Sixel) => {
-                picker.set_protocol_type(ratatui_image::picker::ProtocolType::Sixel);
-                log::debug!("ImageProtocol::Sixel");
-            }
-            None => {
-                log::debug!("ImageProtocol::None");
-            }
-        }
-
-        let stream_client = {
-            let mut builder = reqwest::Client::builder();
-            if !stream_proxy.is_empty() {
-                builder = builder
-                    .proxy(reqwest::Proxy::all(stream_proxy).map_err(color_eyre::Report::msg)?);
-            }
-            builder.build()?
-        };
-
-        let cover_http = {
-            let mut builder = reqwest::Client::builder();
-            if !search_proxy.is_empty() {
-                builder = builder
-                    .proxy(reqwest::Proxy::all(search_proxy).map_err(color_eyre::Report::msg)?);
-            }
-            builder.build()?
-        };
+        let stream_client = Self::build_http_client(stream_proxy)?;
+        let cover_http = Self::build_http_client(search_proxy)?;
 
         let sonar_enabled = config.source_fallback.enabled;
         let sonar_songs: Arc<Mutex<HashMap<u64, Arc<sonar::Song>>>> =
@@ -292,19 +197,129 @@ impl App {
         })
     }
 
-    pub fn current_theme(&self) -> &Theme {
-        self.theme_registry
-            .get(&self.config.default_theme)
-            .unwrap_or_else(|| {
-                log::warn!(
-                    "Theme '{}' not found, falling back to default",
-                    self.config.default_theme
-                );
-                self.theme_registry.get("default").unwrap_or_else(|| {
-                    log::error!("Default theme missing, using hardcoded fallback");
-                    theme_fallback()
-                })
+    /// 服务组：决定在给定 `ProxyTarget` 下是否启用代理。
+    /// `NonYoutube` 在 `Reversed`/`Both` 下走代理，`Youtube` 在 `Normal`/`Both` 下走代理。
+    fn proxy_for(config: &Config, kind: ProxyKind) -> &str {
+        let proxy = config.proxy.as_str();
+        if proxy.is_empty() {
+            return "";
+        }
+        let active = match kind {
+            ProxyKind::NonYoutube => {
+                matches!(
+                    config.proxy_target,
+                    ProxyTarget::Reversed | ProxyTarget::Both
+                )
+            }
+            ProxyKind::Youtube => {
+                matches!(config.proxy_target, ProxyTarget::Normal | ProxyTarget::Both)
+            }
+        };
+        if active { proxy } else { "" }
+    }
+
+    /// 构建命令面板（主题切换子菜单 + 边框/边听边存开关）。
+    fn build_command_panel(theme_registry: &ThemeRegistry) -> CommandPanel {
+        let theme_children: Vec<CommandItem> = theme_registry
+            .all_names()
+            .into_iter()
+            .map(|name| {
+                let name = name.to_string();
+                let action = CommandAction::SwitchTheme(name.clone());
+                CommandItem::Action { name, action }
             })
+            .collect();
+
+        let commands = vec![
+            CommandItem::SubMenu {
+                name: "Switch Theme".into(),
+                children: theme_children,
+            },
+            CommandItem::Action {
+                name: "Toggle Border Mode".into(),
+                action: CommandAction::ToggleBordered,
+            },
+            CommandItem::Action {
+                name: "Toggle Save on Play".into(),
+                action: CommandAction::ToggleSaveOnPlay,
+            },
+        ];
+
+        let mut command_panel = CommandPanel::new();
+        command_panel.levels = vec![commands];
+        command_panel
+    }
+
+    /// 按配置构建 sonar finder，应用搜索/YouTube 代理。
+    fn build_finder(config: &Config, search_proxy: &str, youtube_proxy: &str) -> Arc<SonarFinder> {
+        let mut sources: Vec<sonar::SonarSource> = Vec::new();
+        for name in &config.source_fallback.providers {
+            let source = match name.as_str() {
+                "kuwo" => sonar::SonarSource::Kuwo,
+                "kugou" => sonar::SonarSource::Kugou,
+                "bilivideo" => sonar::SonarSource::BiliVideo,
+                "youtube" => sonar::SonarSource::Youtube,
+                _ => continue,
+            };
+            if !sources.contains(&source) {
+                sources.push(source);
+            }
+        }
+        let search_config = sonar::SearchConfig::new()
+            .with_providers(sources)
+            .with_timeout(config.source_fallback.timeout_ms)
+            .with_search_proxy(search_proxy.to_string())
+            .with_youtube_proxy(youtube_proxy.to_string());
+        Arc::new(sonar::SonarFinder::new(search_config))
+    }
+
+    /// 按当前终端构建图片 picker，并选择最佳的图片协议（Kitty/Sixel）。
+    fn build_picker() -> Picker {
+        let mut picker = ratatui_image::picker::Picker::from_query_stdio()
+            .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks());
+
+        match best_image_protocol() {
+            Some(ImageProtocol::Kitty) => {
+                log::debug!("ImageProtocol::Kitty");
+                picker.set_protocol_type(ratatui_image::picker::ProtocolType::Kitty);
+            }
+            Some(ImageProtocol::Sixel) => {
+                picker.set_protocol_type(ratatui_image::picker::ProtocolType::Sixel);
+                log::debug!("ImageProtocol::Sixel");
+            }
+            None => {
+                log::debug!("ImageProtocol::None");
+            }
+        }
+        picker
+    }
+
+    /// 按给定代理地址构建阻塞 HTTP client；地址为空则直连。
+    fn build_http_client(proxy: &str) -> color_eyre::Result<Client> {
+        let mut builder = Client::builder();
+        if !proxy.is_empty() {
+            builder = builder.proxy(reqwest::Proxy::all(proxy).map_err(color_eyre::Report::msg)?);
+        }
+        builder.build().map_err(color_eyre::Report::msg)
+    }
+
+    /// 解析当前主题：优先 `default_theme`，缺失则回退 `default`，再缺失用硬编码兜底。
+    /// 取字段借用而非整个 `&self`，便于调用方在不持有整体借用的前提下使用。
+    pub(crate) fn resolve_theme<'a>(config: &Config, registry: &'a ThemeRegistry) -> &'a Theme {
+        registry.get(&config.default_theme).unwrap_or_else(|| {
+            log::warn!(
+                "Theme '{}' not found, falling back to default",
+                config.default_theme
+            );
+            registry.get("default").unwrap_or_else(|| {
+                log::error!("Default theme missing, using hardcoded fallback");
+                theme_fallback()
+            })
+        })
+    }
+
+    pub fn current_theme(&self) -> &Theme {
+        Self::resolve_theme(&self.config, &self.theme_registry)
     }
 
     pub fn quit(&mut self) {
@@ -352,8 +367,8 @@ impl App {
     /// get distinct playback queues.
     pub(super) fn current_queue_key(&self) -> String {
         let nav = &self.state.navigation;
-        if let Some(sub) = nav.nav.subtitle.clone().filter(|s| !s.trim().is_empty()) {
-            return sub;
+        if let Some(sub) = nav.nav.subtitle.as_deref().filter(|s| !s.trim().is_empty()) {
+            return sub.to_string();
         }
         nav.nav
             .sections

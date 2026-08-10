@@ -96,13 +96,13 @@ impl PlaylistQueue {
         self.history.pop()
     }
 
-    pub(super) fn append(&mut self, songs: &[SongInfo]) -> usize {
+    pub(super) fn append(&mut self, songs: &[Arc<SongInfo>]) -> usize {
         let offset = self.songs.len();
         self.songs.extend(
             songs
                 .iter()
                 .filter(|s| !self.id_index.contains_key(&s.id))
-                .map(|s| Arc::new(s.clone())),
+                .map(Arc::clone),
         );
         self.rebuild_index();
         offset
@@ -173,7 +173,7 @@ mod tests {
     #[test]
     fn index_stays_correct_after_append() {
         let mut q = PlaylistQueue::from_songs(vec![song(1), song(2)], 0);
-        q.append(&[song(3).as_ref().clone()]);
+        q.append(&[song(3)]);
         assert_eq!(q.find_song_index(3), Some(2));
         assert_eq!(q.find_song_index(1), Some(0));
     }

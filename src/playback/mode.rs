@@ -2,7 +2,7 @@ use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
 /// 播放模式。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum PlayMode {
     Sequential,
     RepeatOne,

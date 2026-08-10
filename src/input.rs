@@ -26,18 +26,6 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> color_eyre::Resu
                     .send(CommandEvent::Panel(CommandPanelAction::Open));
                 return Ok(());
             }
-            KeyCode::Char('l' | 'L') => {
-                app.playback.clear_queue();
-                app.toast("   已清空播放队列".into());
-                if app.state.navigation.page == Page::Playlist
-                    && let Some(key) = app.playback.switch_queue(false)
-                {
-                    app.state.navigation.playlist_selected =
-                        app.playback.queue_current_index().unwrap_or(0);
-                    app.toast(format!("▣ 队列: {key}"));
-                }
-                return Ok(());
-            }
             _ => {}
         }
     }
@@ -68,6 +56,29 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> color_eyre::Resu
     }
 
     if app.state.navigation.search.active && search::handle_search_key(app, key_event) {
+        return Ok(());
+    }
+
+    if let KeyCode::Char(c) = key_event.code
+        && c.eq_ignore_ascii_case(&'w')
+        && key_event.modifiers == KeyModifiers::NONE
+    {
+        app.playback.clear_queue();
+        app.toast("   已清空播放队列".into());
+        if app.state.navigation.page == Page::Playlist {
+            if let Some(key) = app.playback.switch_queue(false) {
+                app.state.navigation.playlist_selected =
+                    app.playback.queue_current_index().unwrap_or(0);
+                app.toast(format!("▣ 队列: {key}"));
+            } else if let Some(key) = app.playback.queue_keys().last().cloned() {
+                // 清空后仅剩最后一个队列：switch_queue 在只剩一个时返回 None，
+                // 这里显式聚焦它（取最右侧/最后一个标签），避免出现空焦点。
+                app.playback.activate_queue(&key);
+                app.state.navigation.playlist_selected =
+                    app.playback.queue_current_index().unwrap_or(0);
+                app.toast(format!("▣ 队列: {key}"));
+            }
+        }
         return Ok(());
     }
 

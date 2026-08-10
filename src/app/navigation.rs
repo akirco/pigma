@@ -44,7 +44,8 @@ impl App {
                 let songs = tokio::task::spawn_blocking(move || scan_local_music(&music_dir))
                     .await
                     .unwrap_or_default();
-                let state = ContentState::Songs(songs);
+                let state =
+                    ContentState::Songs(songs.into_iter().map(std::sync::Arc::new).collect());
                 let state = if ttl > 0 {
                     let cache_clone = cache.clone();
                     tokio::task::spawn_blocking(move || {
@@ -82,7 +83,10 @@ impl App {
                 let songs = cache.list_cached_songs_async().await;
                 send_event(
                     &sender,
-                    NavigationEvent::ContentLoaded(ContentState::Songs(songs)).into(),
+                    NavigationEvent::ContentLoaded(ContentState::Songs(
+                        songs.into_iter().map(std::sync::Arc::new).collect(),
+                    ))
+                    .into(),
                 );
                 return;
             }
@@ -101,7 +105,7 @@ impl App {
                     let service = service.clone();
                     tokio::spawn(async move {
                         if let Some(ids) = service.ensure_playlist_track_ids(id).await {
-                            log::debug!("refetched trackIds for playlist {id}: {} ids", ids.len());
+                            log::debug!("refetched trackIds for playlist {id}: {} ids", ids);
                         }
                     });
                 }

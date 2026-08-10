@@ -4,7 +4,6 @@ use crate::playback::mode_icon;
 use crate::state::{ContentState, Page, TableMode};
 use crate::text_input::TextInput;
 use crossterm::event::{KeyCode, KeyEvent, MouseEventKind};
-use std::sync::Arc;
 
 use super::content::{
     cell_enter_action, content_select_first, content_select_last, content_select_next,
@@ -186,7 +185,6 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
                 songs
                     .get(app.state.navigation.content_selected)
                     .cloned()
-                    .map(Arc::new)
             } else {
                 None
             };

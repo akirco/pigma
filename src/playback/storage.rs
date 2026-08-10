@@ -269,23 +269,28 @@ impl PlaylistStorage {
         if id.is_empty() {
             return;
         }
-        let saved = SavedQueueRef {
-            queue,
-            history,
-            current_index,
-            mode,
-            volume,
-            progress,
-        };
-        if let Ok(json) = serde_json::to_string(&saved) {
-            let queue_path = self.queue_path(id, display);
-            let active_path = self.active_path();
-            let id = id.to_string();
-            tokio::task::spawn_blocking(move || {
+        // Move owned (cheap Arc) copies into the blocking task so both the
+        // JSON serialization and the disk writes run off the UI thread.
+        let queue = queue.to_vec();
+        let history = history.to_vec();
+        let mode = *mode;
+        let queue_path = self.queue_path(id, display);
+        let active_path = self.active_path();
+        let id = id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let saved = SavedQueueRef {
+                queue: &queue,
+                history: &history,
+                current_index,
+                mode: &mode,
+                volume,
+                progress,
+            };
+            if let Ok(json) = serde_json::to_string(&saved) {
                 let _ = fs::write(&queue_path, &json);
                 let _ = fs::write(&active_path, id);
-            });
-        }
+            }
+        });
     }
 
     /// Blocking variant of [`Self::save_queue`], used on the shutdown path where
@@ -348,19 +353,20 @@ impl PlaylistStorage {
 
     /// Remove a queue file. If it was the active queue, clear the
     /// `active_queue.txt` marker so a later restart doesn't point at it.
+    ///
+    /// 同步删除：调用方（如 `clear_queue`）紧接着会 `refresh_queue_keys()`
+    /// 从磁盘重新扫描，若此处用 `spawn_blocking` 异步删除，扫描时文件可能仍存在
+    /// 导致刚清空的队列标签重新出现。
     pub(super) fn delete_queue(&self, id: &str, display: &str) {
         if id.is_empty() {
             return;
         }
         let queue_path = self.queue_path(id, display);
         let active_path = self.active_path();
-        let id = id.to_string();
-        tokio::task::spawn_blocking(move || {
-            let _ = fs::remove_file(&queue_path);
-            if fs::read_to_string(&active_path).ok().as_deref() == Some(id.as_str()) {
-                let _ = fs::remove_file(&active_path);
-            }
-        });
+        let _ = fs::remove_file(&queue_path);
+        if fs::read_to_string(&active_path).ok().as_deref() == Some(id) {
+            let _ = fs::remove_file(&active_path);
+        }
     }
 }
 

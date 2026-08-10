@@ -54,7 +54,7 @@ impl Default for NcmClientBuilder {
 }
 
 impl NcmClientBuilder {
-    /// Cookie 持久化文件路径（默认 `~/.config/pigma/cookies.json`）
+    /// Cookie 持久化文件路径（默认当前工作目录下的 `cookies.json`；pigma 会显式传入）
     pub fn cookie_path(mut self, path: PathBuf) -> Self {
         self.cookie_path = Some(path);
         self
@@ -105,9 +105,8 @@ impl NcmClientBuilder {
 }
 
 fn default_cookie_path() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("pigma")
+    std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
         .join("cookies.json")
 }
 

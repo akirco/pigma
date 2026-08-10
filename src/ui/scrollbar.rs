@@ -1,6 +1,7 @@
 use ratatui::{
     Frame,
     layout::Rect,
+    style::{Color, Style},
     widgets::{Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
 
@@ -15,12 +16,19 @@ pub(super) fn calc_scroll_offset(selected: usize, visible_height: usize, total: 
     }
 }
 
-pub(super) fn render_scrollbar(f: &mut Frame, total: usize, selected: usize, area: Rect) {
+pub(super) fn render_scrollbar(
+    f: &mut Frame,
+    total: usize,
+    selected: usize,
+    area: Rect,
+    fg: Color,
+) {
     let mut state = ScrollbarState::new(total).position(selected);
     let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
         .begin_symbol(None)
         .end_symbol(None)
         .thumb_symbol("│")
+        .thumb_style(Style::default().fg(fg))
         .track_symbol(None);
     f.render_stateful_widget(scrollbar, area, &mut state);
 }

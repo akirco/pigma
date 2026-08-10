@@ -1,6 +1,6 @@
 [package]
 name = "pigma"
-version = "0.2.5"
+version = "0.2.6"
 edition = "2024"
 description = "A netease cloud music client"
 repository = "https://github.com/akirco/pigma.git"
@@ -58,7 +58,7 @@ rustls = {
     "std",
   ]
 }
-serde = { version = "1.0.229", features = ["derive"] }
+serde = { version = "1.0.229", features = ["derive", "rc"] }
 serde_json = "1.0.151"
 sonar = { path = "crates/sonar" }
 stream-download = {

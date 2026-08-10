@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use color_eyre::eyre::OptionExt;
@@ -68,10 +69,11 @@ pub enum PlaybackEvent {
     /// 云端"我喜欢的音乐"列表已拉取/更新，主线程据此刷新 `PlaybackState.liked`。
     LikedUpdated,
     /// Append lazily-paged songs to the queue identified by `key` (background
-    /// full-list load after Enter on a playlist page).
+    /// full-list load after Enter on a playlist page). Songs are shared `Arc`s
+    /// so appending never deep-clones the page.
     QueueAppend {
         key: String,
-        songs: Vec<SongInfo>,
+        songs: Vec<Arc<SongInfo>>,
     },
     /// The full song list for `playlist_id` has been queued; subsequent Enter
     /// presses on the same playlist can jump within the queue without reloading.

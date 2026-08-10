@@ -24,7 +24,7 @@ use std::time::Duration;
 use ratatui::Frame;
 
 use crate::app::App;
-use crate::config::{NavPosition, theme_fallback};
+use crate::config::NavPosition;
 use crate::layout;
 use crate::state::Page;
 use crate::ui::block::{BlockStyle, create_block};
@@ -44,14 +44,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     let area = f.area();
 
-    let colors = app
-        .theme_registry
-        .get(&app.config.default_theme)
-        .or_else(|| app.theme_registry.get("default"))
-        .unwrap_or_else(|| {
-            log::error!("No theme found, using fallback");
-            theme_fallback()
-        });
+    let colors = App::resolve_theme(&app.config, &app.theme_registry);
 
     let bs = BlockStyle {
         colors,

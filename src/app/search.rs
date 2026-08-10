@@ -57,7 +57,7 @@ impl App {
                     if songs.is_empty() {
                         ContentState::Error("没有找到结果".into())
                     } else {
-                        ContentState::Songs(songs)
+                        ContentState::Songs(songs.into_iter().map(std::sync::Arc::new).collect())
                     }
                 }
                 Err(e) => ContentState::Error(format!("搜索失败: {e}")),

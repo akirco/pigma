@@ -189,5 +189,5 @@ pub(super) fn draw_queue_table(
 
     f.render_widget(table, table_area);
 
-    render_scrollbar(f, queue_len, sel, scrollbar_area);
+    render_scrollbar(f, queue_len, sel, scrollbar_area, colors.muted);
 }

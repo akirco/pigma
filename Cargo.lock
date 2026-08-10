@@ -1836,7 +1836,6 @@ version = "0.1.0"
 dependencies = [
  "aes",
  "base64 0.23.1",
- "dirs",
  "lofty",
  "log",
  "md-5",
@@ -2342,7 +2341,7 @@ dependencies = [
 
 [[package]]
 name = "pigma"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "color-eyre",
  "crossterm 0.29.0",

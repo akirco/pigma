@@ -63,17 +63,27 @@ impl CacheManager {
     /// Find the first cached extension for a song in a single lock + iteration.
     /// Returns `Some(ext)` if any cached file exists, `None` otherwise.
     pub fn find_cached_extension(&self, id: u64) -> Option<&'static str> {
-        const EXTENSIONS: &[&str] = &["mp3", "flac", "m4a", "ogg"];
-        let index = self.index.read().unwrap_or_else(|e| e.into_inner());
-        if index.contains_key(&id) {
-            // Index entry exists — check which extension file is on disk
-            for &ext in EXTENSIONS {
-                if self.cache_path(id, ext).exists() {
-                    return Some(ext);
-                }
-            }
+        // Resolve the path under a single read lock, then drop the guard before
+        // touching the filesystem. Re-entering the read lock (as `cache_path`
+        // does) while a writer is queued could deadlock with `std::sync::RwLock`.
+        let path = {
+            let index = self.index.read().unwrap_or_else(|e| e.into_inner());
+            index
+                .get(&id)
+                .map(|e| self.downloads_dir.join(&e.filename))?
+        };
+        if !path.exists() {
+            return None;
         }
-        None
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let ext: &'static str = match ext {
+            "flac" => "flac",
+            "m4a" | "mp4" => "m4a",
+            "ogg" => "ogg",
+            "wav" => "wav",
+            _ => "mp3",
+        };
+        Some(ext)
     }
 
     fn ensure_dir(&self) -> io::Result<()> {
@@ -235,39 +245,45 @@ impl CacheManager {
             return 0;
         }
 
-        let mut index = self.index.write().unwrap_or_else(|e| e.into_inner());
-        let total = self.cached_total_bytes.load(Ordering::Relaxed);
-        if total <= self.max_cache_bytes {
-            return 0;
-        }
-
-        // Sort by accessed_at ascending — collect only IDs, avoid cloning filenames
-        let mut entries: Vec<(u64, u64)> =
-            index.iter().map(|(id, e)| (*id, e.accessed_at)).collect();
-        entries.sort_by_key(|e| e.1);
-
-        let mut evicted = 0;
-        let mut freed = 0u64;
-        for (id, _) in &entries {
-            if total - freed <= self.max_cache_bytes {
-                break;
+        // Under the write lock, only decide which entries to evict (IDs +
+        // filenames). All filesystem I/O happens after the lock is released so
+        // concurrent readers are never blocked by disk operations.
+        let victims: Vec<(u64, String)> = {
+            let mut index = self.index.write().unwrap_or_else(|e| e.into_inner());
+            let total = self.cached_total_bytes.load(Ordering::Relaxed);
+            if total <= self.max_cache_bytes {
+                return 0;
             }
-            if let Some(entry) = index.get(id) {
-                let path = self.downloads_dir.join(&entry.filename);
-                if let Ok(meta) = fs::metadata(&path) {
-                    freed += meta.len();
+
+            let mut entries: Vec<(u64, u64)> =
+                index.iter().map(|(id, e)| (*id, e.accessed_at)).collect();
+            entries.sort_by_key(|e| e.1);
+
+            let mut victims = Vec::new();
+            for (id, _) in &entries {
+                if let Some(entry) = index.get(id) {
+                    victims.push((*id, entry.filename.clone()));
                 }
-                let _ = fs::remove_file(&path);
             }
-            index.remove(id);
-            evicted += 1;
-        }
+            for (id, _) in &victims {
+                index.remove(id);
+            }
+            victims
+        };
 
-        if evicted > 0 {
-            self.cached_total_bytes.fetch_sub(freed, Ordering::Relaxed);
-            log::info!("Evicted {evicted} cached songs, freed {freed} bytes");
+        let mut freed = 0u64;
+        for (_, filename) in &victims {
+            let path = self.downloads_dir.join(filename);
+            if let Ok(meta) = fs::metadata(&path) {
+                freed += meta.len();
+            }
+            let _ = fs::remove_file(path);
         }
-        evicted
+        if !victims.is_empty() {
+            self.cached_total_bytes.fetch_sub(freed, Ordering::Relaxed);
+            log::info!("Evicted {} cached songs", victims.len());
+        }
+        victims.len()
     }
 }
 

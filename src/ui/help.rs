@@ -12,7 +12,7 @@ use crate::{app::App, ui::block::create_block_surfaced};
 const HELP_ITEMS: &[(&str, &str)] = &[
     ("Ctrl+C/q", "退出程序"),
     ("Ctrl+P", "命令面板"),
-    ("Ctrl+L", "清空播放队列"),
+    ("w", "清空播放队列"),
     ("?", "帮助"),
     ("Esc", "返回"),
     ("Tab / ⇧Tab", "切换导航区块 / 搜索引擎"),

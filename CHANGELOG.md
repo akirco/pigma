@@ -1,3 +1,18 @@
+## [0.2.6] - 2026-08-10
+
+### 🚜 Refactor
+
+- Update cookie file handling to improve permissions and writing logic (akirco)
+- Refactor playback and UI components for improved performance and clarity
+- Updated `handle_main_key` to remove unnecessary Arc wrapping for songs.
+- Introduced `current_resolve` in `PlaybackEngine` to manage in-flight song resolve tasks.
+- Modified `activate_by_id` to accept a `persist_previous` flag for better queue management.
+- Changed song handling in `play_songs` and `append_songs_to_key` to use `Arc<SongInfo>` directly.
+- Enhanced `ApiService` to return `Arc<SongInfo>` for shared ownership across components.
+- Refactored UI rendering functions to streamline theme resolution and scrollbar rendering.
+- Updated help text for clearing the playback queue to use 'w' instead of 'Ctrl+L'.
+- Improved overall code readability and maintainability by reducing unnecessary clones and enhancing comments.
+
 ## [0.2.5] - 2026-08-09
 
 ### 🚀 Features

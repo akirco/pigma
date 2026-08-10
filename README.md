@@ -73,7 +73,7 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 - [x] 支持系统包管理器安装(yay,paru,scoop)
 - [x] 支持搜索多源
 - [x] 重构播放队列添加逻辑
-- [ ] 优化主题配色
+- [x] 优化主题配色
 - [ ] JSON IPC控制（waybar.etc）
 - [ ] 重写splash
 - [ ] styled_text标记语法嵌套
@@ -153,7 +153,7 @@ cargo build --release
 
 | 快捷键        |                     描述                     |
 | :------------ | :------------------------------------------: |
-| ctrl+l        |                 清空播放队列                 |
+| w             |                 清空播放队列                 |
 | s/d           |       添加到喜欢/不感兴趣(仅每日推荐)        |
 | ?             |                  快捷键面板                  |
 | r             |               手动刷新列表内容               |

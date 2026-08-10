@@ -71,6 +71,8 @@ impl PlaybackState {
     /// Resets progress. Returns `true` if the caller should advance to the next song.
     pub(super) fn on_finished(&mut self) -> bool {
         self.progress = 0.0;
+        // 曲目结束但无人推进（例如空队列收尾）时，作为安全网退出 seeking 轮询。
+        self.seeking = false;
         self.playing
     }
 

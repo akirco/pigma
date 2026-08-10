@@ -68,5 +68,5 @@ pub(super) fn render_table(
         }
     }
 
-    render_scrollbar(f, row_count, sel, scrollbar_area);
+    render_scrollbar(f, row_count, sel, scrollbar_area, colors.muted);
 }

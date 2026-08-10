@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 
 use ncm_api::{SingerInfo, SongInfo, SongList, TopList};
@@ -13,7 +15,7 @@ pub enum ContentState {
     Empty,
     Loading,
     Error(String),
-    Songs(Vec<SongInfo>),
+    Songs(Vec<Arc<SongInfo>>),
     SongLists(Vec<SongList>),
     TopLists(Vec<TopList>),
     HotSearch(HotSearchKeywords),

@@ -72,6 +72,10 @@ pub struct PlaybackEngine {
     consecutive_errors: u32,
     /// 用户"我喜欢的音乐"歌曲 ID 集合（与 `App` 共享同一 `Arc`）。
     liked_ids: Arc<std::sync::Mutex<HashSet<u64>>>,
+    /// In-flight `start_current_song` resolve task. Aborted when the user
+    /// switches songs so a stale resolve neither consumes bandwidth nor sends a
+    /// `Play` command for a song that is no longer current.
+    current_resolve: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl PlaybackEngine {
@@ -117,6 +121,7 @@ impl PlaybackEngine {
             playlist_id: None,
             consecutive_errors: 0,
             liked_ids,
+            current_resolve: None,
         };
         this.restore_session();
         this
@@ -273,17 +278,23 @@ impl PlaybackEngine {
     /// freshly produced (`dated_key`), so hashing it is lossless.
     pub fn activate_queue(&mut self, key: &str) {
         let id = PlaylistStorage::queue_id(key);
-        self.activate_by_id(key, &id);
+        self.activate_by_id(key, &id, true);
     }
 
-    /// Activate a queue by its canonical id and display name, saving the
-    /// previously loaded queue first. Playback state is untouched — this only
-    /// swaps which queue the engine operates on.
-    fn activate_by_id(&mut self, display: &str, id: &str) {
+    /// Activate a queue by its canonical id and display name. Playback state is
+    /// untouched — this only swaps which queue the engine operates on.
+    ///
+    /// When `persist_previous` is `true`, the previously loaded queue is saved
+    /// first. Callers that persist explicitly (e.g. `append_songs_to_key`, which
+    /// must save the target queue after appending) pass `false` to avoid a
+    /// redundant full-queue serialization of an unchanged queue.
+    fn activate_by_id(&mut self, display: &str, id: &str, persist_previous: bool) {
         if self.active_queue_id == id {
             return;
         }
-        self.persist_active_queue();
+        if persist_previous {
+            self.persist_active_queue();
+        }
         let saved = self.storage.load_queue_by_id(id);
         let queue = match saved {
             Some(s) => PlaylistQueue::from_parts(
@@ -306,7 +317,7 @@ impl PlaybackEngine {
     /// only one queue to choose from.
     pub fn switch_queue(&mut self, forward: bool) -> Option<String> {
         self.refresh_queue_keys();
-        let entries = self.queue_entries_cache.clone();
+        let entries = &self.queue_entries_cache;
         if entries.len() <= 1 {
             return None;
         }
@@ -322,7 +333,8 @@ impl PlaybackEngine {
         if next.0 == self.active_queue_id {
             return None;
         }
-        self.activate_by_id(&next.1, &next.0);
+        let (next_display, next_id) = (next.1.clone(), next.0.clone());
+        self.activate_by_id(&next_display, &next_id, true);
         Some(self.active_queue_key.clone())
     }
 
@@ -336,7 +348,7 @@ impl PlaybackEngine {
     }
 
     /// Replace the queue for `key` with `songs` and start playing `index`.
-    pub fn play_songs(&mut self, key: &str, songs: Vec<SongInfo>, index: usize) {
+    pub fn play_songs(&mut self, key: &str, songs: Vec<Arc<SongInfo>>, index: usize) {
         if songs.is_empty() || index >= songs.len() {
             return;
         }
@@ -344,7 +356,6 @@ impl PlaybackEngine {
         self.activate_queue(&key);
         self.playing_queue_key = self.active_queue_key.clone();
         self.controller.stop();
-        let songs: Vec<Arc<SongInfo>> = songs.into_iter().map(Arc::new).collect();
         self.queue = PlaylistQueue::from_songs(songs, index);
         self.strategy =
             mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);
@@ -362,8 +373,9 @@ impl PlaybackEngine {
     /// with the first page, background pages are appended here. If `key` is not
     /// the active queue (the user switched elsewhere mid-load), the target
     /// queue is loaded, appended, persisted, then the previous one restored.
-    /// Duplicate ids are skipped.
-    pub fn append_songs_to_key(&mut self, key: &str, songs: Vec<SongInfo>) -> bool {
+    /// Duplicate ids are skipped. `songs` are already shared `Arc`s, so no
+    /// deep clone happens.
+    pub fn append_songs_to_key(&mut self, key: &str, songs: Vec<Arc<SongInfo>>) -> bool {
         if songs.is_empty() {
             return false;
         }
@@ -375,14 +387,17 @@ impl PlaybackEngine {
             return true;
         }
         let prev = (self.active_queue_id.clone(), self.active_queue_key.clone());
+        // Persist the previous queue once, then switch without a redundant
+        // re-save. After appending, persist the target queue once, then switch
+        // back without another redundant save (2 serializations total instead of 4).
         self.persist_active_queue();
-        self.activate_by_id(key, &id);
+        self.activate_by_id(key, &id, false);
         self.queue.append(&songs);
         self.strategy =
             mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);
         self.persist_active_queue();
         if !prev.0.is_empty() {
-            self.activate_by_id(&prev.1, &prev.0);
+            self.activate_by_id(&prev.1, &prev.0, false);
         }
         true
     }
@@ -392,7 +407,7 @@ impl PlaybackEngine {
     /// queue instead of one per keyword/day. If the song is already in the
     /// queue, just play the existing entry instead of adding a duplicate
     /// (re-pressing Enter on a search result).
-    pub fn append_and_play_key(&mut self, key: &str, songs: &[SongInfo], index: usize) {
+    pub fn append_and_play_key(&mut self, key: &str, songs: &[Arc<SongInfo>], index: usize) {
         if songs.is_empty() || index >= songs.len() {
             return;
         }
@@ -501,6 +516,8 @@ impl PlaybackEngine {
         self.state.paused = false;
         self.state.current_song = None;
         self.state.progress = 0.0;
+        // 播放已停止，退出 32ms 的 seeking 轮询循环，否则事件循环会无限自旋。
+        self.state.seeking = false;
     }
 
     pub fn clear_queue(&mut self) {
@@ -520,6 +537,8 @@ impl PlaybackEngine {
             self.state.paused = false;
             self.state.current_song = None;
             self.state.progress = 0.0;
+            // 同上：停止后必须退出 seeking 轮询，避免 32ms 死循环。
+            self.state.seeking = false;
         }
         if let Ok(mut registry) = self.source.sonar_songs.lock() {
             registry.clear();
@@ -580,7 +599,7 @@ impl PlaybackEngine {
             },
             PlayMode::Heartbeat { .. } => PlayMode::Sequential,
         };
-        self.set_mode(next.clone());
+        self.set_mode(next);
         next
     }
 
@@ -690,6 +709,12 @@ impl PlaybackEngine {
     }
 
     pub(super) fn start_current_song(&mut self, seek_time: Option<Duration>) {
+        // Cancel any in-flight resolve for a previously requested song before
+        // starting a new one, so a stale network request cannot finish late and
+        // send a `Play` command for the wrong song (or waste bandwidth).
+        if let Some(prev) = self.current_resolve.take() {
+            prev.abort();
+        }
         let song = match self.queue.current_song() {
             Some(s) => s.clone(),
             None => return,
@@ -720,7 +745,7 @@ impl PlaybackEngine {
 
         #[cfg(target_os = "linux")]
         let song_id = song.id;
-        tokio::spawn(async move {
+        self.current_resolve = Some(tokio::spawn(async move {
             #[cfg(target_os = "linux")]
             log::info!(
                 "[HEAP] before resolve {} (id={}): {} kB",
@@ -760,6 +785,6 @@ impl PlaybackEngine {
                 libc::malloc_trim(0);
             }
             controller.request(input, seek_time);
-        });
+        }));
     }
 }
