@@ -2,9 +2,52 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::api::ApiEndpoint;
 use crate::cache::CacheManager;
 use crate::state::{ContentState, HotSearchKeywords, PaginationInfo};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ApiEndpoint {
+    RecommendSongs,
+    RecommendResource,
+    Toplist,
+    TopSongList,
+    UserRadioSublist,
+    UserCloudDisk,
+    LikedSongs,
+    UserSongList,
+    UserCreatedSongList,
+    UserSubscribedSongList,
+    SavedAlbums,
+    Download,
+    LocalMusic,
+    Recent,
+    Search,
+    TopSingers,
+}
+
+impl ApiEndpoint {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "recommend_songs" => Some(ApiEndpoint::RecommendSongs),
+            "recommend_resource" => Some(ApiEndpoint::RecommendResource),
+            "toplist" => Some(ApiEndpoint::Toplist),
+            "top_song_list" => Some(ApiEndpoint::TopSongList),
+            "user_radio_sublist" => Some(ApiEndpoint::UserRadioSublist),
+            "user_cloud_disk" => Some(ApiEndpoint::UserCloudDisk),
+            "__liked__" => Some(ApiEndpoint::LikedSongs),
+            "user_song_list" => Some(ApiEndpoint::UserSongList),
+            "user_created_song_list" => Some(ApiEndpoint::UserCreatedSongList),
+            "user_subscribed_song_list" => Some(ApiEndpoint::UserSubscribedSongList),
+            "album_sublist" => Some(ApiEndpoint::SavedAlbums),
+            "__download__" => Some(ApiEndpoint::Download),
+            "__local_music__" => Some(ApiEndpoint::LocalMusic),
+            "__recent__" => Some(ApiEndpoint::Recent),
+            "search" => Some(ApiEndpoint::Search),
+            "top_singers" => Some(ApiEndpoint::TopSingers),
+            _ => None,
+        }
+    }
+}
 
 /// Centralized API service that handles endpoint resolution, caching, and error mapping.
 ///
@@ -136,8 +179,6 @@ impl ApiService {
     /// 返回 `(内容, 分页信息, 歌单 ID)`：
     /// - 内容只含首屏歌曲，后续靠 [`Self::load_more`] 按 `trackIds` 惰性切片；
     /// - 歌单 ID 供心动模式（heartbeat）使用。
-    ///
-    /// 旧接口 `/api/song/like/get` 无法分页，音乐一多会一次拉全导致卡顿。
     pub async fn load_liked_songs(
         &self,
         uid: u64,
@@ -263,7 +304,7 @@ impl ApiService {
         } else {
             match self.client.playlist_detail(id).await {
                 Ok((detail, track_ids)) => {
-                    // 缓存全量 trackIds，供后续惰性分页（LoadMore）切片使用。
+                    // 缓存全量 trackIds，供后续惰性分页切片使用。
                     if let Ok(mut guard) = self.playlist_track_ids.lock() {
                         guard.insert(id, track_ids.clone());
                     }
@@ -324,7 +365,9 @@ impl ApiService {
         self.client.login_status().await
     }
 
-    // ── Song actions ─────────────────────────────────────────────────────
+    /* -------------------------------------------------------------------------- */
+    /*                                Song actions                                */
+    /* -------------------------------------------------------------------------- */
 
     pub async fn like_song(&self, song_id: u64, like: bool) -> Result<(), ncm_api::NcmError> {
         self.client.like(song_id, like).await.map(|_| ())

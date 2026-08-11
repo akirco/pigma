@@ -239,27 +239,49 @@ impl Drop for StderrGuard {
     }
 }
 
+/// rodio 默认的错误回调会直接 `eprintln!("audio stream error: {err}")` 到 stderr，
+/// 在 crossterm 原始模式下会污染 TUI 渲染（典型触发：YouTube 流下载跟不上播放速度
+/// 导致音频设备缓冲下溢）。这里换成走文件日志 + 事件通道的回调：
+/// 瞬时下溢/溢出（rodio 会自动恢复）仅记日志；其余流错误交由应用现有错误处理。
+fn stream_error_callback(
+    event_tx: mpsc::UnboundedSender<Event>,
+) -> impl FnMut(rodio::cpal::StreamError) + Send + 'static + Clone {
+    move |err| match err {
+        rodio::cpal::StreamError::BufferUnderrun => {
+            log::warn!("音频流缓冲下溢/溢出（网络可能跟不上播放速度），rodio 会自动恢复");
+        }
+        other => {
+            log::warn!("音频流错误: {other}");
+            let _ = event_tx.send(PlaybackEvent::Error(format!("audio stream: {other}")).into());
+        }
+    }
+}
+
 /// Open the audio device while suppressing ALSA stderr noise (Linux only).
 /// The returned sink should be kept alive across songs so the device is
 /// opened only once.
-pub(super) fn create_sink() -> Result<rodio::MixerDeviceSink, rodio::DeviceSinkError> {
+pub(super) fn create_sink(
+    event_tx: mpsc::UnboundedSender<Event>,
+) -> Result<rodio::MixerDeviceSink, rodio::DeviceSinkError> {
     #[cfg(target_os = "linux")]
     {
         let _ = StderrGuard::new().map_err(|e| {
             log::warn!("Failed to create stderr guard: {e}");
             rodio::DeviceSinkError::NoDevice
         })?;
-        open_sink_impl()
+        open_sink_impl(event_tx)
     }
     #[cfg(not(target_os = "linux"))]
     {
-        open_sink_impl()
+        open_sink_impl(event_tx)
     }
 }
 
 /// Prefer PipeWire/PulseAudio ALSA devices so system volume/mute works.
 /// Falls back to the default ALSA device if not available.
-fn open_sink_impl() -> Result<rodio::MixerDeviceSink, rodio::DeviceSinkError> {
+fn open_sink_impl(
+    event_tx: mpsc::UnboundedSender<Event>,
+) -> Result<rodio::MixerDeviceSink, rodio::DeviceSinkError> {
     #[cfg(any(
         target_os = "linux",
         target_os = "freebsd",
@@ -280,6 +302,7 @@ fn open_sink_impl() -> Result<rodio::MixerDeviceSink, rodio::DeviceSinkError> {
                     log::info!("opening audio device: {}", name);
                     if let Ok(sink) = rodio::DeviceSinkBuilder::from_device(device.clone())
                         .map(|b| b.with_buffer_size(rodio::cpal::BufferSize::Fixed(8192)))
+                        .map(|b| b.with_error_callback(stream_error_callback(event_tx.clone())))
                         .and_then(|b| b.open_sink_or_fallback())
                     {
                         return Ok(sink);
@@ -293,5 +316,7 @@ fn open_sink_impl() -> Result<rodio::MixerDeviceSink, rodio::DeviceSinkError> {
     }
 
     log::debug!("falling back to default audio device");
-    rodio::DeviceSinkBuilder::open_default_sink()
+    rodio::DeviceSinkBuilder::from_default_device()
+        .map(|b| b.with_error_callback(stream_error_callback(event_tx)))
+        .and_then(|b| b.open_sink_or_fallback())
 }

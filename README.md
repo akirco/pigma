@@ -133,6 +133,13 @@ yay -S pigma
 paru -S pigma
 ```
 
+`macOS`
+
+```sh
+brew tap akirco/pigma
+brew install pigma
+```
+
 ### From source (cargo)
 
 ```sh
@@ -180,7 +187,11 @@ cargo build --release
 
 ## Configuration
 
-Config file location: `~/.config/pigma/config.toml`
+Config file location:
+
+- linux: `~/.config/pigma/config.toml`
+- macOS: `$HOME/Library/Application Support/pigma/config.tomnl`
+- windows:`RoamingAppData`
 
 ### Columns Configuration
 
@@ -436,7 +447,7 @@ title = "<accent>▎</accent> <b>DISCOVER</b>"
 [[navigation.sections.items]]
 name = "每日推荐"  # 同样支持title的标记语法
 api = "recommend_songs"
-title_template = "{name} ({count})"
+title_template = "{name} ({count})" # 同样支持title的标记语法
 ```
 
 ### Theme

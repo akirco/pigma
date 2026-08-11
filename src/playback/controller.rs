@@ -40,7 +40,7 @@ impl PlaybackHandle {
                     PlayerCmd::Play { input, seek_time } => {
                         // Lazy-init the audio sink on first playback.
                         if sink.is_none() {
-                            match player::create_sink() {
+                            match player::create_sink(event_tx.clone()) {
                                 Ok(mut s) => {
                                     s.log_on_drop(false);
                                     sink = Some(s);

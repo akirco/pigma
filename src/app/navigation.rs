@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
 use super::{App, send_event};
-use crate::api::ApiEndpoint;
 use crate::event::{AppEvent, NavigationEvent, PlaybackEvent};
 use crate::playback::scan_local_music;
-use crate::state::ContentState;
+use crate::service::ApiEndpoint;
+use crate::state::{ContentState, Page};
 
 impl App {
     /// 重新加载当前导航项对应的内容。
@@ -363,5 +363,62 @@ impl App {
             }
             None => self.toast("无可用内容刷新".into()),
         }
+    }
+
+    pub(super) fn navigate_to_local(&mut self) {
+        self.state.navigation.page = Page::Main;
+        self.state.navigation.nav.focus_section = 1;
+        if let Some(s) = self.state.navigation.nav.sections.get(1)
+            && let Some(i) = s.items.iter().position(|item| item.name == "本地音乐")
+        {
+            self.state.navigation.nav.section_states[1].select(Some(i));
+        }
+        self.state.navigation.nav.subtitle = Some("本地音乐".into());
+        let sender = self.state.events.sender();
+        send_event(
+            &sender,
+            NavigationEvent::NavSelect("__local_music__".into()).into(),
+        );
+        self.state.navigation.content_selected = 0;
+    }
+
+    pub(super) fn navigate_to_main(&mut self) {
+        self.state.navigation.page = Page::Main;
+
+        let api = self
+            .state
+            .navigation
+            .nav
+            .sections
+            .first()
+            .and_then(|s| s.items.first())
+            .and_then(|i| i.api.clone());
+        if let Some(api) = api {
+            let sender = self.state.events.sender();
+            send_event(&sender, NavigationEvent::NavSelect(api).into());
+        }
+    }
+
+    /// Breadcrumb key for the current page: the last breadcrumb level's
+    /// subtitle, falling back to the focused nav item's name. Distinct pages
+    /// get distinct playback queues.
+    pub(super) fn current_queue_key(&self) -> String {
+        let nav = &self.state.navigation;
+        if let Some(sub) = nav.nav.subtitle.as_deref().filter(|s| !s.trim().is_empty()) {
+            return sub.to_string();
+        }
+        nav.nav
+            .sections
+            .get(nav.nav.focus_section)
+            .and_then(|s| {
+                nav.nav
+                    .section_states
+                    .get(nav.nav.focus_section)
+                    .and_then(|st| st.selected())
+                    .and_then(|i| s.items.get(i))
+            })
+            .map(|item| item.name.clone())
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| "默认队列".into())
     }
 }

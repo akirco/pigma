@@ -153,3 +153,37 @@ jobs:
           commit_email: 'actions@github.com'
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
 
+  homebrew-tap:
+    name: Update Homebrew tap
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/') # 只有在推送 tag 发布时才更新 tap
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tap repository
+        uses: actions/checkout@v7
+        with:
+          repository: akirco/homebrew-pigma
+          ref: main
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Update formula
+        run: ./tap/update.sh "${GITHUB_REF#refs/tags/}"
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Commit and push
+        run: |
+          cd tap
+          git config user.name 'GitHub Actions'
+          git config user.email 'actions@github.com'
+          git add Formula/pigma.rb
+          if git diff --cached --quiet; then
+            echo "No formula changes"
+          else
+            git commit -m "chore: update pigma to ${GITHUB_REF#refs/tags/}"
+            git push
+          fi
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+

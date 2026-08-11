@@ -177,9 +177,18 @@ impl App {
                         if self.queued_playlists.contains(&id) {
                             // 全量曲目此前已并入该歌单队列（内存或已持久化），
                             // 直接激活队列并定位播放，避免重建截断或重复拉取。
+                            // 用歌曲 ID 在队列中定位而非内容列表下标：`a` 添加下一首
+                            // 会在当前歌曲后插入歌曲，队列顺序与内容列表不再一致，
+                            // 若仍按内容下标 `play_index` 会播放错位的歌。
                             let qkey = self.playback.queue_key_for(&key);
                             self.playback.activate_queue(&qkey);
-                            self.playback.play_index(pos);
+                            if let Some(qidx) =
+                                self.playback.queue_songs().iter().position(|s| s.id == id)
+                            {
+                                self.playback.play_index(qidx);
+                            } else {
+                                self.playback.play_songs(&key, songs.to_vec(), pos);
+                            }
                         } else {
                             // 惰性分页歌单：首屏立即播放，剩余曲目后台分批并入同一队列。
                             self.playback.play_songs(&key, songs.to_vec(), pos);

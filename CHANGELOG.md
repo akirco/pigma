@@ -1,3 +1,18 @@
+## [0.2.7] - 2026-08-11
+
+### 🚀 Features
+
+- Add Homebrew tap update workflow for tag releases (akirco)
+- Enhance audio playback error handling and buffering logic (akirco)
+
+### 🚜 Refactor
+
+- Remove ApiEndpoint enum from api.rs and integrate it into service.rs (akirco)
+- *(app)* Implement event handling and navigation improvements (akirco)
+
+### ⚙️ Miscellaneous Tasks
+
+- Update dependencies in Cargo.lock and Cargo.toml for ncm-api and sonar (akirco)
 ## [0.2.6] - 2026-08-10
 
 ### 🚜 Refactor

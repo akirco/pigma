@@ -1,6 +1,7 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use ncm_api::{NcmError, SongInfo, SongQuality};
 use sonar::{PlayUrlResult, Quality, SearchQuery, SonarFinder, Song};
@@ -16,6 +17,22 @@ use super::stream_client::HeadersClient;
 use crate::cache::CacheManager;
 use crate::event::{Event, PlaybackEvent};
 use crate::service::ApiService;
+
+/// 开始播放前预缓冲的最小字节数。约等于 320kbps 下 ~12s、128kbps 下 ~32s 的音频，
+/// 为流下载跟不上播放速度留出余量。达到该阈值或整段下载完成即放行播放。
+const PREBUFFER_BYTES: u64 = 512 * 1024;
+
+/// 预缓冲最长等待时间。网络太慢/流异常时不等死，超时后照常开始播放。
+const PREBUFFER_TIMEOUT: Duration = Duration::from_secs(8);
+
+/// 由流下载进度回调共享的缓冲状态，供开始播放前判断缓冲是否足够。
+#[derive(Clone)]
+struct StreamProgress {
+    /// 当前已下载（已写入存储）的字节数，见 `StreamState.current_position`。
+    buffered: Arc<AtomicU64>,
+    /// 整段流是否已下载完成。
+    completed: Arc<AtomicBool>,
+}
 
 /// Resolves audio inputs for songs via local files, NCM streaming, or sonar fallback.
 #[derive(Clone)]
@@ -71,22 +88,64 @@ impl AudioSource {
     /// recorded when the download actually completes, so the index never
     /// contains partial files — those caused cache misses (and a re-download)
     /// on restart.
-    fn download_settings(
+    ///
+    /// Besides the cache bookkeeping it also tracks the download progress so
+    /// [`Self::wait_for_prebuffer`] can judge whether enough of the stream is
+    /// buffered before playback starts. When `mark_cache` is `false` (临时文件
+    /// 流式播放，未开边听边存) the progress is still tracked but nothing is
+    /// recorded in the cache index.
+    fn tracked_settings(
         &self,
+        mark_cache: bool,
         song: &SongInfo,
         ext: &'static str,
         msong: Option<sonar::Song>,
-    ) -> Settings<HttpStream<HeadersClient>> {
+    ) -> (Settings<HttpStream<HeadersClient>>, StreamProgress) {
         let event_tx = self.event_tx.clone();
         let cache = self.cache.clone();
         let sent = Arc::new(AtomicBool::new(false));
         let song = song.clone();
-        Settings::default().on_progress(move |_, state, _| {
-            if state.phase == StreamPhase::Complete && !sent.swap(true, Ordering::SeqCst) {
+        let progress = StreamProgress {
+            buffered: Arc::new(AtomicU64::new(0)),
+            completed: Arc::new(AtomicBool::new(false)),
+        };
+        let buffered = progress.buffered.clone();
+        let completed = progress.completed.clone();
+        let settings = Settings::default().on_progress(move |_, state, _| {
+            buffered.store(state.current_position, Ordering::SeqCst);
+            if state.phase == StreamPhase::Complete {
+                completed.store(true, Ordering::SeqCst);
+            }
+            if mark_cache && !sent.swap(true, Ordering::SeqCst) {
                 cache.mark_cached(&song, ext, msong.clone());
                 let _ = event_tx.send(PlaybackEvent::Cached(song.id).into());
             }
-        })
+        });
+        (settings, progress)
+    }
+
+    /// 判断缓冲是否足够：等流下载攒够 [`PREBUFFER_BYTES`] 字节（或整段下载完成）
+    /// 才返回，给播放一个头部缓冲，避免流下载跟不上播放速度导致开头就缓冲下溢。
+    /// 若超过 [`PREBUFFER_TIMEOUT`] 仍未达标（网络太慢/流异常），也照常返回，
+    /// 宁可先出声后卡顿，也不让播放无限等待。
+    async fn wait_for_prebuffer(&self, progress: &StreamProgress) {
+        let deadline = tokio::time::Instant::now() + PREBUFFER_TIMEOUT;
+        loop {
+            if progress.completed.load(Ordering::SeqCst)
+                || progress.buffered.load(Ordering::SeqCst) >= PREBUFFER_BYTES
+            {
+                return;
+            }
+            if tokio::time::Instant::now() >= deadline {
+                log::warn!(
+                    "预缓冲超时（{}），仅缓冲 {} 字节，开始播放",
+                    PREBUFFER_TIMEOUT.as_secs_f32(),
+                    progress.buffered.load(Ordering::SeqCst)
+                );
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
     }
 
     /// Stream `url` through the cache layer. When "边听边存" is enabled the file is
@@ -103,31 +162,27 @@ impl AudioSource {
             .await
             .map_err(|e| format!("流初始化失败: {e}"))?;
 
+        let (settings, progress) = self.tracked_settings(self.save_on_play, song, ext, msong);
+
         let reader: Box<dyn AudioReader> = if self.save_on_play {
             let provider = self
                 .cache
                 .create_provider(song, ext)
                 .map_err(|e| format!("缓存创建失败: {e}"))?;
             Box::new(
-                StreamDownload::from_stream(
-                    stream,
-                    provider,
-                    self.download_settings(song, ext, msong),
-                )
-                .await
-                .map_err(|e| format!("流下载失败: {e}"))?,
+                StreamDownload::from_stream(stream, provider, settings)
+                    .await
+                    .map_err(|e| format!("流下载失败: {e}"))?,
             )
         } else {
             Box::new(
-                StreamDownload::from_stream(
-                    stream,
-                    TempStorageProvider::default(),
-                    Settings::default(),
-                )
-                .await
-                .map_err(|e| format!("流下载失败: {e}"))?,
+                StreamDownload::from_stream(stream, TempStorageProvider::default(), settings)
+                    .await
+                    .map_err(|e| format!("流下载失败: {e}"))?,
             )
         };
+
+        self.wait_for_prebuffer(&progress).await;
 
         Ok(SharedReader(Arc::new(Mutex::new(reader))))
     }

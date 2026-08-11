@@ -2,7 +2,6 @@ use crate::{app::App, config::Config, logger::init_logger};
 use crossterm::execute;
 use std::io::stdout;
 
-mod api;
 mod app;
 mod cache;
 mod config;

@@ -40,6 +40,14 @@ pub const THIRD_PARTY_QUEUE_KEY: &str = "第三方搜索";
 /// songs are stored in the single `ncm_search.json`.
 pub const NCM_SEARCH_QUEUE_KEY: &str = "官方搜索";
 
+/// 判断是否为瞬时音频流错误（缓冲下溢/溢出）。这类错误在流下载跟不上播放速度
+/// （如 YouTube）时高频出现，rodio 会自动恢复，应直接忽略。大小写不敏感以覆盖
+/// cpal 的 "Buffer underrun/overrun occurred." 与解码器自带的各种措辞。
+fn is_transient_stream_error(err: &str) -> bool {
+    let lower = err.to_lowercase();
+    lower.contains("underrun") || lower.contains("overrun")
+}
+
 /// Orchestrates audio playback, queue management, and player strategies.
 pub struct PlaybackEngine {
     pub state: PlaybackState,
@@ -443,6 +451,7 @@ impl PlaybackEngine {
     /// playing song.
     pub fn add_next(&mut self, song: Arc<SongInfo>) {
         self.queue.insert_next(vec![song]);
+        self.persist_active_queue();
     }
 
     pub fn next(&mut self) {
@@ -629,9 +638,10 @@ impl PlaybackEngine {
     }
 
     pub fn on_playback_error(&mut self, err: String) {
-        //todo 这种实现可能存在问题，重写
-        // buffer underrun/overrun is transient — rodio recovers automatically
-        if err.contains("buffer underrun") || err.contains("overrun") {
+        // 缓冲下溢/溢出是瞬时事件（如 YouTube 流下载跟不上播放速度），rodio
+        // 会自动恢复，直接忽略，避免误切歌或重复报错。
+        if is_transient_stream_error(&err) {
+            log::warn!("忽略瞬时音频流错误: {err}");
             return;
         }
         // If error is from cached file, delete cache and retry same song
