@@ -183,11 +183,6 @@ pub fn strip_annotation(s: &str) -> String {
         .unwrap_or_default()
 }
 
-/// Clean a song name for search by stripping common annotations.
-pub fn clean_search_query(name: &str) -> String {
-    strip_annotation(name)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

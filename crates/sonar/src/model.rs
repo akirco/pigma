@@ -27,10 +27,15 @@ pub struct Song {
     /// Provider-native id (kugou hash / kuwo rid / bvid / youtube video id),
     /// used when resolving a play URL through the provider.
     pub source_id: String,
+    /// Track title (already cleaned of provider annotations where applicable).
     pub name: String,
+    /// Artist / author name.
     pub singer: String,
+    /// Album or category name (empty when the provider has none).
     pub album: String,
+    /// Duration in milliseconds.
     pub duration: u64,
+    /// Which [`SonarSource`] produced this song.
     pub source: SonarSource,
     /// Cover image URL (empty when the provider has none).
     pub pic_url: String,
@@ -154,11 +159,16 @@ impl<'de> Deserialize<'de> for Song {
     }
 }
 
+/// Third-party audio source a [`Song`] originated from.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum SonarSource {
+    /// Kugou music.
     Kugou,
+    /// Kuwo music.
     Kuwo,
+    /// Bilibili videos (audio track extracted).
     BiliVideo,
+    /// YouTube videos (audio track extracted).
     Youtube,
 }
 
@@ -173,10 +183,14 @@ impl fmt::Display for SonarSource {
     }
 }
 
+/// Requested audio quality tier when resolving a play URL.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Quality {
+    /// Standard bitrate (≈128kbps).
     Standard,
+    /// High bitrate (≈320kbps).
     High,
+    /// Lossless (flac / sq where the provider supports it).
     Lossless,
 }
 
@@ -192,14 +206,18 @@ impl fmt::Display for Quality {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SearchQuery {
+    /// Free-text search keyword.
     pub keyword: String,
+    /// 1-based page number (defaults to 1).
     pub page: Option<u32>,
+    /// Results per page (defaults to 30).
     pub page_size: Option<u32>,
     /// Optional expected duration in milliseconds, used as a scoring hint.
     pub duration: Option<u64>,
 }
 
 impl SearchQuery {
+    /// Build a query with the keyword and default page/page-size.
     pub fn new(keyword: impl Into<String>) -> Self {
         Self {
             keyword: keyword.into(),
@@ -209,35 +227,48 @@ impl SearchQuery {
         }
     }
 
+    /// Set the page number.
     pub fn with_page(mut self, page: u32) -> Self {
         self.page = Some(page);
         self
     }
 
+    /// Set the page size.
     pub fn with_page_size(mut self, page_size: u32) -> Self {
         self.page_size = Some(page_size);
         self
     }
 
+    /// Attach the expected duration as a match-score hint.
     pub fn with_duration(mut self, duration_ms: u64) -> Self {
         self.duration = Some(duration_ms);
         self
     }
 }
 
+/// Combined results for a single query from one provider.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
+    /// Matching songs.
     pub songs: Vec<Song>,
+    /// Source these songs came from.
     pub source: SonarSource,
+    /// Echo of the query that produced these results.
     pub query: SearchQuery,
+    /// Total hit count if the provider reports it (otherwise `None`).
     pub total: Option<u32>,
 }
 
+/// A resolved, playable audio URL for a [`Song`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlayUrlResult {
+    /// Direct audio stream URL.
     pub url: String,
+    /// Quality tier the returned URL corresponds to.
     pub quality: Quality,
+    /// File size in bytes, if known.
     pub size: Option<u64>,
+    /// Bitrate in kbps, if known.
     pub bitrate: Option<u32>,
 }
 

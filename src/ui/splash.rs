@@ -11,7 +11,7 @@ use crate::config::Theme;
 use crate::layout::SplashLayout;
 use crate::state::{LogLevel, SplashState};
 
-const LOGO: &[&str] = &[
+pub(super) const LOGO: &[&str] = &[
     "█▀▀▀▄ ▀█▀ ▄▀▀▀▀ █▄ ▄█ ▄▀▀▀▄",
     "█▄▄▄▀  █  █ ▀▀█ █ ▀ █ █▄▄▄█",
     "█     ▄█▄ ▀▄▄▄▀ █   █ █   █",
@@ -125,7 +125,7 @@ fn render_logs(f: &mut Frame, splash: &SplashState, colors: &Theme, area: Rect) 
             ),
             Span::styled(tag.to_string(), Style::default().fg(tag_color)),
             Span::raw(" "),
-            Span::styled(entry.text.clone(), Style::default().fg(colors.muted)),
+            Span::styled(entry.text.as_str(), Style::default().fg(colors.muted)),
         ]);
         f.render_widget(Paragraph::new(line), row_area);
     }
@@ -135,12 +135,11 @@ fn render_tag(f: &mut Frame, colors: &Theme, area: Rect) {
     let line = Line::from(vec![
         Span::styled("NETEASE MUSIC TUI ", Style::default().fg(colors.muted)),
         Span::styled(
-            "v0.1.0",
+            env!("CARGO_PKG_VERSION"),
             Style::default()
                 .fg(colors.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled("  //  [ PRESS ANY KEY ]", Style::default().fg(colors.muted)),
     ]);
     f.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
 }

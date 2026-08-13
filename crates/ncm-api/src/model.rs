@@ -82,7 +82,7 @@ impl SongQuality {
         }
     }
 
-    /// 是否是有损编码（aac）还是无损（flac）
+    /// Whether it is lossy encoding (aac) or lossless (flac)
     pub fn is_lossy(self) -> bool {
         matches!(self, Self::Standard | Self::Higher | Self::Extreme)
     }
@@ -95,7 +95,7 @@ pub struct SongQualityState {
     pub actual: Option<SongQuality>,
 }
 
-// --- 解析上下文（编译期安全，替代字符串） ---
+// --- Parse context (compile-time safe, replacing string hints) ---
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SongContext {
@@ -107,7 +107,7 @@ pub(crate) enum SongContext {
     SingerSongs,
 }
 
-// --- 公共解析工具 ---
+// --- Shared parsing utilities ---
 
 pub(crate) fn str_val(v: &Value, key: &str) -> String {
     v.get(key)
@@ -161,7 +161,7 @@ pub(crate) fn pic_url_from_id(pic_id: u64) -> String {
     format!("https://p1.music.126.net/{hash}/{pic_id}.jpg")
 }
 
-// --- 工具 ---
+// --- Utilities ---
 
 pub(crate) fn value_get<'a>(v: &'a Value, path: &[&str]) -> Option<&'a Value> {
     let mut current = v;

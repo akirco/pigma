@@ -1,3 +1,5 @@
+//! Logging setup and the in-app log buffer/sink surfaced in the splash view.
+
 use log::{Level, Log, Metadata, Record};
 use serde::{Deserialize, Serialize};
 use std::fs::OpenOptions;

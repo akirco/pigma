@@ -1,3 +1,6 @@
+//! Main application state (`App`) and the wiring of views, events, navigation,
+//! search, login and theming for the pigma TUI.
+
 mod builder;
 mod content;
 mod event;
@@ -48,9 +51,9 @@ pub struct App {
     pub finder: Arc<SonarFinder>,
     /// Original sonar songs for search results, keyed by synthetic song id.
     pub sonar_songs: Arc<Mutex<HashMap<u64, Arc<Song>>>>,
-    /// 用户"我喜欢的音乐"歌曲 ID 集合，与 `PlaybackEngine` 共享同一 `Arc`。
+    /// Song ID set of the user's "我喜欢的音乐" playlist, sharing the same `Arc` as `PlaybackEngine`.
     pub liked_ids: Arc<Mutex<HashSet<u64>>>,
-    /// 惰性分页歌单：已把全量曲目并入播放队列的歌单 ID，避免重复回车重复拉取/截断队列。
+    /// Playlists whose full tracks have already been merged into the playback queue for lazy pagination, avoiding repeated Enter presses refetching/truncating the queue.
     queued_playlists: HashSet<u64>,
 }
 
@@ -64,8 +67,8 @@ impl App {
         let theme_registry = ThemeRegistry::new(config.themes.clone());
         let command_panel = Self::build_command_panel(&theme_registry);
 
-        // `normal`（国内默认）：仅 YouTube 走代理；`reversed`（海外）：除 YouTube
-        // 外全部走代理；`both`：全部走代理。
+        // `normal` (domestic default): only YouTube goes through the proxy;
+        // `reversed` (overseas): everything except YouTube; `both`: everything.
         let ncm_proxy = Self::proxy_for(&config, builder::ProxyKind::NonYoutube);
         let search_proxy = Self::proxy_for(&config, builder::ProxyKind::NonYoutube);
         let youtube_proxy = Self::proxy_for(&config, builder::ProxyKind::Youtube);
@@ -92,9 +95,9 @@ impl App {
         };
         let base_dir = pigma_cache_dir();
 
-        let finder = Self::build_finder(&config, search_proxy, youtube_proxy);
+        let finder = Self::build_finder(&config, search_proxy, youtube_proxy)?;
 
-        // Search providers offered in the search bar: 网易云 always first,
+        // Search providers offered in the search bar: NetEase Cloud always first,
         // followed by the configured sonar fallback sources.
         let mut search_providers = vec![SearchProvider::Ncm];
         for source in finder
@@ -107,11 +110,11 @@ impl App {
             }
         }
 
-        let cache = CacheManager::new(
+        let cache = Arc::new(CacheManager::new(
             cache_dir,
             base_dir.clone(),
             config.cache.cache_template.clone(),
-        );
+        ));
 
         let service = ApiService::new(api.clone(), cache.clone());
 
@@ -129,9 +132,9 @@ impl App {
             events,
             border,
             splash: SplashState::default(),
+            login: LoginState::default(),
             navigation: NavigationState {
                 page: Page::Splash,
-                login: LoginState::default(),
                 user: None,
                 nav: NavState::from_config(&config.navigation),
                 content: Arc::new(ContentState::Empty),
@@ -141,6 +144,7 @@ impl App {
                 table_mode: TableMode::Row,
                 table_state: TableState::default(),
                 playlist_selected: 0,
+                queue_tab_scroll_x: 0,
                 search: SearchState::default(),
                 pagination: None,
                 generation: 0,
@@ -155,7 +159,6 @@ impl App {
             toast_msg: String::new(),
             toast_time: None,
             playerbar_area: Rect::default(),
-            queue_tab_scroll_x: 0,
         };
         state.navigation.search.providers = search_providers;
         Ok(Self {
@@ -196,13 +199,35 @@ impl App {
         self.state.toast_time = Some(Instant::now());
     }
 
+    /// Adjust playback volume by `delta` (fraction of 0..=1), clamped to bounds
+    /// and surfaced as a toast. Keyboard `+`/`-` mirrors the playerbar scroll.
+    pub fn adjust_volume(&mut self, delta: f64) {
+        let new = (self.playback.state.volume + delta).clamp(0.0, 1.0);
+        self.playback.set_volume(new);
+        self.toast(format!("   {:.0}%", new * 100.0));
+    }
+
+    /// Cycle the navigation bar position (left → right → top → bottom) at
+    /// runtime and persist the new value so it survives restarts.
+    pub fn cycle_nav_position(&mut self) {
+        self.config.navigation_position = self.config.navigation_position.cycle();
+        self.config.save();
+        let pos = self.config.navigation_position;
+        self.toast(format!("◧ 导航栏位置: {}", pos.label()));
+    }
+
     pub async fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
         self.start_splash_boot();
         while self.state.running {
             terminal.draw(|frame| self.draw(frame))?;
             self.handle_events().await?;
 
-            if self.state.splash.boot_complete && self.state.navigation.page == Page::Splash {
+            let splash_ready = self.state.splash.shown_at.elapsed().as_secs_f64()
+                >= self.config.splash_duration_secs;
+            if self.state.splash.boot_complete
+                && splash_ready
+                && self.state.navigation.page == Page::Splash
+            {
                 if self.state.offline {
                     self.navigate_to_local();
                 } else if self.service.client().is_logged_in() {
@@ -222,7 +247,7 @@ impl App {
                         }
                     });
                 } else {
-                    self.state.navigation.page = Page::Login;
+                    self.navigate_to_main();
                 }
             }
         }

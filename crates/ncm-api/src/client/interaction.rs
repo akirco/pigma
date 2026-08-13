@@ -3,12 +3,12 @@ use crate::{error::NcmError, model::*};
 use serde_json::Value;
 
 impl NcmClient {
-    // ===== 交互 =====
+    // ===== Interaction =====
 
-    /// 喜欢/取消喜欢歌曲
+    /// Like/unlike a song
     ///
-    /// * `song_id` — 歌曲 ID
-    /// * `like` — `true` 喜欢，`false` 取消
+    /// * `song_id` — song ID
+    /// * `like` — `true` to like, `false` to unlike
     pub async fn like(&self, song_id: u64, like: bool) -> Result<Msg, NcmError> {
         let id_str = song_id.to_string();
         let like_str = if like { "true" } else { "false" };
@@ -23,9 +23,9 @@ impl NcmClient {
         parse_msg(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// FM 垃圾桶（不喜欢当前 FM 歌曲）
+    /// FM trash (dislike the current FM song)
     ///
-    /// * `song_id` — 歌曲 ID
+    /// * `song_id` — song ID
     pub async fn fm_trash(&self, song_id: u64) -> Result<Msg, NcmError> {
         let id_str = song_id.to_string();
         let params = vec![("alg", "RT"), ("songId", id_str.as_str()), ("time", "25")];
@@ -36,9 +36,9 @@ impl NcmClient {
         parse_msg(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 每日推荐歌曲标记为不感兴趣
+    /// Mark a daily recommended song as not interested
     ///
-    /// * `song_id` — 歌曲 ID
+    /// * `song_id` — song ID
     pub async fn recommend_song_dislike(&self, song_id: u64) -> Result<SongInfo, NcmError> {
         let id_str = song_id.to_string();
         let params = vec![
@@ -56,9 +56,9 @@ impl NcmClient {
         parse_song_info(data, SongContext::Rmds).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 每日签到
+    /// Daily sign-in
     ///
-    /// * `type` — `0`（PC）或 `1`（移动端）
+    /// * `type` — `0` (PC) or `1` (mobile)
     pub async fn daily_task(&self, r#type: &str) -> Result<Msg, NcmError> {
         let params = vec![("type", r#type)];
         let result = self
@@ -68,11 +68,11 @@ impl NcmClient {
         parse_msg(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 听歌打卡 — 上报歌曲播放记录
+    /// Listening check-in — report a song play record
     ///
-    /// * `song_id` — 歌曲 ID
-    /// * `time_ms` — 播放时长（毫秒）
-    /// * `source_id` — 来源歌单 ID（可选）
+    /// * `song_id` — song ID
+    /// * `time_ms` — play duration (milliseconds)
+    /// * `source_id` — source playlist ID (optional)
     pub async fn report_play(
         &self,
         song_id: u64,

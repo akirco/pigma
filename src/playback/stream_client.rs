@@ -1,17 +1,17 @@
 use reqwest::header::{HeaderMap, HeaderValue, REFERER, USER_AGENT};
 use stream_download::http::{Client, RANGE_HEADER_KEY, format_range_header_bytes};
 
-/// 避免裸 reqwest 客户端被 CDN 拒绝请求。
+/// Prevents a bare reqwest client from being rejected by CDNs.
 const BROWSER_UA: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:153.0) Gecko/20100101 Firefox/153.0";
 
-/// 一个 [`stream_download::http::Client`]，为每个请求装饰浏览器风格的头部。
-/// Bilibili 的 `upos-*` CDN 主机在缺少浏览器 User-Agent 和
-/// `Referer: https://www.bilibili.com` 时会返回 403。
+/// A [`stream_download::http::Client`] that decorates every request with browser-style headers.
+/// Bilibili's `upos-*` CDN hosts return 403 when the browser User-Agent and
+/// `Referer: https://www.bilibili.com` are missing.
 ///
-/// 被封装的 [`reqwest::Client`] 由外部注入，以便调用者可以控制代理；
-/// `create()`（trait 所要求的，无参数）回退到裸客户端，且仅由
-/// `StreamDownload::new` 使用。推荐使用 [`HeadersClient::new`] 配合
-/// [`StreamDownload::from_stream`] 代替。
+/// The wrapped [`reqwest::Client`] is injected externally so callers can control the proxy;
+/// `create()` (required by the trait, no arguments) falls back to a bare client and is only
+/// used by `StreamDownload::new`. Prefer [`HeadersClient::new`] together with
+/// [`StreamDownload::from_stream`] instead.
 #[derive(Clone)]
 pub struct HeadersClient {
     inner: reqwest::Client,

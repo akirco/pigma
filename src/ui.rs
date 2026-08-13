@@ -1,3 +1,6 @@
+//! ratatui widgets and rendering helpers used by the views (tables, player bar,
+//! navigation, lyrics, toasts, spinners, breadcrumbs, ...).
+
 mod block;
 mod breadcrumb;
 mod command_panel;
@@ -19,6 +22,7 @@ mod title;
 mod toast;
 mod topbar;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use ratatui::Frame;
@@ -27,7 +31,7 @@ use crate::app::App;
 use crate::config::NavPosition;
 use crate::layout;
 use crate::state::Page;
-use crate::ui::block::{BlockStyle, create_block};
+use crate::ui::block::{BlockStyle, CornerBlock};
 use crate::ui::title::render_title;
 
 pub fn draw(f: &mut Frame, app: &mut App) {
@@ -59,7 +63,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         }
         Page::Login => {
             let lay = layout::login(area);
-            login::draw(f, &app.state.navigation.login, &bs, &lay);
+            login::draw(f, &app.state.login, &bs, &lay);
         }
         page => {
             let lay = layout::build_layout(area, page, app.config.navigation_position);
@@ -110,20 +114,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     }
 
                     let nav = &app.state.navigation.nav;
-                    let current_item = nav
-                        .section_states
-                        .get(nav.focus_section)
-                        .and_then(|st| st.selected())
-                        .and_then(|i| nav.sections.get(nav.focus_section)?.items.get(i));
+                    let current_item = nav.selected_item();
 
                     let title = {
                         let nst = &app.state.navigation;
                         let focus = nst.nav.focus_section;
-                        let selected = nst
-                            .nav
-                            .section_states
-                            .get(focus)
-                            .and_then(|st| st.selected());
+                        let selected = nst.nav.selected_index();
                         let generation = nst.generation;
                         let count = nst.content.len();
                         let cached = nst.title_cache.borrow();
@@ -133,7 +129,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                             && g == generation
                             && c == count
                         {
-                            title.clone()
+                            Arc::clone(title)
                         } else {
                             drop(cached);
                             let name = current_item
@@ -144,8 +140,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                                 .as_ref()
                                 .map(|p| p.total as usize)
                                 .unwrap_or(count);
-                            // 内容是分页加载（总数已知）时，像音乐云盘那样显示 `count/total`；
-                            // 非分页内容只显示已加载数。各导航项也可用 `title_template` 覆盖。
+                            // When content is paged (total known), show `count/total` like the
+                            // music cloud drive; non-paged content shows only the loaded count.
+                            // Each nav item can also override this via `title_template`.
                             let show_total = nst.pagination.as_ref().is_some_and(|p| p.total > 0);
                             let template = current_item
                                 .and_then(|item| item.title_template.as_deref())
@@ -154,17 +151,17 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                                 } else {
                                     "\u{25BA} {name} ({count}) \u{25C4}"
                                 });
-                            let title = render_title(template, name, count, total);
+                            let title = Arc::new(render_title(template, name, count, total));
                             *nst.title_cache.borrow_mut() =
-                                Some((title.clone(), focus, selected, generation, count));
+                                Some((Arc::clone(&title), focus, selected, generation, count));
                             title
                         }
                     };
-                    let block = create_block(&title, &bs, false);
+                    let block = CornerBlock::from_color(&bs, bs.colors.bg).title(&title, bs.colors);
                     let inner = block.inner(lay.content);
                     f.render_widget(block, lay.content);
 
-                    let api = current_item.and_then(|item| item.api.as_deref());
+                    let api = nav.selected_api();
 
                     content::render_content(
                         f,
@@ -194,7 +191,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         app.state.navigation.playlist_selected,
                         &bs,
                         &app.config.titles.playlist,
-                        &mut app.state.queue_tab_scroll_x,
+                        &mut app.state.navigation.queue_tab_scroll_x,
                         lay.content,
                     );
                 }

@@ -7,7 +7,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Padding, Paragraph};
 
 use super::BlockStyle;
-use super::create_block;
+use super::block::CornerBlock;
 use crate::config::Theme;
 use crate::playback::LyricLine;
 use crate::playback::PlaybackState;
@@ -50,7 +50,7 @@ pub(super) fn draw(
     area: Rect,
 ) {
     let colors = bs.colors;
-    let block = create_block(title, bs, false);
+    let block = CornerBlock::from_color(bs, bs.colors.bg).title(title, bs.colors);
     let inner = block.inner(area);
     f.render_widget(block.block_padding(Padding::vertical(1)), area);
 

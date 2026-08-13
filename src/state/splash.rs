@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogLevel {
     Success,
@@ -17,6 +19,8 @@ pub struct SplashState {
     pub status: String,
     pub logs: Vec<SplashLogEntry>,
     pub boot_complete: bool,
+    /// When the splash started being shown (used for the minimum display duration).
+    pub shown_at: Instant,
 }
 
 impl Default for SplashState {
@@ -26,6 +30,7 @@ impl Default for SplashState {
             status: "INITIALIZING SYSTEM...".to_string(),
             logs: Vec::new(),
             boot_complete: false,
+            shown_at: Instant::now(),
         }
     }
 }

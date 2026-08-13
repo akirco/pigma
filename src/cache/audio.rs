@@ -1,6 +1,7 @@
 use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -138,7 +139,7 @@ impl CacheManager {
                     accessed_at: now,
                     pic_url: song.pic_url.clone(),
                     uploaded_at: 0,
-                    thirdparty,
+                    thirdparty: thirdparty.map(Arc::new),
                 },
             );
         self.cached_total_bytes

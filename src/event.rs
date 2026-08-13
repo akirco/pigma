@@ -1,3 +1,7 @@
+//! Event model and the `EventHandler` channel that bridges async workers and the
+//! main render loop (`Event`, `AppEvent`, `AuthEvent`, `PlaybackEvent`,
+//! `NavigationEvent`, ...).
+
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -66,7 +70,7 @@ pub enum PlaybackEvent {
     LikeSong(u64, bool),
     DislikeSong(u64),
     Cached(u64),
-    /// 云端"我喜欢的音乐"列表已拉取/更新，主线程据此刷新 `PlaybackState.liked`。
+    /// The cloud "我喜欢的音乐" list has been fetched/updated; the main thread refreshes `PlaybackState.liked` from it.
     LikedUpdated,
     /// Append lazily-paged songs to the queue identified by `key` (background
     /// full-list load after Enter on a playlist page). Songs are shared `Arc`s
@@ -123,10 +127,10 @@ pub enum CommandPanelAction {
     Select,
 }
 
-/// 子事件枚举直接转换为 Event（调用方使用 .into() 时需要此路径）。
-/// From<$sub> for AppEvent 不再生成，因为所有调用方都直接 .into() → Event，
-/// 不经过 AppEvent 中间转换。From<AppEvent> for Event 单独保留，
-/// 用于 AppEvent::Quit 等直接构造 AppEvent 变体的场景。
+/// Sub-event enums convert directly into `Event` (callers need this path when using `.into()`).
+/// `From<$sub> for AppEvent` is no longer generated because all callers go straight
+/// `.into()` → `Event` without the `AppEvent` intermediate step. `From<AppEvent> for Event`
+/// is kept separately for cases that construct an `AppEvent` variant directly, such as `AppEvent::Quit`.
 macro_rules! impl_from_sub_event {
     ($variant:ident, $sub:ty) => {
         impl From<$sub> for Event {

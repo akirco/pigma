@@ -1,6 +1,6 @@
 [package]
 name = "pigma"
-version = "0.2.7"
+version = "0.2.8"
 edition = "2024"
 description = "A netease cloud music client"
 repository = "https://github.com/akirco/pigma.git"
@@ -35,21 +35,10 @@ ratatui = {
     "underline-color",
   ]
 }
-ratatui-image = {
-  version = "11.0.6",
-  default-features = false,
-  features = ["crossterm"]
-}
-reqwest = {
-  version = "0.13.4",
-  default-features = false,
-  features = ["rustls-no-provider"]
-}
-rodio = {
-  version = "0.22.2",
-  default-features = false,
-  features = ["flac", "mp3", "mp4", "playback", "vorbis", "wav"]
-}
+ratatui-image = { version = "11.0.6", default-features = false, features = ["crossterm"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["rustls-no-provider"] }
+rodio = { version = "0.22.2", default-features = false, features = ["flac", "mp3", "mp4", "playback", "vorbis", "wav"] }
+# rodio = { version = "0.22.2", default-features = false, features = ["playback", "symphonia-aac", "symphonia-flac", "symphonia-isomp4", "symphonia-mp3", "symphonia-vorbis", "symphonia-wav"] }
 rustls = {
   version = "0.23.43",
   default-features = false,
@@ -61,15 +50,8 @@ rustls = {
 serde = { version = "1.0.229", features = ["derive", "rc"] }
 serde_json = "1.0.151"
 sonar = { path = "crates/sonar" }
-stream-download = {
-  version = "0.24.3",
-  default-features = false,
-  features = ["async-read", "reqwest", "temp-storage"]
-}
-time = {
-  version = "0.3.55",
-  features = ["formatting", "local-offset", "macros"]
-}
+stream-download = { version = "0.24.3", default-features = false, features = ["async-read", "reqwest", "temp-storage"] }
+time = { version = "0.3.55", features = ["formatting", "local-offset", "macros"] }
 tokio = {
   version = "1.53.1",
   features = [
@@ -89,6 +71,7 @@ libc = "0.2.189"
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
 [profile.release]
+# opt-level = 3
 opt-level = "s"
 strip = true
 lto = true

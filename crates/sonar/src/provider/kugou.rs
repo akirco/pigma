@@ -4,10 +4,13 @@ use crate::model::{
     PlayUrlResult, Quality, SearchQuery, SearchResult, SonarSource, Song, SongMeta, make_song_id,
 };
 use crate::provider::SonarProvider;
+use crate::provider::{PRIORITY_KUGOU, build_client};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::Value;
 
+/// Kugou search/play provider. Resolves candidates at standard / high (320k)
+/// and lossless (sq) quality from the track-CDN API.
 #[derive(Debug)]
 pub struct KugouProvider {
     client: Client,
@@ -15,21 +18,21 @@ pub struct KugouProvider {
 }
 
 impl KugouProvider {
-    pub fn new(enable_flac: bool) -> Self {
+    /// Build a provider with no proxy.
+    pub fn new(enable_flac: bool) -> Result<Self> {
         Self::with_proxy(enable_flac, "")
     }
 
-    pub fn with_proxy(enable_flac: bool, proxy_url: &str) -> Self {
-        let mut builder =
-            Client::builder().user_agent("Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36");
-        if !proxy_url.is_empty() {
-            builder = builder.proxy(reqwest::Proxy::all(proxy_url).expect("invalid proxy url"));
-        }
-        let client = builder.build().expect("Failed to create HTTP client");
-        Self {
+    /// Build a provider, routing requests through `proxy_url` (empty = direct).
+    pub fn with_proxy(enable_flac: bool, proxy_url: &str) -> Result<Self> {
+        let client = build_client(
+            proxy_url,
+            "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36",
+        )?;
+        Ok(Self {
             client,
             enable_flac,
-        }
+        })
     }
 
     /// The base `hash` is required for every candidate; higher-quality hashes
@@ -211,7 +214,7 @@ impl SonarProvider for KugouProvider {
     }
 
     fn priority(&self) -> u8 {
-        10
+        PRIORITY_KUGOU
     }
 
     async fn get_lyrics(&self, song: &Song) -> Result<Option<String>> {
@@ -308,7 +311,7 @@ mod tests {
         };
         let song = song_with_meta(meta);
 
-        let with_flac = KugouProvider::new(true);
+        let with_flac = KugouProvider::new(true).unwrap();
         let got = with_flac.candidate_hashes(&song);
         assert_eq!(
             got,
@@ -319,7 +322,7 @@ mod tests {
             ]
         );
 
-        let without_flac = KugouProvider::new(false);
+        let without_flac = KugouProvider::new(false).unwrap();
         let got = without_flac.candidate_hashes(&song);
         assert_eq!(
             got,
@@ -334,7 +337,7 @@ mod tests {
     fn candidate_hashes_skips_missing_hashes() {
         ensure_crypto();
         let song = song_with_meta(SongMeta::default());
-        let provider = KugouProvider::new(true);
+        let provider = KugouProvider::new(true).unwrap();
         let got = provider.candidate_hashes(&song);
         assert_eq!(got, vec![("base".to_string(), Quality::Standard)]);
     }
@@ -348,7 +351,7 @@ mod tests {
             "sqhash": "sq",
             "album_id": "999",
         });
-        let provider = KugouProvider::new(true);
+        let provider = KugouProvider::new(true).unwrap();
         let meta = provider.build_meta(&raw);
         assert_eq!(meta.high_hash.as_deref(), Some("hq"));
         assert_eq!(meta.lossless_hash.as_deref(), Some("sq"));

@@ -3,13 +3,13 @@ use crate::{error::NcmError, model::*};
 use serde_json::Value;
 
 impl NcmClient {
-    // ===== 搜索 =====
+    // ===== Search =====
 
-    /// 搜索单曲
+    /// Search for songs
     ///
-    /// * `keyword` — 关键词
-    /// * `offset` — 偏移量
-    /// * `limit` — 数量
+    /// * `keyword` — search keyword
+    /// * `offset` — offset
+    /// * `limit` — count
     pub async fn search_song(
         &self,
         keyword: &str,
@@ -35,11 +35,11 @@ impl NcmClient {
         Ok(SearchResult { songs, total })
     }
 
-    /// 搜索歌单
+    /// Search for playlists
     ///
-    /// * `keyword` — 关键词
-    /// * `offset` — 偏移量
-    /// * `limit` — 数量
+    /// * `keyword` — search keyword
+    /// * `offset` — offset
+    /// * `limit` — count
     pub async fn search_songlist(
         &self,
         keyword: &str,
@@ -60,11 +60,11 @@ impl NcmClient {
         parse_song_list(&value, &["result", "playlists"]).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 搜索歌手
+    /// Search for artists
     ///
-    /// * `keyword` — 关键词
-    /// * `offset` — 偏移量
-    /// * `limit` — 数量
+    /// * `keyword` — search keyword
+    /// * `offset` — offset
+    /// * `limit` — count
     pub async fn search_singer(
         &self,
         keyword: &str,
@@ -85,11 +85,11 @@ impl NcmClient {
         parse_singer_info(&value, &["result", "artists"]).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 搜索专辑
+    /// Search for albums
     ///
-    /// * `keyword` — 关键词
-    /// * `offset` — 偏移量
-    /// * `limit` — 数量
+    /// * `keyword` — search keyword
+    /// * `offset` — offset
+    /// * `limit` — count
     pub async fn search_album(
         &self,
         keyword: &str,
@@ -110,7 +110,7 @@ impl NcmClient {
         parse_song_list(&value, &["result", "albums"]).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 获取热搜榜
+    /// Get the hot search list
     pub async fn search_hot(&self) -> Result<Vec<HotSearchItem>, NcmError> {
         let result = self.request_weapi("/api/hotsearchlist/get", &[]).await?;
         let value: Value = serde_json::from_str(&result)?;
@@ -118,11 +118,11 @@ impl NcmClient {
         parse_hot_search(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 搜索歌词
+    /// Search lyrics
     ///
-    /// * `keyword` — 关键词
-    /// * `offset` — 偏移量
-    /// * `limit` — 数量
+    /// * `keyword` — search keyword
+    /// * `offset` — offset
+    /// * `limit` — count
     pub async fn search_lyrics(
         &self,
         keyword: &str,

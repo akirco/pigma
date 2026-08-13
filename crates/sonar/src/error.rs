@@ -1,5 +1,8 @@
 use thiserror::Error;
 
+/// Errors produced across the sonar search/resolve pipeline. Most variants also
+/// surface as the `Err` path of a per-provider call; the finder logs and skips
+/// failing providers rather than propagating them.
 #[derive(Error, Debug)]
 pub enum SonarError {
     #[error("Network error: {0}")]

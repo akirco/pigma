@@ -8,14 +8,14 @@ pub struct BorderConfig {
     pub enabled: bool,
     #[serde(default)]
     pub rounded: bool,
-    /// 横竖边框是否跟随 corner_color 的颜色
+    /// Whether the horizontal and vertical borders follow corner_color
     #[serde(default)]
     pub follow_corner_color: bool,
-    /// 边框渐变预设（warm / rainbow / turbo / spectral / viridis / cubehelix）
-    /// None = 纯色，Some = 渐变
+    /// Border gradient preset (warm / rainbow / turbo / spectral / viridis / cubehelix)
+    /// None = solid color, Some = gradient
     #[serde(default)]
     pub border_gradient: Option<GradientPreset>,
-    /// 渐变流动速度，0 = 静态，>0 = 流动
+    /// Gradient animation speed, 0 = static, >0 = animated
     #[serde(default)]
     pub border_gradient_speed: f64,
 }

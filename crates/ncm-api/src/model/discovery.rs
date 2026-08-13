@@ -2,7 +2,7 @@ use super::song::SongInfo;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-// --- 发现 / 榜单模型 ---
+// --- Discovery / toplist models ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopList {
@@ -49,7 +49,7 @@ impl From<i32> for TargetType {
     }
 }
 
-// --- 发现 / 榜单解析 ---
+// --- Discovery / toplist parsing ---
 
 pub(crate) fn parse_toplist(value: &Value) -> Result<Vec<TopList>, String> {
     let array = value["list"].as_array().ok_or("list not found")?;

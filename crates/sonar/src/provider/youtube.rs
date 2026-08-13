@@ -3,6 +3,7 @@ use crate::model::{
     PlayUrlResult, Quality, SearchQuery, SearchResult, SonarSource, Song, SongMeta, make_song_id,
 };
 use crate::provider::SonarProvider;
+use crate::provider::{PRIORITY_YOUTUBE, build_client};
 use crate::util::parse_duration_str;
 use async_trait::async_trait;
 use y7dl::Client;
@@ -16,23 +17,23 @@ pub struct YoutubeProvider {
 }
 
 impl YoutubeProvider {
-    pub fn new() -> Self {
+    /// Build a provider with no proxy.
+    pub fn new() -> Result<Self> {
         Self::with_proxy("")
     }
 
-    pub fn with_proxy(proxy_url: &str) -> Self {
-        let client = if proxy_url.is_empty() {
-            Client::new()
-        } else {
-            Client::with_proxy(proxy_url)
-        };
-        Self { client }
+    /// Build a provider, routing requests through `proxy_url` (empty = direct).
+    pub fn with_proxy(proxy_url: &str) -> Result<Self> {
+        let http = build_client(proxy_url, "Mozilla/5.0")?;
+        Ok(Self {
+            client: Client::with_http_client(http),
+        })
     }
 }
 
 impl Default for YoutubeProvider {
     fn default() -> Self {
-        Self::new()
+        Self::new().expect("direct youtube client")
     }
 }
 
@@ -117,6 +118,6 @@ impl SonarProvider for YoutubeProvider {
     }
 
     fn priority(&self) -> u8 {
-        30
+        PRIORITY_YOUTUBE
     }
 }

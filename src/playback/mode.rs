@@ -1,7 +1,7 @@
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
-/// 播放模式。
+/// Playback mode.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum PlayMode {
     Sequential,

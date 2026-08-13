@@ -23,7 +23,7 @@ pub(super) struct CacheEntry {
     #[serde(default)]
     pub(super) uploaded_at: u64,
     #[serde(default)]
-    pub(super) thirdparty: Option<sonar::Song>,
+    pub(super) thirdparty: Option<Arc<sonar::Song>>,
 }
 
 impl Serialize for CacheEntry {
@@ -58,6 +58,13 @@ pub(super) type CacheIndex = HashMap<u64, CacheEntry>;
 pub(super) struct CacheIndexFile {
     #[serde(default)]
     pub(super) songs: HashMap<u64, CacheEntry>,
+}
+
+/// Borrowed view of [`CacheIndexFile`] used when serializing: avoids cloning the
+/// entire index map just to write it to disk.
+#[derive(Serialize)]
+struct CacheIndexFileRef<'a> {
+    songs: &'a HashMap<u64, CacheEntry>,
 }
 
 impl CacheManager {
@@ -129,9 +136,7 @@ impl CacheManager {
         }
         let snapshot = {
             let index = index.read().unwrap_or_else(|e| e.into_inner());
-            let file = CacheIndexFile {
-                songs: index.clone(),
-            };
+            let file = CacheIndexFileRef { songs: &index };
             serde_json::to_string(&file).unwrap_or_default()
         };
         let path = Self::index_path(downloads_dir);
@@ -142,7 +147,7 @@ impl CacheManager {
 
     /// The original third-party (sonar) song recorded for a cached song id, if
     /// any. Used to re-resolve playback/lyrics/covers after a restart.
-    pub fn thirdparty_song(&self, song_id: u64) -> Option<sonar::Song> {
+    pub fn thirdparty_song(&self, song_id: u64) -> Option<Arc<sonar::Song>> {
         self.index
             .read()
             .unwrap_or_else(|e| e.into_inner())

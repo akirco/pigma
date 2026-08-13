@@ -5,7 +5,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const SAVE_INTERVAL: Duration = Duration::from_secs(10);
 
-/// 生成 52 位十六进制设备指纹（与官方客户端 `generateDeviceId` 一致）
+/// Generate a 52-character hexadecimal device fingerprint (matches the official client's
+/// `generateDeviceId`)
 fn generate_device_id() -> String {
     const HEX: &[u8] = b"0123456789ABCDEF";
     let mut s = String::with_capacity(52);
@@ -15,17 +16,18 @@ fn generate_device_id() -> String {
     s
 }
 
-/// 登录后服务器下发的持久化 Cookie + 客户端生成的会话标识
+/// The persistent Cookie issued by the server after login plus the client-generated session
+/// identifiers
 pub struct CookieStore {
-    /// 持久化 cookies（来自 set-cookie，序列化到磁盘）
+    /// Persistent cookies (from set-cookie, serialized to disk)
     cookies: HashMap<String, String>,
-    /// 会话级随机标识（每次启动重新生成，不持久化）
+    /// Session-level random identifiers (regenerated at each startup, not persisted)
     session: SessionCookies,
-    /// 磁盘路径
+    /// Disk path
     path: PathBuf,
-    /// 已提取的 CSRF token
+    /// The extracted CSRF token
     csrf: String,
-    /// 上次写盘时间
+    /// Time of the last write to disk
     last_save: Instant,
 }
 
@@ -74,7 +76,7 @@ impl CookieStore {
             });
 
         let mut cookies = persisted.cookies;
-        // 设备指纹：持久化，跨重启保持一致（降低风控触发概率）
+        // Device fingerprint: persisted and kept consistent across restarts (reduces the chance of triggering risk control)
         if !cookies.contains_key("deviceId") {
             cookies.insert("deviceId".to_string(), generate_device_id());
         }
@@ -90,7 +92,7 @@ impl CookieStore {
         }
     }
 
-    /// 当前设备指纹（52 位十六进制）
+    /// The current device fingerprint (52 hexadecimal characters)
     pub fn device_id(&self) -> &str {
         self.cookies
             .get("deviceId")
@@ -98,7 +100,7 @@ impl CookieStore {
             .unwrap_or("")
     }
 
-    /// 构建完整的 Cookie header
+    /// Build the full Cookie header
     pub fn build_cookie_header(&self, is_eapi: bool) -> String {
         let (os, appver, osver) = if is_eapi {
             ("iphone", "9.0.90", "16.2")
@@ -112,7 +114,7 @@ impl CookieStore {
             .map(|(k, v)| format!("{}={}", k, v))
             .collect();
 
-        // 追加客户端生成的会话标识
+        // Append the client-generated session identifiers
         parts.push(format!("os={}", os));
         parts.push(format!("appver={}", appver));
         parts.push(format!("osver={}", osver));
@@ -127,7 +129,7 @@ impl CookieStore {
         parts.join("; ")
     }
 
-    /// 从响应头中提取 Set-Cookie
+    /// Extract Set-Cookie from the response headers
     pub fn update_from_response(&mut self, headers: &reqwest::header::HeaderMap) {
         let mut changed = false;
 
@@ -144,7 +146,7 @@ impl CookieStore {
             let name = name.trim().to_string();
             let value = value.trim().to_string();
 
-            // 追踪 __csrf
+            // Track __csrf
             if name == "__csrf" && !value.is_empty() {
                 self.csrf = value.clone();
             }
@@ -165,17 +167,17 @@ impl CookieStore {
         &self.csrf
     }
 
-    /// 是否已登录（依据关键 cookie 是否存在）
+    /// Whether the user is logged in (based on whether the key cookie is present)
     pub fn is_logged_in(&self) -> bool {
         self.cookies.contains_key("MUSIC_U") || self.cookies.contains_key("__csrf")
     }
 
-    /// 移除指定 cookie
+    /// Remove the specified cookie
     pub fn remove(&mut self, name: &str) {
         self.cookies.remove(name);
     }
 
-    /// 强制写盘
+    /// Force a write to disk
     pub fn flush(&mut self) {
         let persisted = Persisted {
             cookies: self.cookies.clone(),
@@ -298,11 +300,11 @@ mod tests {
                 .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase())
         );
 
-        // header 里带上指纹
+        // The header carries the fingerprint
         let header = store.build_cookie_header(false);
         assert!(header.contains(&format!("deviceId={id}")));
 
-        // 持久化后重启保持一致
+        // Persisted so it stays consistent across restarts
         let mut store = store;
         store.flush();
         let store2 = CookieStore::new(path.clone());

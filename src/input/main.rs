@@ -92,7 +92,7 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
                 app.playback.seek_relative(interval);
             }
         }
-        KeyCode::Char('l' | 'L') => {
+        KeyCode::Char('l') => {
             let next = match app.state.navigation.page {
                 Page::Main => Page::Lyrics,
                 Page::Lyrics => Page::Main,
@@ -231,6 +231,15 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
                 .events
                 .send(NavigationEvent::UploadCachedSong(sel));
         }
+        KeyCode::Char('+' | '=') => {
+            app.adjust_volume(0.05);
+        }
+        KeyCode::Char('-' | '_') => {
+            app.adjust_volume(-0.05);
+        }
+        KeyCode::Char('z' | 'Z') => {
+            app.cycle_nav_position();
+        }
         _ => {}
     }
     Ok(())
@@ -284,22 +293,7 @@ pub(super) fn handle_main_mouse(app: &mut App, kind: MouseEventKind, col: u16, r
 }
 
 fn current_api(app: &App) -> Option<&str> {
-    app.state
-        .navigation
-        .nav
-        .sections
-        .get(app.state.navigation.nav.focus_section)
-        .and_then(|s| {
-            let idx = app
-                .state
-                .navigation
-                .nav
-                .section_states
-                .get(app.state.navigation.nav.focus_section)?
-                .selected()?;
-            s.items.get(idx)
-        })
-        .and_then(|item| item.api.as_deref())
+    app.state.navigation.nav.selected_api()
 }
 
 fn is_daily_recommend(app: &App) -> bool {

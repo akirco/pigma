@@ -3,7 +3,7 @@ use super::{SongContext, u64_val, value_get};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-// --- 歌单模型 ---
+// --- Playlist models ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SongList {
@@ -23,7 +23,7 @@ pub struct PlayListDetail {
     pub create_time: u64,
     pub track_update_time: u64,
     pub songs: Vec<SongInfo>,
-    /// 歌单内全部歌曲 id（来自 `playlist.trackIds`），用于惰性分页切片。
+    /// All song ids in the playlist (from `playlist.trackIds`), used for lazy pagination slicing.
     pub track_ids: Vec<u64>,
 }
 
@@ -35,7 +35,7 @@ pub struct PlayListDetailDynamic {
     pub comment_count: u64,
 }
 
-// --- 歌单解析 ---
+// --- Playlist parsing ---
 
 pub(crate) fn parse_song_list(value: &Value, path: &[&str]) -> Result<Vec<SongList>, String> {
     let array = value_get(value, path)

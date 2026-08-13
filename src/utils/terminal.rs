@@ -69,7 +69,7 @@ fn sixel_available() -> bool {
             }
         }
         Ok("rio") => {
-            // Rio 在 0.0.12 后开始较好地支持图形协议
+            // Rio started supporting the graphics protocol reasonably well after 0.0.12
             if version_gte(
                 &env::var("TERM_PROGRAM_VERSION").unwrap_or_default(),
                 0,

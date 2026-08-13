@@ -1,10 +1,19 @@
+//! Centralized data-loading service (`ApiService`): resolves NetEase Cloud Music
+//! API endpoints (see [`ApiEndpoint`]), applies caching, and maps errors to events.
+
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
 use crate::cache::CacheManager;
+use crate::playback::{LyricLine, parse_lyric_lines};
 use crate::state::{ContentState, HotSearchKeywords, PaginationInfo};
 
+/// Navigation/content endpoints backed by the NetEase Cloud Music API.
+///
+/// `parse` maps the string keys used in the navigation tree (and persisted
+/// playlist ids like `__liked__`, `__download__`, `__local_music__`) onto a
+/// concrete endpoint resolved by [`ApiService`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ApiEndpoint {
     RecommendSongs,
@@ -55,12 +64,12 @@ impl ApiEndpoint {
 #[derive(Clone)]
 pub struct ApiService {
     client: Arc<ncm_api::NcmClient>,
-    cache: CacheManager,
+    cache: Arc<CacheManager>,
     playlist_track_ids: Arc<std::sync::Mutex<HashMap<u64, Vec<u64>>>>,
 }
 
 impl ApiService {
-    pub fn new(client: Arc<ncm_api::NcmClient>, cache: CacheManager) -> Self {
+    pub fn new(client: Arc<ncm_api::NcmClient>, cache: Arc<CacheManager>) -> Self {
         Self {
             client,
             cache,
@@ -72,7 +81,7 @@ impl ApiService {
         &self.client
     }
 
-    pub fn cache(&self) -> &CacheManager {
+    pub fn cache(&self) -> &Arc<CacheManager> {
         &self.cache
     }
 
@@ -86,29 +95,43 @@ impl ApiService {
         uid: Option<u64>,
         limit: u16,
     ) -> (ContentState, Option<PaginationInfo>) {
+        let requires_login = matches!(
+            api,
+            ApiEndpoint::RecommendSongs
+                | ApiEndpoint::RecommendResource
+                | ApiEndpoint::UserRadioSublist
+                | ApiEndpoint::UserCloudDisk
+                | ApiEndpoint::LikedSongs
+                | ApiEndpoint::UserSongList
+                | ApiEndpoint::UserCreatedSongList
+                | ApiEndpoint::UserSubscribedSongList
+                | ApiEndpoint::SavedAlbums
+                | ApiEndpoint::Recent
+        );
+        if requires_login && !self.client.is_logged_in() {
+            return (ContentState::Error("未登录".into()), None);
+        }
         match api {
-            ApiEndpoint::RecommendSongs => match self.client.recommend_songs().await {
-                Ok(songs) => (ContentState::Songs(arc_songs(songs)), None),
-                Err(e) => (ContentState::Error(e.to_string()), None),
-            },
-            ApiEndpoint::RecommendResource => match self.client.recommend_resource().await {
-                Ok(lists) => (ContentState::SongLists(lists), None),
-                Err(e) => (ContentState::Error(e.to_string()), None),
-            },
-            ApiEndpoint::Toplist => match self.client.toplist().await {
-                Ok(lists) => (ContentState::TopLists(lists), None),
-                Err(e) => (ContentState::Error(e.to_string()), None),
-            },
-            ApiEndpoint::TopSongList => {
-                match self.client.top_song_list("全部", "hot", 0, limit).await {
-                    Ok(lists) => (ContentState::SongLists(lists), None),
-                    Err(e) => (ContentState::Error(e.to_string()), None),
-                }
+            ApiEndpoint::RecommendSongs => {
+                content_result(self.client.recommend_songs().await, |songs| {
+                    ContentState::Songs(arc_songs(songs))
+                })
             }
-            ApiEndpoint::UserRadioSublist => match self.client.user_radio_sublist(0, limit).await {
-                Ok(lists) => (ContentState::SongLists(lists), None),
-                Err(e) => (ContentState::Error(e.to_string()), None),
-            },
+            ApiEndpoint::RecommendResource => content_result(
+                self.client.recommend_resource().await,
+                ContentState::SongLists,
+            ),
+            ApiEndpoint::Toplist => {
+                content_result(self.client.toplist().await, ContentState::TopLists)
+            }
+            ApiEndpoint::TopSongList => content_result(
+                self.client.top_song_list("全部", "hot", 0, limit).await,
+                ContentState::SongLists,
+            ),
+            ApiEndpoint::UserRadioSublist => content_result(
+                self.client.user_radio_sublist(0, limit).await,
+                ContentState::SongLists,
+            ),
             ApiEndpoint::UserCloudDisk => {
                 match self.client.user_cloud_disk(0, limit as u32).await {
                     Ok(result) => (
@@ -125,49 +148,45 @@ impl ApiService {
                     Err(e) => (ContentState::Error(e.to_string()), None),
                 }
             }
-            ApiEndpoint::Recent => match self.client.recent_songs(limit).await {
-                Ok(songs) => (ContentState::Songs(arc_songs(songs)), None),
-                Err(e) => (ContentState::Error(e.to_string()), None),
-            },
+            ApiEndpoint::Recent => content_result(self.client.recent_songs(limit).await, |songs| {
+                ContentState::Songs(arc_songs(songs))
+            }),
             ApiEndpoint::UserSongList => match uid {
-                Some(uid) => match self.client.user_song_list(uid, 0, limit).await {
-                    Ok(lists) => (ContentState::SongLists(lists), None),
-                    Err(e) => (ContentState::Error(e.to_string()), None),
-                },
+                Some(uid) => content_result(
+                    self.client.user_song_list(uid, 0, limit).await,
+                    ContentState::SongLists,
+                ),
                 None => (ContentState::Error("未登录".into()), None),
             },
             ApiEndpoint::UserCreatedSongList => match uid {
-                Some(uid) => match self.client.user_created_playlist(uid, 0, limit).await {
-                    Ok(lists) => (ContentState::SongLists(lists), None),
-                    Err(e) => (ContentState::Error(e.to_string()), None),
-                },
+                Some(uid) => content_result(
+                    self.client.user_created_playlist(uid, 0, limit).await,
+                    ContentState::SongLists,
+                ),
                 None => (ContentState::Error("未登录".into()), None),
             },
             ApiEndpoint::UserSubscribedSongList => match uid {
-                Some(uid) => match self.client.user_collected_playlist(uid, 0, limit).await {
-                    Ok(lists) => (ContentState::SongLists(lists), None),
-                    Err(e) => (ContentState::Error(e.to_string()), None),
-                },
+                Some(uid) => content_result(
+                    self.client.user_collected_playlist(uid, 0, limit).await,
+                    ContentState::SongLists,
+                ),
                 None => (ContentState::Error("未登录".into()), None),
             },
-            ApiEndpoint::SavedAlbums => match self.client.album_sublist(0, limit).await {
-                Ok(albums) => (ContentState::SongLists(albums), None),
-                Err(e) => (ContentState::Error(e.to_string()), None),
-            },
-            ApiEndpoint::Search => match self.client.search_hot().await {
-                Ok(items) => (
-                    ContentState::HotSearch(HotSearchKeywords(
-                        items.into_iter().map(|h| h.keyword).collect(),
-                    )),
-                    None,
-                ),
-                Err(e) => (ContentState::Error(e.to_string()), None),
-            },
-            ApiEndpoint::TopSingers => match self.client.top_artists(0, limit).await {
-                Ok(singers) => (ContentState::Singers(singers), None),
-                Err(e) => (ContentState::Error(e.to_string()), None),
-            },
-            ApiEndpoint::Download | ApiEndpoint::LocalMusic | ApiEndpoint::LikedSongs => {
+            ApiEndpoint::SavedAlbums => content_result(
+                self.client.album_sublist(0, limit).await,
+                ContentState::SongLists,
+            ),
+            ApiEndpoint::Search => content_result(self.client.search_hot().await, |items| {
+                ContentState::HotSearch(HotSearchKeywords(
+                    items.into_iter().map(|h| h.keyword).collect(),
+                ))
+            }),
+            ApiEndpoint::TopSingers => content_result(
+                self.client.top_artists(0, limit).await,
+                ContentState::Singers,
+            ),
+            ApiEndpoint::LikedSongs => (ContentState::Error("未登录".into()), None),
+            ApiEndpoint::Download | ApiEndpoint::LocalMusic => {
                 unreachable!("handled separately by caller")
             }
         }
@@ -176,15 +195,16 @@ impl ApiService {
     /// Load liked songs through the user's created "我喜欢的音乐" playlist so the
     /// lazy `trackIds` pagination path is reused.
     ///
-    /// 返回 `(内容, 分页信息, 歌单 ID)`：
-    /// - 内容只含首屏歌曲，后续靠 [`Self::load_more`] 按 `trackIds` 惰性切片；
-    /// - 歌单 ID 供心动模式（heartbeat）使用。
+    /// Returns `(content, pagination, playlist ID)`:
+    /// - Content holds only the first page of songs; later pages are lazily
+    ///   sliced by [`Self::load_more`] using `trackIds`;
+    /// - The playlist ID is used by heartbeat mode.
     pub async fn load_liked_songs(
         &self,
         uid: u64,
         limit: u16,
     ) -> (ContentState, Option<PaginationInfo>, Option<u64>) {
-        // 先在我创建的歌单里找"我喜欢的音乐"（红心歌单），兼容被重命名的名字。
+        // First look for the "我喜欢的音乐" (liked) playlist among the user's created playlists, tolerating renamed titles.
         let mut playlist_id = self
             .client
             .user_created_playlist(uid, 0, limit)
@@ -192,7 +212,7 @@ impl ApiService {
             .ok()
             .and_then(|lists| find_liked_playlist(&lists));
 
-        // 创建歌单接口不可用/没找到时，回退到通用歌单接口再找一次。
+        // When the created-playlist API is unavailable or the playlist is not found there, fall back to the general playlist API and search again.
         if playlist_id.is_none() {
             playlist_id = self
                 .client
@@ -203,7 +223,7 @@ impl ApiService {
         }
 
         let Some(id) = playlist_id else {
-            // 仍找不到红心歌单：回退旧接口（一次拉全，无分页）。
+            // Still no liked playlist found: fall back to the legacy API (fetches everything at once, no pagination).
             return match self.client.liked_songs(uid).await {
                 Ok(songs) => (ContentState::Songs(arc_songs(songs)), None, None),
                 Err(e) => (ContentState::Error(e.to_string()), None, None),
@@ -212,16 +232,16 @@ impl ApiService {
 
         let (songs, total) = match self.client.playlist_detail(id).await {
             Ok((_detail, track_ids)) => {
-                // 缓存全量 trackIds，供后续惰性分页（LoadMore）切片使用。
-                if let Ok(mut guard) = self.playlist_track_ids.lock() {
-                    guard.insert(id, track_ids.clone());
-                }
                 let total = track_ids.len() as u64;
                 let page_limit = limit as u32;
                 let songs = match self.client.playlist_songs(&track_ids, 0, page_limit).await {
                     Ok(s) => s,
                     Err(e) => return (ContentState::Error(e.to_string()), None, Some(id)),
                 };
+                // Cache the full trackIds for later lazy pagination (LoadMore) slicing.
+                if let Ok(mut guard) = self.playlist_track_ids.lock() {
+                    guard.insert(id, track_ids);
+                }
                 (songs, total)
             }
             Err(e) => return (ContentState::Error(e.to_string()), None, Some(id)),
@@ -243,10 +263,11 @@ impl ApiService {
         )
     }
 
-    /// 确保歌单的 `trackIds` 已在内存缓存（供 `load_more` 惰性分页切片）。
+    /// Ensure the playlist's `trackIds` are cached in memory (for `load_more` lazy pagination slicing).
     ///
-    /// 内容从磁盘缓存恢复时 `playlist_track_ids` 尚未填充，滚动加载更多前先补齐。
-    /// 返回曲目数量（调用方只关心个数），避免克隆整份 `trackIds`。
+    /// When content is restored from the disk cache, `playlist_track_ids` has not
+    /// been populated yet, so top it up before scrolling to load more.
+    /// Returns the track count (callers only care about the number), avoiding cloning the entire `trackIds` list.
     pub async fn ensure_playlist_track_ids(&self, id: u64) -> Option<usize> {
         if self.playlist_track_ids.lock().ok()?.contains_key(&id) {
             return None;
@@ -281,6 +302,51 @@ impl ApiService {
         }
     }
 
+    /// Load lyrics for a third-party (sonar) song, with cache integration.
+    ///
+    /// Serves cached lyrics first (keyed by song id, shared with the NCM path)
+    /// so replays don't hit the provider again. On a miss, the original sonar
+    /// song is resolved from `registry` (falling back to the disk cache) and the
+    /// provider's lyrics are fetched and cached.
+    ///
+    /// Returns `(lyric, translated)` lines, or `None` when no usable lyrics
+    /// exist. `registry` maps synthetic song ids back to the sonar `Song`.
+    pub async fn load_sonar_lyrics(
+        &self,
+        song_id: u64,
+        finder: Arc<sonar::SonarFinder>,
+        registry: &std::sync::Mutex<HashMap<u64, Arc<sonar::Song>>>,
+    ) -> Option<(Vec<LyricLine>, Vec<LyricLine>)> {
+        // Serve cached lyrics first so replays don't hit the provider again.
+        if let Some(cached) = self.cache.load_lyrics_cache_async(song_id).await {
+            let lyric_lines = parse_lyric_lines(&cached.lyric);
+            if !lyric_lines.is_empty() {
+                let tlyric_lines = parse_lyric_lines(&cached.tlyric);
+                return Some((lyric_lines, tlyric_lines));
+            }
+        }
+
+        let msong = registry
+            .lock()
+            .ok()
+            .and_then(|m| m.get(&song_id).cloned())
+            .or_else(|| self.cache.thirdparty_song(song_id))?;
+        let lrc = finder.get_lyrics_fallback(&msong).await?;
+        let lines: Vec<String> = lrc.lines().map(|s| s.to_string()).collect();
+        let lyric_lines = parse_lyric_lines(&lines);
+        if lyric_lines.is_empty() {
+            return None;
+        }
+        self.cache.save_lyrics_cache(
+            song_id,
+            &ncm_api::Lyrics {
+                lyric: lines,
+                tlyric: Vec::new(),
+            },
+        );
+        Some((lyric_lines, Vec::new()))
+    }
+
     /// Search songs by keyword.
     pub async fn search_songs(&self, keyword: &str, limit: u16) -> ContentState {
         match self.client.search_song(keyword, 0, limit).await {
@@ -304,16 +370,16 @@ impl ApiService {
         } else {
             match self.client.playlist_detail(id).await {
                 Ok((detail, track_ids)) => {
-                    // 缓存全量 trackIds，供后续惰性分页切片使用。
-                    if let Ok(mut guard) = self.playlist_track_ids.lock() {
-                        guard.insert(id, track_ids.clone());
-                    }
                     let total = track_ids.len() as u64;
                     let limit = limit as u32;
                     let songs = match self.client.playlist_songs(&track_ids, 0, limit).await {
                         Ok(s) => s,
                         Err(e) => return (ContentState::Error(e.to_string()), None, None),
                     };
+                    // Cache the full trackIds for later lazy pagination slicing.
+                    if let Ok(mut guard) = self.playlist_track_ids.lock() {
+                        guard.insert(id, track_ids);
+                    }
                     let pagination = PaginationInfo {
                         api: format!("playlist:{id}"),
                         offset: 0,
@@ -373,7 +439,7 @@ impl ApiService {
         self.client.like(song_id, like).await.map(|_| ())
     }
 
-    /// 拉取"我喜欢的音乐"的歌曲 ID 集合，用于本地维护 liked 状态。
+    /// Fetch the song ID set of the "我喜欢的音乐" playlist to maintain the local liked state.
     pub async fn load_liked_song_ids(
         &self,
         uid: u64,
@@ -425,20 +491,20 @@ impl ApiService {
             .await
     }
 
-    /// 分页加载更多。仅云盘与「歌单内歌曲」走此路径：
-    /// - 云盘：`offset/limit` 直接翻服务端；
-    /// - 歌单内歌曲：用首屏缓存的 `trackIds` 切片 + `songs_detail` 取本页（惰性分页）。
+    /// Load more with pagination. Only the cloud disk and songs within a playlist take this path:
+    /// - Cloud disk: `offset/limit` pages the server directly;
+    /// - Songs in a playlist: slice the `trackIds` cached from the first page and fetch this page via `songs_detail` (lazy pagination).
     pub async fn load_more(
         &self,
         api: &str,
         offset: u32,
         limit: u32,
     ) -> Option<(ContentState, PaginationInfo)> {
-        // 仅云盘与「歌单内歌曲」支持分页。
-        // 歌单内歌曲：用首屏缓存的 trackIds 切片 + songs_detail 取本页。
+        // Only the cloud disk and songs within a playlist support pagination.
+        // Songs in a playlist: slice the trackIds cached from the first page and fetch this page via songs_detail.
         if let Some(id_str) = api.strip_prefix("playlist:") {
             let id: u64 = id_str.parse().ok()?;
-            // 只在锁内计算本页切片，避免每次分页都克隆整个 trackIds 列表。
+            // Compute the page slice only while holding the lock, avoiding cloning the entire trackIds list on every page.
             let (page, total, has_more) = {
                 let guard = self.playlist_track_ids.lock().ok()?;
                 let ids = guard.get(&id)?;
@@ -487,8 +553,8 @@ impl ApiService {
     }
 }
 
-/// 在歌单列表中查找"我喜欢的音乐"红心歌单：优先精确匹配，其次兼容重命名
-/// （如"柚子白纸喜欢的音乐"）。
+/// Find the "我喜欢的音乐" liked playlist in a playlist list: exact match first,
+/// then tolerate renamed titles (e.g. "柚子白纸喜欢的音乐").
 fn find_liked_playlist(lists: &[ncm_api::SongList]) -> Option<u64> {
     lists
         .iter()
@@ -497,8 +563,21 @@ fn find_liked_playlist(lists: &[ncm_api::SongList]) -> Option<u64> {
         .map(|l| l.id)
 }
 
-/// 将 API 返回的 `SongInfo` 列表共享为 `Arc`，供 `ContentState::Songs` 与
-/// 播放队列共享所有权，避免在内容与队列之间深度克隆整份歌单。
+/// Map a client result into a `(ContentState, None)` pair: success maps the
+/// value through `map`, failure becomes `ContentState::Error`. Keeps the
+/// `Ok -> state / Err -> Error` boilerplate in one place.
+fn content_result<T>(
+    result: Result<T, ncm_api::NcmError>,
+    map: impl FnOnce(T) -> ContentState,
+) -> (ContentState, Option<PaginationInfo>) {
+    match result {
+        Ok(v) => (map(v), None),
+        Err(e) => (ContentState::Error(e.to_string()), None),
+    }
+}
+
+/// Share the API's `SongInfo` list as `Arc`s so `ContentState::Songs` and the
+/// playback queue share ownership, avoiding deep-cloning the whole list between content and queue.
 fn arc_songs(songs: Vec<ncm_api::SongInfo>) -> Vec<Arc<ncm_api::SongInfo>> {
     songs.into_iter().map(Arc::new).collect()
 }

@@ -3,7 +3,7 @@ use super::{SongContext, u64_val};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-// --- 专辑模型 ---
+// --- Album models ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AlbumDetail {
@@ -25,7 +25,7 @@ pub struct AlbumDetailDynamic {
     pub comment_count: u64,
 }
 
-// --- 专辑解析 ---
+// --- Album parsing ---
 
 pub(crate) fn parse_album_detail(value: &Value) -> Result<AlbumDetail, String> {
     let album = &value["album"];

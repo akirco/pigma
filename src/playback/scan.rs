@@ -41,7 +41,10 @@ pub fn scan_local_music(dir: &std::path::Path) -> Vec<SongInfo> {
             .unwrap_or(0);
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         path.to_string_lossy().hash(&mut hasher);
-        let id = hasher.finish();
+        // Clear the top bit so the id can never collide with the sonar song-id
+        // flag (1<<63); otherwise ~half of local files get misrouted to the
+        // network resolver instead of `resolve_local`.
+        let id = hasher.finish() & !(1u64 << 63);
         songs.push(SongInfo {
             id,
             name,

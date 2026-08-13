@@ -1,3 +1,6 @@
+//! On-disk cache manager (`CacheManager`) and the audio/content/covers/lyrics/index
+//! cache submodules.
+
 pub mod audio;
 pub mod content;
 pub mod covers;

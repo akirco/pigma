@@ -1,5 +1,6 @@
 use crate::app::App;
-use crate::event::{AppEvent, AuthEvent};
+use crate::event::{AuthEvent, NavigationEvent};
+use crate::state::Page;
 use crossterm::event::{KeyCode, KeyEvent};
 
 pub(super) fn handle_login_key(app: &mut App, key_event: KeyEvent) -> bool {
@@ -8,7 +9,7 @@ pub(super) fn handle_login_key(app: &mut App, key_event: KeyEvent) -> bool {
         KeyCode::Enter => {
             app.state.events.send(AuthEvent::Login);
         }
-        KeyCode::Esc => app.state.events.send(AppEvent::Quit),
+        KeyCode::Esc => app.state.events.send(NavigationEvent::Navigate(Page::Main)),
         _ => {}
     }
     true

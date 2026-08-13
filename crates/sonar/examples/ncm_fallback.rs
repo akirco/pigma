@@ -14,7 +14,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .with_timeout(12000)
         .with_proxy(proxy);
-    let finder = SonarFinder::new(config);
+    let finder = SonarFinder::new(config)?;
 
     let args: Vec<String> = std::env::args().collect();
     let (name, singer, duration_ms) = if args.len() >= 3 {

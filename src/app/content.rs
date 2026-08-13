@@ -12,18 +12,17 @@ impl App {
     }
 
     pub(super) fn handle_load_more(&mut self) {
-        let pg = match self.state.navigation.pagination {
-            Some(ref pg) if pg.has_more => pg.clone(),
+        let (api, offset, limit) = match self.state.navigation.pagination.as_ref() {
+            Some(pg) if pg.has_more => (pg.api.clone(), pg.offset, pg.limit),
             _ => return,
         };
 
         let service = self.service.clone();
         let sender = self.state.events.sender();
-        let offset = pg.offset + pg.limit;
         let generation = self.state.navigation.generation;
 
         tokio::spawn(async move {
-            match service.load_more(&pg.api, offset, pg.limit).await {
+            match service.load_more(&api, offset, limit).await {
                 Some((content, pagination)) => send_event(
                     &sender,
                     NavigationEvent::ContentLoadedPaged {
@@ -46,7 +45,7 @@ impl App {
         pagination: PaginationInfo,
         generation: u64,
     ) {
-        // 过期响应直接丢弃
+        // Drop stale responses
         if generation != 0 && generation != self.state.navigation.generation {
             return;
         }
@@ -56,23 +55,22 @@ impl App {
 
         let mut content = content;
 
-        // 仅歌曲列表（云盘、歌单内歌曲）支持分页追加；其余类型整体替换。
+        // Only song lists (cloud disk, songs within a playlist) support paged appends; other types replace the whole content.
         if same_api
             && let ContentState::Songs(new_songs) = &mut content
             && let ContentState::Songs(existing) =
                 std::sync::Arc::make_mut(&mut self.state.navigation.content)
         {
             existing.extend(std::mem::take(new_songs));
-            let api_str = pagination.api.clone();
             let pg_for_save = pagination.clone();
             self.state.navigation.pagination = Some(pagination);
 
             let ttl = self.config.cache.content_cache_ttl;
-            if ttl > 0 && !api_str.is_empty() {
+            if ttl > 0 && !pg_for_save.api.is_empty() {
                 let cache = self.service.cache().clone();
                 let content_arc = Arc::clone(&self.state.navigation.content);
                 tokio::task::spawn_blocking(move || {
-                    cache.save_content_cache(&api_str, &content_arc, Some(&pg_for_save));
+                    cache.save_content_cache(&pg_for_save.api, &content_arc, Some(&pg_for_save));
                 });
             }
             return;
@@ -84,22 +82,10 @@ impl App {
     pub(super) fn handle_playlist_select(&mut self, id: u64, name: Option<String>) {
         self.state.navigation.push_breadcrumb();
         self.state.navigation.set_content(ContentState::Loading);
-        // 歌单重新加载（内容可能已变化），作废之前的"全量已入队"标记。
+        // The playlist is being reloaded (content may have changed), so invalidate the previous "全量已入队" marker.
         self.queued_playlists.remove(&id);
 
-        let selected_api = self
-            .state
-            .navigation
-            .nav
-            .section_states
-            .get(self.state.navigation.nav.focus_section)
-            .and_then(|st| st.selected())
-            .and_then(|i| {
-                self.state.navigation.nav.sections[self.state.navigation.nav.focus_section]
-                    .items
-                    .get(i)
-            })
-            .and_then(|item| item.api.as_deref());
+        let selected_api = self.state.navigation.nav.selected_api();
 
         let is_album = selected_api == Some("album_sublist");
         let is_radio = selected_api == Some("user_radio_sublist");
@@ -147,27 +133,26 @@ impl App {
             self.playback.toggle_pause();
             return;
         }
-        let name = match self.state.navigation.content.as_ref() {
-            ContentState::Songs(songs) => songs
-                .iter()
-                .position(|s| s.id == id)
-                .map(|pos| (pos, songs[pos].name.clone())),
+        let pos = match self.state.navigation.content.as_ref() {
+            ContentState::Songs(songs) => songs.iter().position(|s| s.id == id),
             _ => None,
         };
-        if let Some((pos, name)) = name {
+        if let Some(pos) = pos {
             if let ContentState::Songs(songs) = self.state.navigation.content.as_ref() {
                 if self.state.navigation.content_is_search && sonar::is_sonar_song_id(id) {
-                    // 第三方搜索统一进同一个队列，不复用按关键词/日期建的队列
+                    // Third-party search always goes into the same queue; do not reuse queues built by keyword/date
                     self.playback
                         .append_and_play_key(THIRD_PARTY_QUEUE_KEY, &songs[pos..=pos], 0);
                 } else if self.state.navigation.content_is_search {
-                    // 网易云搜索统一进"官方搜索"队列
+                    // NetEase Cloud search always goes into the "官方搜索" queue
                     self.playback
                         .append_and_play_key(NCM_SEARCH_QUEUE_KEY, &songs[pos..=pos], 0);
                 } else {
                     let key = self.current_queue_key();
-                    let pg = self.state.navigation.pagination.clone();
-                    let lazy_id = pg
+                    let lazy_id = self
+                        .state
+                        .navigation
+                        .pagination
                         .as_ref()
                         .filter(|p| p.has_more)
                         .and_then(|p| p.api.strip_prefix("playlist:"))
@@ -175,11 +160,13 @@ impl App {
 
                     if let Some(id) = lazy_id {
                         if self.queued_playlists.contains(&id) {
-                            // 全量曲目此前已并入该歌单队列（内存或已持久化），
-                            // 直接激活队列并定位播放，避免重建截断或重复拉取。
-                            // 用歌曲 ID 在队列中定位而非内容列表下标：`a` 添加下一首
-                            // 会在当前歌曲后插入歌曲，队列顺序与内容列表不再一致，
-                            // 若仍按内容下标 `play_index` 会播放错位的歌。
+                            // The full track list was already merged into this playlist's
+                            // queue (in memory or persisted), so activate the queue directly
+                            // and seek to the song, avoiding rebuilding/truncating or refetching.
+                            // Locate by song ID rather than content-list index: `a` inserts
+                            // the next song after the current one, so the queue order no longer
+                            // matches the content list, and `play_index` by content index would
+                            // play the wrong song.
                             let qkey = self.playback.queue_key_for(&key);
                             self.playback.activate_queue(&qkey);
                             if let Some(qidx) =
@@ -190,16 +177,21 @@ impl App {
                                 self.playback.play_songs(&key, songs.to_vec(), pos);
                             }
                         } else {
-                            // 惰性分页歌单：首屏立即播放，剩余曲目后台分批并入同一队列。
+                            // Lazily-paged playlist: play the first page immediately; the remaining tracks are merged into the same queue in the background in batches.
                             self.playback.play_songs(&key, songs.to_vec(), pos);
-                            let pg = pg.expect("lazy_id implies pagination is Some");
+                            let (api, limit, total) = {
+                                let p = self
+                                    .state
+                                    .navigation
+                                    .pagination
+                                    .as_ref()
+                                    .expect("lazy branch implies pagination is Some");
+                                (p.api.clone(), p.limit, p.total)
+                            };
                             let qkey = self.playback.queue_key_for(&key);
                             let service = self.service.clone();
                             let sender = self.state.events.sender();
-                            let api = pg.api.clone();
-                            let limit = pg.limit;
                             let start = songs.len() as u32;
-                            let total = pg.total;
                             tokio::spawn(async move {
                                 let mut offset = start;
                                 let mut completed = true;
@@ -241,7 +233,11 @@ impl App {
                     }
                 }
             }
-            self.toast(format!("▶  {}", name));
+            let toast_name: &str = match self.state.navigation.content.as_ref() {
+                ContentState::Songs(songs) => songs.get(pos).map(|s| s.name.as_str()).unwrap_or(""),
+                _ => "",
+            };
+            self.toast(format!("▶  {}", toast_name));
         }
     }
 
@@ -258,59 +254,22 @@ impl App {
             let song_id = song.id;
 
             if sonar::is_sonar_song_id(song_id) {
+                let service = self.service.clone();
                 let finder = self.finder.clone();
                 let registry = self.sonar_songs.clone();
-                let cache = self.service.cache().clone();
                 let sender = self.state.events.sender();
                 tokio::spawn(async move {
-                    // Serve cached lyrics first (keyed by song id, shared with
-                    // the NCM path) so replays don't hit the provider again.
-                    if let Some(lyrics) = cache.load_lyrics_cache_async(song_id).await {
-                        let lyric_lines = parse_lyric_lines(&lyrics.lyric);
-                        let tlyric_lines = parse_lyric_lines(&lyrics.tlyric);
-                        if !lyric_lines.is_empty() {
-                            send_event(
-                                &sender,
-                                PlaybackEvent::LyricsLoaded {
-                                    song_id,
-                                    lyrics: lyric_lines,
-                                    translated_lyrics: tlyric_lines,
-                                }
-                                .into(),
-                            );
-                            return;
-                        }
-                    }
-                    let msong = registry
-                        .lock()
-                        .ok()
-                        .and_then(|m| m.get(&song_id).cloned())
-                        .or_else(|| cache.thirdparty_song(song_id).map(Arc::new));
-                    let Some(msong) = msong else {
+                    let Some((lyric_lines, tlyric_lines)) =
+                        service.load_sonar_lyrics(song_id, finder, &registry).await
+                    else {
                         return;
                     };
-                    let lrc = match finder.get_lyrics_fallback(&msong).await {
-                        Some(l) => l,
-                        None => return,
-                    };
-                    let lines: Vec<String> = lrc.lines().map(|s| s.to_string()).collect();
-                    let lyric_lines = parse_lyric_lines(&lines);
-                    if lyric_lines.is_empty() {
-                        return;
-                    }
-                    cache.save_lyrics_cache(
-                        song_id,
-                        &ncm_api::Lyrics {
-                            lyric: lines,
-                            tlyric: Vec::new(),
-                        },
-                    );
                     send_event(
                         &sender,
                         PlaybackEvent::LyricsLoaded {
                             song_id,
                             lyrics: lyric_lines,
-                            translated_lyrics: Vec::new(),
+                            translated_lyrics: tlyric_lines,
                         }
                         .into(),
                     );
@@ -391,7 +350,7 @@ impl App {
                             .lock()
                             .ok()
                             .and_then(|m| m.get(&song_id).cloned())
-                            .or_else(|| cache.thirdparty_song(song_id).map(Arc::new));
+                            .or_else(|| cache.thirdparty_song(song_id));
                         match msong {
                             Some(msong) => finder.get_cover_fallback(&msong).await,
                             None => None,
@@ -409,9 +368,13 @@ impl App {
 
                     // Download the cover (async client — no blocking runtime
                     // owned by App) and process the image off the runtime.
-                    let data: Vec<u8> = if let Some(cached) = cache.load_cover_async(song_id).await
-                    {
-                        cached
+                    let protocol = if let Some(cached) = cache.load_cover_async(song_id).await {
+                        tokio::task::spawn_blocking(move || {
+                            build_cover_protocol(&cached, picker.clone())
+                        })
+                        .await
+                        .ok()
+                        .flatten()
                     } else {
                         let Ok(resp) = cover_http.get(&small_url).send().await else {
                             return;
@@ -421,19 +384,16 @@ impl App {
                         };
                         let raw = bytes.to_vec();
                         let cache = cache.clone();
-                        let value = raw.clone();
-                        tokio::task::spawn_blocking(move || cache.save_cover(song_id, &value))
-                            .await
-                            .ok();
-                        raw
+                        tokio::task::spawn_blocking(move || {
+                            cache.save_cover(song_id, &raw);
+                            build_cover_protocol(&raw, picker.clone())
+                        })
+                        .await
+                        .ok()
+                        .flatten()
                     };
 
-                    let Some(protocol) =
-                        tokio::task::spawn_blocking(move || build_cover_protocol(&data, picker))
-                            .await
-                            .ok()
-                            .flatten()
-                    else {
+                    let Some(protocol) = protocol else {
                         return;
                     };
 
@@ -443,6 +403,10 @@ impl App {
         }
     }
 }
+
+/* -------------------------------------------------------------------------- */
+/*                                  Helper fn                                 */
+/* -------------------------------------------------------------------------- */
 
 /// Decode cover bytes, apply the circular mask, and build the resize protocol
 /// used by the playerbar renderer.

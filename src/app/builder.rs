@@ -10,16 +10,16 @@ use crate::utils::terminal::{ImageProtocol, best_image_protocol};
 
 use super::App;
 
-/// 用于按 `ProxyTarget` 计算是否启用代理。
+/// Used to decide whether a proxy is enabled based on `ProxyTarget`.
 pub(super) enum ProxyKind {
-    /// 非 YouTube 服务（网易云、sonar 搜索、封面、流媒体），在 `Reversed`/`Both` 下走代理。
+    /// Non-YouTube services (NetEase Cloud, sonar search, covers, streaming), proxied under `Reversed`/`Both`.
     NonYoutube,
-    /// YouTube 服务，在 `Normal`/`Both` 下走代理。
+    /// YouTube services, proxied under `Normal`/`Both`.
     Youtube,
 }
 
 impl App {
-    /// `NonYoutube` 在 `Reversed`/`Both` 下走代理，`Youtube` 在 `Normal`/`Both` 下走代理。
+    /// `NonYoutube` is proxied under `Reversed`/`Both`; `Youtube` under `Normal`/`Both`.
     pub(super) fn proxy_for(config: &Config, kind: ProxyKind) -> &str {
         let proxy = config.proxy.as_str();
         if proxy.is_empty() {
@@ -39,7 +39,7 @@ impl App {
         if active { proxy } else { "" }
     }
 
-    /// 构建命令面板（主题切换子菜单 + 边框/边听边存开关）。
+    /// Build the command panel (theme-switching submenu + border/save-on-play toggles).
     pub(super) fn build_command_panel(theme_registry: &ThemeRegistry) -> CommandPanel {
         let theme_children: Vec<CommandItem> = theme_registry
             .all_names()
@@ -64,6 +64,10 @@ impl App {
                 name: "Toggle Save on Play".into(),
                 action: CommandAction::ToggleSaveOnPlay,
             },
+            CommandItem::Action {
+                name: "Cycle Nav Position".into(),
+                action: CommandAction::CycleNavPosition,
+            },
         ];
 
         let mut command_panel = CommandPanel::new();
@@ -71,12 +75,12 @@ impl App {
         command_panel
     }
 
-    /// 按配置构建 sonar finder，应用搜索/YouTube 代理。
+    /// Build the sonar finder per config, applying the search/YouTube proxy.
     pub(super) fn build_finder(
         config: &Config,
         search_proxy: &str,
         youtube_proxy: &str,
-    ) -> Arc<SonarFinder> {
+    ) -> color_eyre::Result<Arc<SonarFinder>> {
         let mut sources: Vec<sonar::SonarSource> = Vec::new();
         for name in &config.source_fallback.providers {
             let source = match name.as_str() {
@@ -95,10 +99,11 @@ impl App {
             .with_timeout(config.source_fallback.timeout_ms)
             .with_search_proxy(search_proxy.to_string())
             .with_youtube_proxy(youtube_proxy.to_string());
-        Arc::new(sonar::SonarFinder::new(search_config))
+        let finder = sonar::SonarFinder::new(search_config).map_err(color_eyre::Report::msg)?;
+        Ok(Arc::new(finder))
     }
 
-    /// 按当前终端构建图片 picker，并选择最佳的图片协议（Kitty/Sixel）。
+    /// Build the image picker for the current terminal and select the best image protocol (Kitty/Sixel).
     pub(super) fn build_picker() -> Picker {
         let mut picker = ratatui_image::picker::Picker::from_query_stdio()
             .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks());
@@ -119,7 +124,7 @@ impl App {
         picker
     }
 
-    /// 按给定代理地址构建阻塞 HTTP client；地址为空则直连。
+    /// Build a blocking HTTP client for the given proxy address; an empty address connects directly.
     pub(super) fn build_http_client(proxy: &str) -> color_eyre::Result<Client> {
         let mut builder = Client::builder();
         if !proxy.is_empty() {

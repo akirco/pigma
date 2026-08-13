@@ -1,3 +1,6 @@
+//! A single-line text editor widget (cursor movement, insert/delete, history)
+//! used by the search and command input fields.
+
 use ratatui::Frame;
 use unicode_width::UnicodeWidthChar;
 

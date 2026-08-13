@@ -3,15 +3,16 @@ use crate::{encrypt, error::NcmError, model::*};
 use serde_json::Value;
 
 impl NcmClient {
-    // ===== 认证 =====
+    // ===== Authentication =====
 
-    /// 登录（自动识别手机号/邮箱）
+    /// Log in (automatically detects a phone number or email)
     ///
-    /// * `username` — 手机号（11 位数字）或邮箱
-    /// * `password` — 密码（明文）
+    /// * `username` — phone number (11 digits) or email
+    /// * `password` — password (plain text)
     ///
-    /// 与官方客户端一致：密码先 MD5，邮箱走 eAPI `/api/w/login`，手机走
-    /// weapi `/api/w/login/cellphone`（`/weapi/w/login/cellphone`）。
+    /// Consistent with the official client: the password is first MD5-hashed, email goes through
+    /// eAPI `/api/w/login`, and phone goes through weapi `/api/w/login/cellphone`
+    /// (`/weapi/w/login/cellphone`).
     pub async fn login(&self, username: &str, password: &str) -> Result<LoginInfo, NcmError> {
         let md5_password = encrypt::md5_hex(password);
         let value = if username.len() == 11 && username.parse::<u64>().is_ok() {
@@ -41,11 +42,11 @@ impl NcmClient {
         parse_login_info(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 手机验证码登录
+    /// Phone verification code login
     ///
-    /// * `ctcode` — 国家码（如 `86`）
-    /// * `phone` — 手机号
-    /// * `captcha` — 验证码
+    /// * `ctcode` — country code (e.g. `86`)
+    /// * `phone` — phone number
+    /// * `captcha` — verification code
     pub async fn login_cellphone(
         &self,
         ctcode: &str,
@@ -67,10 +68,10 @@ impl NcmClient {
         parse_login_info(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 发送短信验证码
+    /// Send an SMS verification code
     ///
-    /// * `ctcode` — 国家码（如 `86`）
-    /// * `phone` — 手机号
+    /// * `ctcode` — country code (e.g. `86`)
+    /// * `phone` — phone number
     pub async fn captcha(&self, ctcode: &str, phone: &str) -> Result<(), NcmError> {
         let params = vec![("cellphone", phone), ("ctcode", ctcode)];
         let result = self
@@ -80,7 +81,7 @@ impl NcmClient {
         Self::check_api_code(&value)
     }
 
-    /// 创建登录二维码，返回 (二维码 URL, unikey)
+    /// Create a login QR code, returns (QR code URL, unikey)
     pub async fn login_qr_create(&self) -> Result<(String, String), NcmError> {
         let params = vec![("type", "1")];
         let result = self
@@ -93,9 +94,9 @@ impl NcmClient {
         Ok((qr_url, unikey))
     }
 
-    /// 轮询二维码登录状态
+    /// Poll the QR code login status
     ///
-    /// * `key` — 由 `login_qr_create` 返回的 unikey
+    /// * `key` — the unikey returned by `login_qr_create`
     pub async fn login_qr_check(&self, key: &str) -> Result<Msg, NcmError> {
         let params = vec![("type", "1"), ("key", key)];
         let result = self
@@ -105,23 +106,24 @@ impl NcmClient {
         parse_msg(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 获取当前登录状态
+    /// Get the current login status
     pub async fn login_status(&self) -> Result<LoginInfo, NcmError> {
         let result = self.request_weapi("/api/nuser/account/get", &[]).await?;
         let value: Value = serde_json::from_str(&result)?;
         parse_login_info(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 退出登录
+    /// Log out
     pub async fn logout(&self) -> Result<Msg, NcmError> {
         let result = self.request_weapi("/weapi/logout", &[]).await?;
         let value: Value = serde_json::from_str(&result)?;
         parse_msg(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 匿名注册：获取匿名会话 cookie（MUSIC_U）作为设备指纹，配合 `deviceId`
-    /// 降低登录风控触发概率。注意：成功后 `is_logged_in()` 会因匿名 MUSIC_U
-    /// 返回 true，若不需要匿名会话请不要调用（或在真实登录后覆盖）。
+    /// Anonymous registration: obtains an anonymous session cookie (MUSIC_U) as the device
+    /// fingerprint, together with `deviceId` it lowers the chance of triggering login risk
+    /// control. Note: after success, `is_logged_in()` returns true because of the anonymous
+    /// MUSIC_U; do not call this if the anonymous session is not needed (or overwrite it after a real login).
     pub async fn register_anonimous(&self) -> Result<(), NcmError> {
         let device_id = self.with_store(|s| s.device_id().to_string())?;
         let encoded = encrypt::cloudmusic_encode_id(&device_id);

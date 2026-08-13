@@ -3,13 +3,17 @@ use base64::{Engine as _, engine::general_purpose};
 use time::OffsetDateTime;
 
 use md5;
-use std::sync::OnceLock;
+use reqwest::Client;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use urlencoding;
 
 const KUGOU_KEY_SUFFIX: &str = "kgcloudv2";
 const KUWO_DES_KEY: &[u8; 8] = b"ylzsxkwm";
 const KUWO_SOURCE: &str = "kwplayer_ar_5.1.0.0_B_jiakong_vh.apk";
 
+/// Kugou track-CDN API key: md5 of `{hash}kgcloudv2`. Required as the `key`
+/// query parameter when requesting a play URL from `trackercdn.kugou.com`.
 pub fn kugou_md5_key(hash: &str) -> String {
     let input = format!("{}{}", hash, KUGOU_KEY_SUFFIX);
     format!("{:x}", md5::compute(input))
@@ -169,6 +173,8 @@ fn kuwo_des64_bytes(subkeys: &[u64; 16], block: u64) -> [u8; 8] {
     bytes
 }
 
+/// Encrypt a query string with Kuwo's custom DES variant and return it
+/// base64-encoded, as expected by the Kuwo `convert_url2` endpoints.
 pub fn kuwo_des_encrypt(plaintext: &str) -> Result<String> {
     let msg = plaintext.as_bytes();
     let subkeys = kuwo_subkeys(kuwo_pack_bytes(KUWO_DES_KEY));
@@ -186,6 +192,8 @@ pub fn kuwo_des_encrypt(plaintext: &str) -> Result<String> {
     Ok(general_purpose::STANDARD.encode(output))
 }
 
+/// Build the Kuwo `convert_url2` query body for a given `rid` (song id) and
+/// `format` (e.g. `mp3`). The `source` is the Kuwo mobile package identifier.
 pub fn kuwo_build_query(rid: &str, format: &str) -> String {
     format!(
         "user=0&corp=kuwo&source={}&p2p=1&type=convert_url2&sig=0&format={}&rid=MUSIC_{}",
@@ -197,14 +205,38 @@ pub fn kuwo_build_query(rid: &str, format: &str) -> String {
 /*                                  bilibili                                  */
 /* -------------------------------------------------------------------------- */
 
-static WBI_KEYS: OnceLock<(String, String)> = OnceLock::new();
+type WbiCache = (String, String, Instant);
 
-pub async fn get_wbi_keys() -> Result<(String, String)> {
-    if let Some(keys) = WBI_KEYS.get() {
-        return Ok(keys.clone());
+static WBI_KEYS: Mutex<Option<WbiCache>> = Mutex::new(None);
+
+/// How long a cached Bilibili WBI key pair stays valid before being
+/// re-fetched. Bilibili rotates the `img_key`/`sub_key` periodically; a stale
+/// key makes every signed request fail with `code = -403`, so the cache must
+/// not outlive the rotation window.
+const WBI_KEY_TTL: Duration = Duration::from_secs(3600);
+
+/// Drop the cached WBI key pair so the next [`wbi_sign`] fetches fresh keys.
+/// Called after a `-403`/`-412` rejection to recover from expired keys.
+pub fn invalidate_wbi_keys() {
+    if let Ok(mut guard) = WBI_KEYS.lock() {
+        *guard = None;
+    }
+}
+
+/// Fetch and cache Bilibili WBI `img_key`/`sub_key` (process-wide, TTL-bounded).
+/// Requests go through `client` so they obey the same proxy/UA as the signed
+/// request that follows, which matters when a proxy is required to reach
+/// `api.bilibili.com`. Required to sign requests with [`wbi_sign`].
+pub async fn get_wbi_keys(client: &Client) -> Result<(String, String)> {
+    {
+        let guard = WBI_KEYS.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((img_key, sub_key, fetched_at)) = guard.as_ref()
+            && fetched_at.elapsed() < WBI_KEY_TTL
+        {
+            return Ok((img_key.clone(), sub_key.clone()));
+        }
     }
 
-    let client = reqwest::Client::new();
     let resp = client
         .get("https://api.bilibili.com/x/web-interface/nav")
         .header(
@@ -215,6 +247,17 @@ pub async fn get_wbi_keys() -> Result<(String, String)> {
         .await?;
 
     let json: serde_json::Value = resp.json().await?;
+    // The nav endpoint answers `code=-101 账号未登录` when called without a
+    // logged-in cookie, yet still embeds the WBI keys in `data.wbi_img`. So a
+    // non-zero `code` here is not fatal, unlike the signed APIs: the keys are
+    // taken from the payload whenever present.
+    if json["code"].as_i64() != Some(0) {
+        log::debug!(
+            "bilibili nav code={:?} (keys still usable)",
+            json["code"].as_i64()
+        );
+    }
+
     let img_url = json["data"]["wbi_img"]["img_url"]
         .as_str()
         .ok_or_else(|| SonarError::WbiSign("Missing img_url".into()))?;
@@ -235,7 +278,9 @@ pub async fn get_wbi_keys() -> Result<(String, String)> {
         .ok_or_else(|| SonarError::WbiSign("Invalid sub_url".into()))?
         .to_string();
 
-    let _ = WBI_KEYS.set((img_key.clone(), sub_key.clone()));
+    let now = Instant::now();
+    let mut guard = WBI_KEYS.lock().unwrap_or_else(|e| e.into_inner());
+    *guard = Some((img_key.clone(), sub_key.clone(), now));
     Ok((img_key, sub_key))
 }
 
@@ -253,8 +298,11 @@ fn get_mixin_key(orig: &str) -> String {
         .to_string()
 }
 
-pub async fn wbi_sign(params: &mut Vec<(String, String)>) -> Result<String> {
-    let (img_key, sub_key) = get_wbi_keys().await?;
+/// Sign a Bilibili request: appends `wts`, sorts params, mixes in the cached
+/// WBI mixin key, and returns the full query string including the `w_rid` md5
+/// signature. Mutates `params` (adds `wts`).
+pub async fn wbi_sign(client: &Client, params: &mut Vec<(String, String)>) -> Result<String> {
+    let (img_key, sub_key) = get_wbi_keys(client).await?;
     let mixin_key = get_mixin_key(&format!("{}{}", img_key, sub_key));
 
     let curr_time = OffsetDateTime::now_utc().unix_timestamp().to_string();

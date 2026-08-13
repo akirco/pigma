@@ -7,18 +7,83 @@ use crate::provider::{
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+use once_cell::sync::Lazy;
+use regex::Regex;
+
+/// How [`SonarFinder`] ranks the combined results from all providers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchMode {
+    /// Return results in the order providers responded (cheapest, ignores match quality).
     FirstReturned,
+    /// Re-rank by [`SonarFinder::calculate_match_score`] so the closest title wins (default).
     BestScore,
 }
 
+/// Weight multiplier for a query token found in the artist field (stronger
+/// signal than a bare name hit, see [`SonarFinder::calculate_match_score`]).
+const ARTIST_HIT_WEIGHT: f64 = 1.5;
+
+/// Duration-match bonus tiers, in milliseconds of difference from the target.
+/// A hit within 3s is worth more than a loose 30s match.
+const DURATION_MATCH_MS: [(u64, f64); 3] = [(3_000, 1.0), (10_000, 0.5), (30_000, 0.25)];
+
+/// Score deducted from candidates whose title marks them as a secondary
+/// version of the track — an instrumental/accompaniment (伴奏/纯音乐/卡拉OK) or
+/// a concert/live recording (演唱会/现场/live). Present so the original studio
+/// recording wins ties; these versions often share the exact same title tokens
+/// and duration as the real track, so a bare token score cannot tell them
+/// apart.
+const SECONDARY_VERSION_PENALTY: f64 = 1.5;
+
+/// Literal markers (already in lowercase) that flag a non-original version.
+const SECONDARY_VERSION_MARKERS: &[&str] = &[
+    "伴奏",
+    "纯音乐",
+    "无人声",
+    "无和声",
+    "karaoke",
+    "卡拉ok",
+    "ktv",
+    "instrumental",
+    "演唱会",
+    "现场",
+];
+
+/// A generic "instrument remake" pattern: a musical instrument followed by a
+/// version/piece suffix (钢琴版 / 吉他曲 / 小提琴独奏...), which almost always
+/// denotes an instrumental cover. `[板块]` tolerates the common typo.
+static INSTRUMENTAL_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"(?:钢琴|电钢琴|电子琴|吉他|尤克里里|古筝|琵琶|二胡|小提琴|大提琴|笛子|长笛|陶笛|口琴|萨克斯)(?:版|板|曲|独奏|纯音乐)",
+    )
+    .expect("valid regex")
+});
+
+/// A "live" token at a word boundary in lowercase-normalized text (live, live
+/// at, live version...). Word boundaries avoid false hits on words that merely
+/// contain "live" (e.g. "alive").
+static LIVE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\blive\b").expect("valid regex"));
+
+/// Whether an already-normalized title/query carries a secondary-version marker
+/// (instrumental/accompaniment, concert or live recording).
+fn is_secondary_version(s: &str) -> bool {
+    SECONDARY_VERSION_MARKERS.iter().any(|m| s.contains(m))
+        || INSTRUMENTAL_RE.is_match(s)
+        || LIVE_RE.is_match(s)
+}
+
+/// Tunables for a [`SonarFinder`] search session.
 #[derive(Debug, Clone)]
 pub struct SearchConfig {
+    /// Ranking strategy (see [`SearchMode`]).
     pub mode: SearchMode,
+    /// Which providers to query, in the given order (priority still re-sorts them).
     pub providers: Vec<SonarSource>,
+    /// Allow lossless (flac/sq) candidates where a provider supports them.
     pub enable_flac: bool,
+    /// Per-provider search deadline in milliseconds.
     pub timeout_ms: u64,
+    /// Cap on songs kept from each provider before merging/ranking.
     pub max_results_per_provider: usize,
     /// Proxy URL for the domestic providers (kugou, kuwo, bilivideo). Empty = direct.
     pub search_proxy: String,
@@ -46,25 +111,30 @@ impl Default for SearchConfig {
 }
 
 impl SearchConfig {
+    /// Build a config with the default providers and settings.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Override the ranking mode.
     pub fn with_mode(mut self, mode: SearchMode) -> Self {
         self.mode = mode;
         self
     }
 
+    /// Restrict the active providers to the given set.
     pub fn with_providers(mut self, providers: Vec<SonarSource>) -> Self {
         self.providers = providers;
         self
     }
 
+    /// Toggle lossless candidates.
     pub fn with_flac(mut self, enable: bool) -> Self {
         self.enable_flac = enable;
         self
     }
 
+    /// Set the per-provider search timeout in milliseconds.
     pub fn with_timeout(mut self, ms: u64) -> Self {
         self.timeout_ms = ms;
         self
@@ -89,13 +159,18 @@ impl SearchConfig {
     }
 }
 
+/// Aggregates the configured providers and runs searches across them
+/// concurrently, merging and ranking the combined results.
 pub struct SonarFinder {
     providers: Vec<Arc<dyn SonarProvider>>,
     config: SearchConfig,
 }
 
 impl SonarFinder {
-    pub fn new(config: SearchConfig) -> Self {
+    /// Build a finder from `config`, instantiating and sorting the selected
+    /// providers by priority (highest first). Providers that report
+    /// [`SonarProvider::enabled`] `false` are skipped.
+    pub fn new(config: SearchConfig) -> Result<Self> {
         let mut providers: Vec<Arc<dyn SonarProvider>> = Vec::new();
 
         for source in &config.providers {
@@ -103,13 +178,13 @@ impl SonarFinder {
                 SonarSource::Kugou => Arc::new(KugouProvider::with_proxy(
                     config.enable_flac,
                     &config.search_proxy,
-                )),
-                SonarSource::Kuwo => Arc::new(KuwoProvider::with_proxy(&config.search_proxy)),
+                )?),
+                SonarSource::Kuwo => Arc::new(KuwoProvider::with_proxy(&config.search_proxy)?),
                 SonarSource::BiliVideo => {
-                    Arc::new(BiliVideoProvider::with_proxy(&config.search_proxy))
+                    Arc::new(BiliVideoProvider::with_proxy(&config.search_proxy)?)
                 }
                 SonarSource::Youtube => {
-                    Arc::new(YoutubeProvider::with_proxy(&config.youtube_proxy))
+                    Arc::new(YoutubeProvider::with_proxy(&config.youtube_proxy)?)
                 }
             };
             if provider.enabled() {
@@ -119,7 +194,7 @@ impl SonarFinder {
 
         providers.sort_by_key(|p| std::cmp::Reverse(p.priority()));
 
-        Self { providers, config }
+        Ok(Self { providers, config })
     }
 
     /// The provider sources, ordered by priority (highest first).
@@ -127,6 +202,9 @@ impl SonarFinder {
         self.providers.iter().map(|p| p.source()).collect()
     }
 
+    /// Run a search across all providers (each bounded by `timeout_ms`), merge
+    /// and rank the results, and return the combined [`SearchResult`]. Returns
+    /// [`crate::error::SonarError::NoResults`] when no provider returned anything.
     pub async fn search(&self, query: &SearchQuery) -> Result<SearchResult> {
         let (tx, mut rx) = mpsc::channel(self.providers.len());
         let query = std::sync::Arc::new(query.clone());
@@ -246,22 +324,33 @@ impl SonarFinder {
         // higher stops titles that embed the artist name from outscoring the
         // real recording (e.g. "只有爱 (cover: 许巍)" vs "只有爱 - 许巍").
         score += name_hits;
-        score += artist_hits * 1.5;
+        score += artist_hits * ARTIST_HIT_WEIGHT;
 
         if let Some(target_ms) = query.duration {
             let diff_ms = song.duration.abs_diff(target_ms);
-            if diff_ms <= 3_000 {
-                score += 1.0;
-            } else if diff_ms <= 10_000 {
-                score += 0.5;
-            } else if diff_ms <= 30_000 {
-                score += 0.25;
+            for (max_diff_ms, bonus) in DURATION_MATCH_MS {
+                if diff_ms <= max_diff_ms {
+                    score += bonus;
+                    break;
+                }
             }
+        }
+
+        // Demote secondary versions (instrumentals/accompaniments, concert and
+        // live recordings) so the original studio recording wins when both
+        // surface in the results. Skipped when the search itself asks for such
+        // a version (the query carries the marker).
+        let query_text = crate::util::normalize_for_match(&query.keyword);
+        if !is_secondary_version(&query_text) && is_secondary_version(&name) {
+            score -= SECONDARY_VERSION_PENALTY;
         }
 
         score
     }
 
+    /// Search, then try each ranked song's provider for a playable URL and
+    /// return the first that resolves (best quality per the provider). Convenience
+    /// wrapper around [`Self::search`] + [`Self::get_play_url_for_song`].
     pub async fn search_and_get_url(
         &self,
         query: &SearchQuery,
@@ -326,7 +415,7 @@ impl SonarFinder {
 
     /// Best-effort lyrics: the song's own provider first, then keyword-search
     /// the configured sources (kugou preferred, then kuwo) for a matching song
-    /// and reuse its lyrics.
+    /// and reuse its lyrics. Returns `None` when no lyrics could be found.
     pub async fn get_lyrics_fallback(&self, song: &crate::model::Song) -> Option<String> {
         if let Ok(Some(l)) = self.get_lyrics(song).await
             && !l.trim().is_empty()
@@ -341,7 +430,7 @@ impl SonarFinder {
                 return Some(l);
             }
         }
-        Some("未找到歌词".into())
+        None
     }
 
     /// Best-effort cover: the song's own cover first, else keyword-search the
@@ -388,26 +477,123 @@ impl SonarFinder {
     }
 }
 
-impl Default for SonarFinder {
-    fn default() -> Self {
-        Self::new(SearchConfig::default())
-    }
-}
-
+/// One-shot search using the default config and [`SearchMode::BestScore`].
 pub async fn quick_search(keyword: &str) -> Result<(Song, crate::model::PlayUrlResult)> {
-    let finder = SonarFinder::default();
+    let finder = SonarFinder::new(SearchConfig::default())?;
     finder
         .search_and_get_url(&SearchQuery::new(keyword), None)
         .await
 }
 
+/// One-shot search using the default config with an explicit [`SearchMode`].
 pub async fn quick_search_with_mode(
     keyword: &str,
     mode: SearchMode,
 ) -> Result<(Song, crate::model::PlayUrlResult)> {
     let config = SearchConfig::new().with_mode(mode);
-    let finder = SonarFinder::new(config);
+    let finder = SonarFinder::new(config)?;
     finder
         .search_and_get_url(&SearchQuery::new(keyword), None)
         .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::make_song_id;
+
+    fn song(name: &str, singer: &str) -> Song {
+        Song {
+            id: make_song_id(SonarSource::Kugou, name),
+            source_id: name.to_string(),
+            name: name.to_string(),
+            singer: singer.to_string(),
+            album: String::new(),
+            duration: 0,
+            source: SonarSource::Kugou,
+            pic_url: String::new(),
+            meta: Default::default(),
+        }
+    }
+
+    fn score(name: &str, singer: &str, keyword: &str) -> f64 {
+        let finder = SonarFinder::new(SearchConfig::default()).unwrap();
+        finder.calculate_match_score(&song(name, singer), &SearchQuery::new(keyword))
+    }
+
+    #[test]
+    fn vocal_beats_instrumental() {
+        let vocal = score("晴天", "周杰伦", "晴天 周杰伦");
+        let instrumental = score("晴天 伴奏", "周杰伦", "晴天 周杰伦");
+        assert!(
+            vocal > instrumental,
+            "vocal {vocal} should outscore 伴奏 {instrumental}"
+        );
+    }
+
+    #[test]
+    fn instrumental_query_not_penalised() {
+        // When the user explicitly searches for an instrumental, its token hits
+        // should count normally instead of being penalised.
+        let q = "晴天 伴奏";
+        let vocal = score("晴天", "周杰伦", q);
+        let instrumental = score("晴天 伴奏", "周杰伦", q);
+        assert!(
+            instrumental > vocal,
+            "explicit 伴奏 query should rank it first"
+        );
+    }
+
+    #[test]
+    fn piano_remake_is_penalised() {
+        let vocal = score("晴天", "周杰伦", "晴天 周杰伦");
+        let remake = score("晴天 钢琴版", "周杰伦", "晴天 周杰伦");
+        assert!(
+            vocal > remake,
+            "vocal {vocal} should outscore 钢琴版 {remake}"
+        );
+    }
+
+    #[test]
+    fn concert_and_live_are_penalised() {
+        let vocal = score("晴天", "周杰伦", "晴天 周杰伦");
+        for title in [
+            "晴天 演唱会",
+            "晴天(现场版)",
+            "晴天 live",
+            "晴天 live at 演唱会",
+        ] {
+            let version = score(title, "周杰伦", "晴天 周杰伦");
+            assert!(
+                vocal > version,
+                "vocal {vocal} should outscore {title:?} ({version})"
+            );
+        }
+    }
+
+    #[test]
+    fn concert_query_not_penalised() {
+        let q = "晴天 演唱会";
+        let vocal = score("晴天", "周杰伦", q);
+        let concert = score("晴天 演唱会", "周杰伦", q);
+        assert!(
+            concert > vocal,
+            "explicit 演唱会 query should rank the live version first"
+        );
+    }
+
+    #[test]
+    fn secondary_version_markers_recognised() {
+        assert!(is_secondary_version("晴天 (karaoke)"));
+        assert!(is_secondary_version("晴天 ktv"));
+        assert!(is_secondary_version("晴天 纯音乐"));
+        assert!(is_secondary_version("晴天 演唱会"));
+        assert!(is_secondary_version("晴天 现场版"));
+        assert!(is_secondary_version("晴天 live"));
+        assert!(!is_secondary_version("晴天"));
+        assert!(
+            !is_secondary_version("alive"),
+            "word boundary must guard live"
+        );
+    }
 }

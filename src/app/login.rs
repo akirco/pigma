@@ -7,7 +7,7 @@ use tokio::time::{Duration, sleep};
 
 impl App {
     pub(super) fn handle_login(&mut self) {
-        let login = &mut self.state.navigation.login;
+        let login = &mut self.state.login;
         login.loading = true;
         login.error = None;
 
@@ -28,15 +28,15 @@ impl App {
 
     pub(super) fn handle_login_success(&mut self, info: ncm_api::LoginInfo) {
         self.toast(format!("登录成功: {}", info.nickname));
-        self.state.navigation.login.loading = false;
-        self.state.navigation.user = Some(info.clone());
+        let uid = info.uid;
+        self.state.login.loading = false;
+        self.state.navigation.user = Some(info);
         self.service.client().flush_cookies();
         if self.state.navigation.page == Page::Login {
             self.navigate_to_main();
         }
 
-        // 登录后从云端拉取"我喜欢的音乐"列表，本地集合与播放栏图标即时同步。
-        let uid = info.uid;
+        // After login, fetch the "我喜欢的音乐" list from the cloud so the local set and the playerbar icon stay in sync.
         let service = self.service.clone();
         let liked_ids = Arc::clone(&self.liked_ids);
         let sender = self.state.events.sender();
@@ -55,15 +55,15 @@ impl App {
 
     pub(super) fn handle_login_error(&mut self, e: String) {
         self.toast(format!("登录失败: {}", e));
-        self.state.navigation.login.loading = false;
-        self.state.navigation.login.error = Some(e);
+        self.state.login.loading = false;
+        self.state.login.error = Some(e);
     }
 
     pub(super) fn handle_qr_created(&mut self, url: String, key: String) {
-        self.state.navigation.login.loading = false;
-        self.state.navigation.login.qr_url = url;
-        self.state.navigation.login.qr_key = key.clone();
-        self.state.navigation.login.qr_status_text = "等待扫码...".to_string();
+        self.state.login.loading = false;
+        self.state.login.qr_url = url;
+        self.state.login.qr_key = key.clone();
+        self.state.login.qr_status_text = "等待扫码...".to_string();
 
         let service = self.service.clone();
         let sender = self.state.events.sender();
@@ -112,6 +112,6 @@ impl App {
     }
 
     pub(super) fn handle_qr_status(&mut self, text: String) {
-        self.state.navigation.login.qr_status_text = text;
+        self.state.login.qr_status_text = text;
     }
 }

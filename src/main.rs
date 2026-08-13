@@ -1,3 +1,6 @@
+//! Application entry point: initializes the terminal and logger, loads the
+//! configuration, and launches the main `App` loop until quit.
+
 use crate::{app::App, config::Config, logger::init_logger};
 use crossterm::execute;
 use std::io::stdout;

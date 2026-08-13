@@ -3,8 +3,10 @@ use crate::config::{Config, Theme, ThemeRegistry, theme_fallback};
 use super::App;
 
 impl App {
-    /// 解析当前主题：优先 `default_theme`，缺失则回退 `default`，再缺失用硬编码兜底。
-    /// 取字段借用而非整个 `&self`，便于调用方在不持有整体借用的前提下使用。
+    /// Resolve the current theme: prefer `default_theme`, fall back to `default`
+    /// if missing, then to a hardcoded fallback.
+    /// Borrows individual fields rather than the whole `&self` so callers can use
+    /// it without holding an overall borrow.
     pub(crate) fn resolve_theme<'a>(config: &Config, registry: &'a ThemeRegistry) -> &'a Theme {
         registry.get(&config.default_theme).unwrap_or_else(|| {
             log::warn!(

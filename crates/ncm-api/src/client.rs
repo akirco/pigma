@@ -34,7 +34,7 @@ const UA_LIST: &[&str] = &[
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
 ];
 
-/// `NcmClient` 构造器
+/// Builder for `NcmClient`
 pub struct NcmClientBuilder {
     cookie_path: Option<PathBuf>,
     timeout: Duration,
@@ -54,31 +54,32 @@ impl Default for NcmClientBuilder {
 }
 
 impl NcmClientBuilder {
-    /// Cookie 持久化文件路径（默认当前工作目录下的 `cookies.json`；pigma 会显式传入）
+    /// Path of the cookie persistence file (defaults to `cookies.json` in the current working
+    /// directory; pigma passes it in explicitly)
     pub fn cookie_path(mut self, path: PathBuf) -> Self {
         self.cookie_path = Some(path);
         self
     }
 
-    /// 请求超时时间（默认 30s）
+    /// Request timeout (defaults to 30s)
     pub fn timeout(mut self, duration: Duration) -> Self {
         self.timeout = duration;
         self
     }
 
-    /// HTTP 代理（支持 http / https / socks5）
+    /// HTTP proxy (supports http / https / socks5)
     pub fn proxy(mut self, proxy: &str) -> Self {
         self.proxy = Some(proxy.to_string());
         self
     }
 
-    /// 自定义 User-Agent（默认随机选一个）
+    /// Custom User-Agent (a random one is chosen by default)
     pub fn user_agent(mut self, ua: &str) -> Self {
         self.user_agent = Some(ua.to_string());
         self
     }
 
-    /// 构建 `NcmClient`
+    /// Build `NcmClient`
     pub fn build(self) -> Result<NcmClient, NcmError> {
         let cookie_path = self.cookie_path.unwrap_or_else(default_cookie_path);
 
@@ -115,7 +116,7 @@ fn random_ua() -> String {
     UA_LIST[i].to_string()
 }
 
-/// 网易云音乐 API 客户端
+/// NetEase Cloud Music API client
 pub struct NcmClient {
     http: Client,
     ua: String,
@@ -123,24 +124,25 @@ pub struct NcmClient {
 }
 
 impl NcmClient {
-    /// 获取构造器
+    /// Get the builder
     pub fn builder() -> NcmClientBuilder {
         NcmClientBuilder::default()
     }
 
-    /// 创建默认配置的客户端
+    /// Create a client with default configuration
     pub fn new() -> Result<Self, NcmError> {
         Self::builder().build()
     }
 
-    /// 手动触发 cookie 写盘（进程退出前调用）
+    /// Manually trigger a cookie write to disk (call before the process exits)
     pub fn flush_cookies(&self) {
         if let Ok(mut store) = self.store.lock() {
             store.flush();
         }
     }
 
-    /// 清除 `MUSIC_U`（登录失败后清掉匿名会话，避免误判为已登录）
+    /// Clear `MUSIC_U` (clears the anonymous session after a failed login so it is not
+    /// misjudged as logged in)
     pub fn clear_music_u(&self) {
         if let Ok(mut store) = self.store.lock() {
             store.remove("MUSIC_U");
@@ -148,17 +150,17 @@ impl NcmClient {
         }
     }
 
-    /// 检查是否已登录（通过 `MUSIC_U` 或 `__csrf` cookie 判断）
+    /// Check whether the user is logged in (determined via the `MUSIC_U` or `__csrf` cookie)
     pub fn is_logged_in(&self) -> bool {
         self.store.lock().map(|s| s.is_logged_in()).unwrap_or(false)
     }
 
-    /// 获取内部 CookieStore（可用于注入/读取 cookie）
+    /// Get the internal CookieStore (can be used to inject/read cookies)
     pub fn cookie_store(&self) -> &Arc<Mutex<CookieStore>> {
         &self.store
     }
 
-    /// 安全地锁住 CookieStore，传播 poison 错误
+    /// Safely lock the CookieStore, propagating poison errors
     fn with_store<F, T>(&self, f: F) -> Result<T, NcmError>
     where
         F: FnOnce(&mut CookieStore) -> T,
@@ -169,7 +171,7 @@ impl NcmClient {
             .map_err(|_| NcmError::Session("cookie store lock poisoned".into()))
     }
 
-    /// 单次上锁获取 csrf_token + cookie_header
+    /// Lock once to obtain csrf_token + cookie_header
     fn prepare_request(&self, is_eapi: bool) -> Result<RequestCookies, NcmError> {
         self.with_store(|store| RequestCookies {
             csrf: store.csrf_token().to_string(),
@@ -178,7 +180,7 @@ impl NcmClient {
         })
     }
 
-    /// 通用 HTTP POST 请求（weapi/eapi 共用）
+    /// Generic HTTP POST request (shared by weapi/eapi)
     async fn send_request(
         &self,
         url: String,
@@ -205,8 +207,7 @@ impl NcmClient {
 
         let status = resp.status();
         {
-            let headers = resp.headers().clone();
-            self.with_store(|store| store.update_from_response(&headers))?;
+            self.with_store(|store| store.update_from_response(resp.headers()))?;
         }
 
         let text = resp.text().await?;
@@ -228,7 +229,7 @@ impl NcmClient {
         Ok(text)
     }
 
-    // ===== 内部请求 =====
+    // ===== Internal requests =====
 
     async fn request_weapi(&self, path: &str, params: &[(&str, &str)]) -> Result<String, NcmError> {
         let cookies = self.prepare_request(false)?;
@@ -254,172 +255,128 @@ impl NcmClient {
         self.send_request(url, body, "music.163.com", false).await
     }
 
-    /// 与 `request_eapi` 相同但接受 `serde_json::Value` 参数（保留数字/布尔类型）。
+    /// Send an eapi request (core implementation).
+    ///
+    /// The request body consists of encrypted form parameters. When `mobile_ua` is `true`,
+    /// the NetEase Cloud iOS client identity is used (login/cloud-disk and similar APIs);
+    /// otherwise the configured User-Agent is used together with
+    /// `Host: interface.music.163.com` (playback-URL and similar APIs).
+    /// Sub-methods only convert their own parameter shapes into `serde_json::Value` and call this method.
+    async fn send_eapi(
+        &self,
+        path: &str,
+        data: Value,
+        mobile_ua: bool,
+    ) -> Result<String, NcmError> {
+        let cookies = self.prepare_request(true)?;
+
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        let buildver: String = now_ms.to_string().chars().take(10).collect();
+        let request_id = format!("{}_{:04}", now_ms, rand::random::<u16>() % 1000);
+
+        let mut data = match data {
+            serde_json::Value::Object(m) => serde_json::Value::Object(m),
+            _ => {
+                return Err(NcmError::Session(
+                    "eapi request expects an object body".into(),
+                ));
+            }
+        };
+        let map = data
+            .as_object_mut()
+            .ok_or_else(|| NcmError::Session("eapi request expects an object body".into()))?;
+        map.insert(
+            "csrf_token".to_string(),
+            serde_json::Value::String(cookies.csrf.clone()),
+        );
+        map.insert(
+            "header".to_string(),
+            serde_json::json!({
+                "osver": "16.2",
+                "deviceId": cookies.device_id,
+                "os": "iPhone OS",
+                "appver": "9.0.90",
+                "versioncode": "140",
+                "mobilename": "",
+                "buildver": buildver,
+                "resolution": "1920x1080",
+                "__csrf": cookies.csrf,
+                "channel": "",
+                "requestId": request_id,
+            }),
+        );
+
+        let params_json = data.to_string();
+        let body = encrypt::eapi(path, &params_json);
+
+        let eapi_path = path.replacen("/api", "/eapi", 1);
+        let url = format!("{}{}", EAPI_BASE, eapi_path);
+
+        let mut request = self
+            .http
+            .post(&url)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .header("Cookie", &cookies.cookie_header);
+        if mobile_ua {
+            request = request.header(
+                "User-Agent",
+                "NeteaseMusic 9.0.90/5038 (iPhone; iOS 16.2; zh_CN)",
+            );
+        } else {
+            request = request
+                .header("User-Agent", &self.ua)
+                .header("Accept", "*/*")
+                .header("Accept-Language", "en-US,en;q=0.5")
+                .header("Host", "interface.music.163.com")
+                .header("Referer", "https://music.163.com");
+        }
+        let resp = request.body(body).send().await?;
+
+        {
+            self.with_store(|store| store.update_from_response(resp.headers()))?;
+        }
+
+        let status = resp.status();
+        let text = resp.text().await?;
+        let preview = text.chars().take(200).collect::<String>();
+        log::debug!(
+            "send_eapi path={path} status={status} body(len={}): {preview:?}",
+            text.len(),
+        );
+        Ok(text)
+    }
+
+    /// eapi request whose parameters are a `serde_json::Value` preserving numbers/booleans (iOS client identity).
     async fn request_eapi_value(
         &self,
         path: &str,
         params: serde_json::Value,
     ) -> Result<String, NcmError> {
-        let cookies = self.prepare_request(true)?;
-
-        let mut data = match params {
-            serde_json::Value::Object(m) => serde_json::Value::Object(m),
-            _ => {
-                return Err(NcmError::Session(
-                    "request_eapi_value expects an object".into(),
-                ));
-            }
-        };
-
-        // Add csrf_token
-        if let serde_json::Value::Object(ref mut map_obj) = data {
-            map_obj.insert(
-                "csrf_token".to_string(),
-                serde_json::Value::String(cookies.csrf.clone()),
-            );
-        }
-
-        let now_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis();
-        let buildver: String = now_ms.to_string().chars().take(10).collect();
-        let request_id = format!("{}_{:04}", now_ms, rand::random::<u16>() % 1000);
-
-        if let serde_json::Value::Object(ref mut map_obj) = data {
-            map_obj.insert(
-                "header".to_string(),
-                serde_json::json!({
-                    "osver": "16.2",
-                    "deviceId": cookies.device_id,
-                    "os": "iPhone OS",
-                    "appver": "9.0.90",
-                    "versioncode": "140",
-                    "mobilename": "",
-                    "buildver": buildver,
-                    "resolution": "1920x1080",
-                    "__csrf": cookies.csrf,
-                    "channel": "",
-                    "requestId": request_id,
-                }),
-            );
-        }
-
-        let params_json = data.to_string();
-        let body = encrypt::eapi(path, &params_json);
-
-        let eapi_path = path.replacen("/api", "/eapi", 1);
-        let url = format!("{}{}", EAPI_BASE, eapi_path);
-
-        let resp = self
-            .http
-            .post(&url)
-            .header(
-                "User-Agent",
-                "NeteaseMusic 9.0.90/5038 (iPhone; iOS 16.2; zh_CN)",
-            )
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .header("Cookie", &cookies.cookie_header)
-            .body(body)
-            .send()
-            .await?;
-
-        {
-            let headers = resp.headers().clone();
-            self.with_store(|store| store.update_from_response(&headers))?;
-        }
-
-        let status = resp.status();
-        let text = resp.text().await?;
-        let preview = text.chars().take(200).collect::<String>();
-        log::debug!(
-            "request_eapi_value path={path} status={status} body(len={}): {preview:?}",
-            text.len(),
-        );
-        Ok(text)
+        self.send_eapi(path, params, true).await
     }
 
+    /// eapi request whose parameters are string key-value pairs (converted to `serde_json::Value` internally).
     async fn request_eapi(&self, path: &str, params: &[(&str, &str)]) -> Result<String, NcmError> {
-        let cookies = self.prepare_request(true)?;
-
-        let mut map: HashMap<&str, &str> = params.iter().copied().collect();
-        map.insert("csrf_token", &cookies.csrf);
-
-        let mut data = serde_json::json!(map);
-
-        let now_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis();
-        let buildver: String = now_ms.to_string().chars().take(10).collect();
-        let request_id = format!("{}_{:04}", now_ms, rand::random::<u16>() % 1000);
-
-        if let serde_json::Value::Object(ref mut map_obj) = data {
-            map_obj.insert(
-                "header".to_string(),
-                serde_json::json!({
-                    "osver": "16.2",
-                    "deviceId": cookies.device_id,
-                    "os": "iPhone OS",
-                    "appver": "9.0.90",
-                    "versioncode": "140",
-                    "mobilename": "",
-                    "buildver": buildver,
-                    "resolution": "1920x1080",
-                    "__csrf": cookies.csrf,
-                    "channel": "",
-                    "requestId": request_id,
-                }),
-            );
-        }
-
-        let params_json = data.to_string();
-        let body = encrypt::eapi(path, &params_json);
-
-        let eapi_path = path.replacen("/api", "/eapi", 1);
-        let url = format!("{}{}", EAPI_BASE, eapi_path);
-
-        let resp = self
-            .http
-            .post(&url)
-            .header("User-Agent", &self.ua)
-            .header("Accept", "*/*")
-            .header("Accept-Language", "en-US,en;q=0.5")
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .header("Host", "interface.music.163.com")
-            .header("Referer", "https://music.163.com")
-            .header("Cookie", &cookies.cookie_header)
-            .body(body)
-            .send()
-            .await?;
-
-        {
-            let headers = resp.headers().clone();
-            self.with_store(|store| store.update_from_response(&headers))?;
-        }
-
-        let status = resp.status();
-        let text = resp.text().await?;
-        let preview = text.chars().take(200).collect::<String>();
-        log::debug!(
-            "request_eapi path={path} status={status} body(len={}): {preview:?}",
-            text.len(),
-        );
-        Ok(text)
+        let map: HashMap<&str, &str> = params.iter().copied().collect();
+        self.send_eapi(path, serde_json::json!(map), false).await
     }
 
     fn check_api_code(value: &Value) -> Result<(), NcmError> {
-        let code = value.get("code").and_then(|c| c.as_i64()).unwrap_or(0) as i32;
-        if code != 200 {
-            return Err(NcmError::api(value.clone()));
-        }
-        Ok(())
+        Self::check_codes(value, &[200])
     }
 
-    /// 上传专用状态码检查：接受 200 和 400（参考实现将 400 视为特殊状态继续流程）。
+    /// Upload-specific status code check: accepts 200 and 400 (the reference implementation treats 400 as a special state and continues the flow).
     fn check_upload_code(value: &Value) -> Result<(), NcmError> {
+        Self::check_codes(value, &[200, 400])
+    }
+
+    /// Check whether the `code` in the response is one of the allowed values; otherwise return an API error.
+    fn check_codes(value: &Value, allowed: &[i32]) -> Result<(), NcmError> {
         let code = value.get("code").and_then(|c| c.as_i64()).unwrap_or(0) as i32;
-        if code != 200 && code != 400 {
+        if !allowed.contains(&code) {
             return Err(NcmError::api(value.clone()));
         }
         Ok(())

@@ -59,7 +59,7 @@ static RSA_KEY: LazyLock<RawRsaKey> = LazyLock::new(|| {
     }
 });
 
-/// Web API 加密: 双重 AES-128-CBC + RSA
+/// Web API encryption: double AES-128-CBC + RSA
 pub fn weapi(plaintext: &str) -> String {
     let secret_key = random_key_16();
     let key: Vec<u8> = secret_key
@@ -83,7 +83,7 @@ pub fn weapi(plaintext: &str) -> String {
     )
 }
 
-/// E-API 加密: AES-128-ECB + MD5
+/// E-API encryption: AES-128-ECB + MD5
 pub fn eapi(url: &str, text: &str) -> String {
     let message = format!("nobody{}use{}md5forencrypt", url, text);
     let digest = md5_hex(&message);
@@ -103,7 +103,7 @@ fn pkcs7_pad(data: &[u8], block_size: usize) -> Vec<u8> {
     padded
 }
 
-/// AES-128-CBC 加密
+/// AES-128-CBC encryption
 fn aes_cbc_encrypt(data: &[u8], key: &[u8], iv: &[u8]) -> Vec<u8> {
     let cipher = Aes128::new_from_slice(key).unwrap();
     let padded = pkcs7_pad(data, 16);
@@ -125,11 +125,11 @@ fn aes_cbc_encrypt(data: &[u8], key: &[u8], iv: &[u8]) -> Vec<u8> {
     result
 }
 
-/// AES-128-ECB 加密
+/// AES-128-ECB encryption
 fn aes_ecb_encrypt(data: &[u8], key: &[u8]) -> Vec<u8> {
     let cipher = Aes128::new_from_slice(key).unwrap();
     let padded = pkcs7_pad(data, 16);
-    let mut result = padded.clone();
+    let mut result = padded;
 
     for chunk in result.chunks_mut(16) {
         cipher.encrypt_block(chunk.try_into().unwrap());
@@ -137,7 +137,7 @@ fn aes_ecb_encrypt(data: &[u8], key: &[u8]) -> Vec<u8> {
     result
 }
 
-/// RSA 加密 (NoPadding, textbook RSA)
+/// RSA encryption (NoPadding, textbook RSA)
 fn rsa_encrypt(data: &[u8]) -> String {
     // Zero-pad to 128 bytes (RSA modulus size)
     let mut padded = vec![0u8; 128 - data.len()];
@@ -157,8 +157,9 @@ pub(crate) fn md5_hex(data: &str) -> String {
         .collect()
 }
 
-/// 匿名注册用：`deviceId` XOR `3go8&$8*3*3h0k(2)2` → MD5 原始字节 → 标准 base64。
-/// 与官方客户端 `cloudmusic_dll_encode_id` 一致。
+/// Used for anonymous registration: XOR the `deviceId` with `3go8&$8*3*3h0k(2)2`, MD5 the
+/// raw bytes, then standard base64.
+/// Matches the official client's `cloudmusic_dll_encode_id`.
 pub(crate) fn cloudmusic_encode_id(device_id: &str) -> String {
     use base64::Engine;
     use md5::Digest;
@@ -172,7 +173,7 @@ pub(crate) fn cloudmusic_encode_id(device_id: &str) -> String {
     general_purpose::STANDARD.encode(digest)
 }
 
-/// UTF-8 字节的标准 base64
+/// Standard base64 of UTF-8 bytes
 pub(crate) fn base64_utf8(s: &str) -> String {
     use base64::Engine;
     general_purpose::STANDARD.encode(s.as_bytes())

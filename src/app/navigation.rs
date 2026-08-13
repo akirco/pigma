@@ -7,14 +7,19 @@ use crate::service::ApiEndpoint;
 use crate::state::{ContentState, Page};
 
 impl App {
-    /// 重新加载当前导航项对应的内容。
+    /// Reload the content for the current navigation item.
     ///
-    /// `force = true` 时跳过内容缓存、直接走 API 重新拉取并回写缓存（手动刷新）。
+    /// With `force = true`, skip the content cache, refetch directly from the API,
+    /// and write the result back to the cache (manual refresh).
     pub(super) fn handle_nav_select(
         &mut self,
         api_str: String,
         force: bool,
     ) -> color_eyre::Result<()> {
+        if api_str == "login" {
+            self.state.navigation.page = Page::Login;
+            return Ok(());
+        }
         let api = match ApiEndpoint::parse(&api_str) {
             Some(ep) => ep,
             None => {
@@ -97,7 +102,7 @@ impl App {
                 && let Some((cached, pg)) = cache.load_content_cache_async(&api_str, ttl).await
                 && (api != ApiEndpoint::LikedSongs || pg.is_some())
             {
-                // 从缓存恢复歌单分页时补齐 trackIds，否则惰性分页（LoadMore）无法切片。
+                // When restoring playlist pagination from cache, top up the trackIds, otherwise lazy pagination (LoadMore) cannot slice.
                 if let Some(pg) = &pg
                     && let Some(id_str) = pg.api.strip_prefix("playlist:")
                     && let Ok(id) = id_str.parse::<u64>()
@@ -127,7 +132,7 @@ impl App {
             }
 
             // Handle LikedSongs separately: also fetch playlist ID for heartbeat mode.
-            // 通过"我喜欢的音乐"歌单的 trackIds 惰性分页，避免一次拉全卡顿。
+            // Paginate lazily through the "我喜欢的音乐" playlist's trackIds to avoid stalling from fetching everything at once.
             if api == ApiEndpoint::LikedSongs
                 && let Some(uid) = uid
             {
@@ -334,25 +339,9 @@ impl App {
         });
     }
 
-    /// 手动刷新当前导航项：跳过缓存重新拉取并回写缓存。
+    /// Manually refresh the current navigation item: skip the cache, refetch, and write the result back to the cache.
     pub(crate) fn reload_current_nav(&mut self) {
-        let api = self
-            .state
-            .navigation
-            .nav
-            .sections
-            .get(self.state.navigation.nav.focus_section)
-            .and_then(|s| {
-                let idx = self
-                    .state
-                    .navigation
-                    .nav
-                    .section_states
-                    .get(self.state.navigation.nav.focus_section)?
-                    .selected()?;
-                s.items.get(idx)
-            })
-            .and_then(|item| item.api.clone());
+        let api = self.state.navigation.nav.selected_api().map(str::to_string);
 
         match api.as_deref() {
             Some("__local_music__") => self.toast("↻ 刷新本地音乐".into()),
@@ -385,15 +374,38 @@ impl App {
     pub(super) fn navigate_to_main(&mut self) {
         self.state.navigation.page = Page::Main;
 
+        // Browsable without a logged-in session (public endpoints).
+        const PUBLIC_APIS: &[&str] = &["top_song_list", "toplist", "top_singers", "search"];
+        let public_only = !self.service.client().is_logged_in();
+
         let api = self
             .state
             .navigation
             .nav
             .sections
-            .first()
-            .and_then(|s| s.items.first())
-            .and_then(|i| i.api.clone());
+            .iter()
+            .find_map(|s| {
+                s.items.iter().find_map(|i| {
+                    let api = i.api.as_deref()?;
+                    if public_only && !PUBLIC_APIS.contains(&api) {
+                        None
+                    } else {
+                        Some(api.to_string())
+                    }
+                })
+            })
+            .or_else(|| {
+                self.state
+                    .navigation
+                    .nav
+                    .sections
+                    .first()
+                    .and_then(|s| s.items.first())
+                    .and_then(|i| i.api.clone())
+            });
+
         if let Some(api) = api {
+            self.state.navigation.nav.restore_focus_by_api(&api);
             let sender = self.state.events.sender();
             send_event(&sender, NavigationEvent::NavSelect(api).into());
         }
@@ -408,17 +420,9 @@ impl App {
             return sub.to_string();
         }
         nav.nav
-            .sections
-            .get(nav.nav.focus_section)
-            .and_then(|s| {
-                nav.nav
-                    .section_states
-                    .get(nav.nav.focus_section)
-                    .and_then(|st| st.selected())
-                    .and_then(|i| s.items.get(i))
-            })
-            .map(|item| item.name.clone())
+            .selected_name()
             .filter(|n| !n.is_empty())
+            .map(str::to_string)
             .unwrap_or_else(|| "默认队列".into())
     }
 }

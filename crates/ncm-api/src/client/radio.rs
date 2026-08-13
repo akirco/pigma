@@ -3,12 +3,12 @@ use crate::{error::NcmError, model::*};
 use serde_json::Value;
 
 impl NcmClient {
-    // ===== 电台 =====
+    // ===== Radio =====
 
-    /// 获取用户订阅的电台列表
+    /// Get the list of radio stations subscribed by a user
     ///
-    /// * `offset` — 偏移量
-    /// * `limit` — 数量
+    /// * `offset` — offset
+    /// * `limit` — count
     pub async fn user_radio_sublist(
         &self,
         offset: u16,
@@ -29,11 +29,11 @@ impl NcmClient {
         parse_song_list(&value, &["djRadios"]).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 获取电台节目列表
+    /// Get the program list of a radio station
     ///
-    /// * `rid` — 电台 ID
-    /// * `offset` — 偏移量
-    /// * `limit` — 数量
+    /// * `rid` — radio station ID
+    /// * `offset` — offset
+    /// * `limit` — count
     pub async fn radio_program(
         &self,
         rid: u64,

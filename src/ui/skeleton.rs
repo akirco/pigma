@@ -5,8 +5,8 @@ use ratatui::{
     widgets::Widget,
 };
 
-/// Skeleton 骨架屏：表格内容加载时按行交替填充 `bg` 与 `surface` 背景色，
-/// 模拟真实表格的行间隔效果。
+/// Skeleton screen: while table content loads, alternate `bg` and `surface` background colors
+/// row by row to mimic the row-spacing look of the real table.
 pub struct Skeleton {
     bg: Color,
     surface: Color,

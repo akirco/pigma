@@ -3,33 +3,34 @@ use crate::model::{
     PlayUrlResult, Quality, SearchQuery, SearchResult, SonarSource, Song, SongMeta, make_song_id,
 };
 use crate::provider::SonarProvider;
+use crate::provider::{PRIORITY_KUWO, build_client};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::Value;
 
+/// Kuwo search/play provider. Searches the mobile search API and resolves
+/// MP3 play URLs from the anti.s endpoint (free songs only; no flac).
 #[derive(Debug)]
 pub struct KuwoProvider {
     client: Client,
 }
 
 impl KuwoProvider {
-    pub fn new() -> Self {
+    /// Build a provider with no proxy.
+    pub fn new() -> Result<Self> {
         Self::with_proxy("")
     }
 
-    pub fn with_proxy(proxy_url: &str) -> Self {
-        let mut builder = Client::builder().user_agent("okhttp/3.10.0");
-        if !proxy_url.is_empty() {
-            builder = builder.proxy(reqwest::Proxy::all(proxy_url).expect("invalid proxy url"));
-        }
-        let client = builder.build().expect("Failed to create HTTP client");
-        Self { client }
+    /// Build a provider, routing requests through `proxy_url` (empty = direct).
+    pub fn with_proxy(proxy_url: &str) -> Result<Self> {
+        let client = build_client(proxy_url, "okhttp/3.10.0")?;
+        Ok(Self { client })
     }
 }
 
 impl Default for KuwoProvider {
     fn default() -> Self {
-        Self::new()
+        Self::new().expect("direct kuwo client")
     }
 }
 
@@ -136,7 +137,7 @@ impl SonarProvider for KuwoProvider {
     }
 
     fn priority(&self) -> u8 {
-        20
+        PRIORITY_KUWO
     }
 
     async fn get_lyrics(&self, song: &Song) -> Result<Option<String>> {

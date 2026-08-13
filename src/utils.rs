@@ -1,3 +1,6 @@
+//! Cross-cutting helpers: string formatting, gradients, filesystem paths,
+//! terminal setup, and time formatting.
+
 pub mod format;
 pub mod gradient;
 pub mod path;

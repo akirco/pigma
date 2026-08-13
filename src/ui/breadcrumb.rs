@@ -7,7 +7,8 @@ use ratatui::{
 };
 
 use super::BlockStyle;
-use super::{create_block, styled_text};
+use super::block::CornerBlock;
+use super::styled_text;
 use crate::state::NavState;
 
 pub(super) fn render_breadcrumb(f: &mut Frame, nav: &NavState, bs: &BlockStyle<'_>, area: Rect) {
@@ -51,7 +52,7 @@ pub(super) fn render_breadcrumb(f: &mut Frame, nav: &NavState, bs: &BlockStyle<'
         line
     };
 
-    let block = create_block("", bs, false);
+    let block = CornerBlock::from_color(bs, bs.colors.bg);
     let inner = block.inner(area);
     f.render_widget(block, area);
     f.render_widget(Paragraph::new(line), inner);

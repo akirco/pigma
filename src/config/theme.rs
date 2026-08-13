@@ -34,7 +34,7 @@ impl Default for Theme {
             text: cstr("#ffffff"),
             accent: cstr("#c20c0c"),
             muted: cstr("#555555"),
-            border: cstr("#555555"),
+            border: cstr("0"),
             error: cstr("#f4535a"),
         }
     }
@@ -46,11 +46,11 @@ impl Theme {
             name: "terminal".to_string(),
             bg: Color::Indexed(0),
             text: Color::Indexed(15),
-            accent: Color::Indexed(1),
+            accent: Color::Indexed(5),
             muted: Color::Indexed(4),
-            border: Color::Indexed(4),
+            border: Color::Indexed(1),
             error: Color::Indexed(9),
-            surface: Color::Indexed(8),
+            surface: Color::Indexed(1),
         }
     }
 

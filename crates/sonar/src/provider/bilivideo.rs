@@ -1,9 +1,10 @@
-use crate::crypto::wbi_sign;
+use crate::crypto::{invalidate_wbi_keys, wbi_sign};
 use crate::error::{Result, SonarError};
 use crate::model::{
     PlayUrlResult, Quality, SearchQuery, SearchResult, SonarSource, Song, SongMeta, make_song_id,
 };
 use crate::provider::SonarProvider;
+use crate::provider::{PRIORITY_BILIVIDEO, build_client};
 use async_trait::async_trait;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -21,6 +22,8 @@ fn clean_title(title: &str) -> String {
     HTML_TAG_RE.replace_all(title, "").into_owned()
 }
 
+/// Bilibili video provider. Searches via the WBI-signed web search API and
+/// extracts the audio track from the DASH manifest of a video.
 #[derive(Debug)]
 pub struct BiliVideoProvider {
     client: Client,
@@ -28,21 +31,21 @@ pub struct BiliVideoProvider {
 }
 
 impl BiliVideoProvider {
-    pub fn new() -> Self {
+    /// Build a provider with no proxy (cookies are fetched lazily on first search).
+    pub fn new() -> Result<Self> {
         Self::with_proxy("")
     }
 
-    pub fn with_proxy(proxy_url: &str) -> Self {
-        let mut builder = Client::builder()
-            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
-        if !proxy_url.is_empty() {
-            builder = builder.proxy(reqwest::Proxy::all(proxy_url).expect("invalid proxy url"));
-        }
-        let client = builder.build().expect("Failed to create HTTP client");
-        Self {
+    /// Build a provider, routing requests through `proxy_url` (empty = direct).
+    pub fn with_proxy(proxy_url: &str) -> Result<Self> {
+        let client = build_client(
+            proxy_url,
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        )?;
+        Ok(Self {
             client,
             cookies: Arc::new(Mutex::new(String::new())),
-        }
+        })
     }
 
     async fn fetch_cookies(&self) -> Result<()> {
@@ -63,37 +66,62 @@ impl BiliVideoProvider {
         Ok(())
     }
 
-    async fn signed_request(&self, path: &str, mut params: Vec<(String, String)>) -> Result<Value> {
-        let query = wbi_sign(&mut params).await?;
-        let url = format!("https://api.bilibili.com{}?{}", path, query);
+    async fn signed_request(&self, path: &str, params: Vec<(String, String)>) -> Result<Value> {
+        // `params` is cloned for signing so the original (without the injected
+        // `wts`) survives across retries.
+        for attempt in 0..2u32 {
+            let query = wbi_sign(&self.client, &mut params.clone()).await?;
+            let url = format!("https://api.bilibili.com{}?{}", path, query);
 
-        let mut headers = HeaderMap::new();
-        let cookies = self.cookies.lock().await;
-        if !cookies.is_empty() {
-            headers.insert(COOKIE, HeaderValue::from_str(&cookies)?);
-        }
-        headers.insert(
-            REFERER,
-            HeaderValue::from_str("https://search.bilibili.com")?,
-        );
+            let mut headers = HeaderMap::new();
+            let cookies = self.cookies.lock().await;
+            if !cookies.is_empty() {
+                headers.insert(COOKIE, HeaderValue::from_str(&cookies)?);
+            }
+            headers.insert(
+                REFERER,
+                HeaderValue::from_str("https://search.bilibili.com")?,
+            );
 
-        let resp = self.client.get(&url).headers(headers).send().await?;
-        let json: Value = resp.json().await?;
+            let resp = self.client.get(&url).headers(headers).send().await?;
+            let json: Value = resp.json().await?;
 
-        if json["code"].as_i64() != Some(0) {
+            let code = json["code"].as_i64().unwrap_or(-999);
+            if code == 0 {
+                return Ok(json);
+            }
+
+            let message = json["message"]
+                .as_str()
+                .unwrap_or("Unknown error")
+                .to_string();
+
+            // `-403` (stale/missing WBI signature) and `-412` (risk control)
+            // are often transient: invalidate the cached keys, refresh cookies,
+            // back off briefly and re-sign once.
+            if attempt == 0 && matches!(code, -403 | -412) {
+                log::warn!(
+                    "bilivideo {} rejected (code={code}, {message}); refreshing keys/cookies and retrying",
+                    path
+                );
+                invalidate_wbi_keys();
+                self.fetch_cookies().await?;
+                tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+                continue;
+            }
+
             return Err(SonarError::Provider {
                 provider: "bilivideo".into(),
-                message: json["message"].as_str().unwrap_or("Unknown error").into(),
+                message,
             });
         }
-
-        Ok(json)
+        unreachable!("loop always returns within two iterations")
     }
 }
 
 impl Default for BiliVideoProvider {
     fn default() -> Self {
-        Self::new()
+        Self::new().expect("direct bilibili client")
     }
 }
 
@@ -123,8 +151,6 @@ impl SonarProvider for BiliVideoProvider {
                 ],
             )
             .await?;
-
-        // println!("{:?}", json);
 
         let results = json["data"]["result"]
             .as_array()
@@ -216,6 +242,6 @@ impl SonarProvider for BiliVideoProvider {
     }
 
     fn priority(&self) -> u8 {
-        40
+        PRIORITY_BILIVIDEO
     }
 }

@@ -16,6 +16,9 @@ search_limit = 100
 # 导航栏位置: "left" (左侧, 默认), "right" (右侧), "top" (顶部) 或 "bottom" (底部)
 navigation_position = "left"
 
+# 启动 splash 界面最短显示时长 (秒), 启动流程的进度条会按此时长播放动画,
+splash_duration_secs = 2.0
+
 # 歌词渐变效果: "rainbow", "fire", "ocean", "forest", "sunset", "neon", "pastel", "monochrome"
 lyric_gradient = "rainbow"
 

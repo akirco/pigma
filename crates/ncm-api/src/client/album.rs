@@ -3,11 +3,11 @@ use crate::{error::NcmError, model::*};
 use serde_json::Value;
 
 impl NcmClient {
-    // ===== 专辑 =====
+    // ===== Album =====
 
-    /// 获取专辑详情
+    /// Get album details
     ///
-    /// * `album_id` — 专辑 ID
+    /// * `album_id` — album ID
     pub async fn album(&self, album_id: u64) -> Result<AlbumDetail, NcmError> {
         let path = format!("/weapi/v1/album/{}", album_id);
         let result = self.request_weapi(&path, &[]).await?;
@@ -16,11 +16,11 @@ impl NcmClient {
         parse_album_detail(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 获取新碟上架
+    /// Get newly released albums
     ///
-    /// * `area` — 区域：`ALL`/`ZH`/`EA`/`KR`/`JP`
-    /// * `offset` — 偏移量
-    /// * `limit` — 数量
+    /// * `area` — region: `ALL`/`ZH`/`EA`/`KR`/`JP`
+    /// * `offset` — offset
+    /// * `limit` — count
     pub async fn new_albums(
         &self,
         area: &str,
@@ -41,10 +41,10 @@ impl NcmClient {
         parse_song_list(&value, &["albums"]).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 收藏/取消收藏专辑
+    /// Like/unlike an album
     ///
-    /// * `id` — 专辑 ID
-    /// * `like` — `true` 收藏，`false` 取消
+    /// * `id` — album ID
+    /// * `like` — `true` to like, `false` to unlike
     pub async fn album_like(&self, id: u64, like: bool) -> Result<Msg, NcmError> {
         let path = if like {
             "/api/album/sub"
@@ -58,9 +58,9 @@ impl NcmClient {
         parse_msg(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 获取专辑动态信息（收藏/评论数）
+    /// Get album dynamic info (like/comment counts)
     ///
-    /// * `id` — 专辑 ID
+    /// * `id` — album ID
     pub async fn album_detail_dynamic(&self, id: u64) -> Result<AlbumDetailDynamic, NcmError> {
         let id_str = id.to_string();
         let params = vec![("id", id_str.as_str())];

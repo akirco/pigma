@@ -2,7 +2,7 @@ use super::value_get;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-// --- 歌手模型 ---
+// --- Singer models ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SingerInfo {
@@ -11,7 +11,7 @@ pub struct SingerInfo {
     pub pic_url: String,
 }
 
-// --- 歌手解析 ---
+// --- Singer parsing ---
 
 pub(crate) fn parse_singer_info(value: &Value, path: &[&str]) -> Result<Vec<SingerInfo>, String> {
     let array = value_get(value, path)

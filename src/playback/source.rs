@@ -18,19 +18,22 @@ use crate::cache::CacheManager;
 use crate::event::{Event, PlaybackEvent};
 use crate::service::ApiService;
 
-/// 开始播放前预缓冲的最小字节数。约等于 320kbps 下 ~12s、128kbps 下 ~32s 的音频，
-/// 为流下载跟不上播放速度留出余量。达到该阈值或整段下载完成即放行播放。
+/// Minimum bytes to pre-buffer before starting playback. Roughly ~12s of audio at 320kbps and
+/// ~32s at 128kbps, leaving headroom for streams that download slower than playback. Playback
+/// starts once this threshold is reached or the whole stream has finished downloading.
 const PREBUFFER_BYTES: u64 = 512 * 1024;
 
-/// 预缓冲最长等待时间。网络太慢/流异常时不等死，超时后照常开始播放。
+/// Maximum wait for pre-buffering. When the network is too slow or the stream is broken, don't
+/// wait forever — start playback anyway once the timeout is reached.
 const PREBUFFER_TIMEOUT: Duration = Duration::from_secs(8);
 
-/// 由流下载进度回调共享的缓冲状态，供开始播放前判断缓冲是否足够。
+/// Buffer state shared with the stream download progress callback, used to judge whether
+/// enough has been buffered before starting playback.
 #[derive(Clone)]
 struct StreamProgress {
-    /// 当前已下载（已写入存储）的字节数，见 `StreamState.current_position`。
+    /// Number of bytes downloaded (written to storage) so far; see `StreamState.current_position`.
     buffered: Arc<AtomicU64>,
-    /// 整段流是否已下载完成。
+    /// Whether the whole stream has finished downloading.
     completed: Arc<AtomicBool>,
 }
 
@@ -38,9 +41,10 @@ struct StreamProgress {
 #[derive(Clone)]
 pub struct AudioSource {
     service: ApiService,
-    pub cache: CacheManager,
+    pub cache: Arc<CacheManager>,
     quality: SongQuality,
-    /// 边听边存：true 时流式播放并把文件写入下载缓存，false 时只流到临时文件。
+    /// Save while playing: when true, stream and write the file into the download cache; when
+    /// false, stream to a temporary file only.
     save_on_play: bool,
     finder: Arc<SonarFinder>,
     sonar_enabled: bool,
@@ -56,7 +60,7 @@ impl AudioSource {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
         service: ApiService,
-        cache: CacheManager,
+        cache: Arc<CacheManager>,
         quality: SongQuality,
         save_on_play: bool,
         stream_client: reqwest::Client,
@@ -78,7 +82,8 @@ impl AudioSource {
         }
     }
 
-    /// 运行时切换边听边存：true 时流式播放并把文件写入下载缓存，false 时只流到临时文件。
+    /// Toggle save-on-play at runtime: when true, stream and write the file into the download
+    /// cache; when false, stream to a temporary file only.
     pub(super) fn set_save_on_play(&mut self, enabled: bool) {
         self.save_on_play = enabled;
     }
@@ -91,15 +96,15 @@ impl AudioSource {
     ///
     /// Besides the cache bookkeeping it also tracks the download progress so
     /// [`Self::wait_for_prebuffer`] can judge whether enough of the stream is
-    /// buffered before playback starts. When `mark_cache` is `false` (临时文件
-    /// 流式播放，未开边听边存) the progress is still tracked but nothing is
+    /// buffered before playback starts. When `mark_cache` is `false` (streaming to a
+    /// temporary file with save-on-play off) the progress is still tracked but nothing is
     /// recorded in the cache index.
     fn tracked_settings(
         &self,
         mark_cache: bool,
         song: &SongInfo,
         ext: &'static str,
-        msong: Option<sonar::Song>,
+        mut msong: Option<sonar::Song>,
     ) -> (Settings<HttpStream<HeadersClient>>, StreamProgress) {
         let event_tx = self.event_tx.clone();
         let cache = self.cache.clone();
@@ -116,18 +121,22 @@ impl AudioSource {
             if state.phase == StreamPhase::Complete {
                 completed.store(true, Ordering::SeqCst);
             }
-            if mark_cache && !sent.swap(true, Ordering::SeqCst) {
-                cache.mark_cached(&song, ext, msong.clone());
+            if mark_cache
+                && !sent.swap(true, Ordering::SeqCst)
+                && let Some(m) = msong.take()
+            {
+                cache.mark_cached(&song, ext, Some(m));
                 let _ = event_tx.send(PlaybackEvent::Cached(song.id).into());
             }
         });
         (settings, progress)
     }
 
-    /// 判断缓冲是否足够：等流下载攒够 [`PREBUFFER_BYTES`] 字节（或整段下载完成）
-    /// 才返回，给播放一个头部缓冲，避免流下载跟不上播放速度导致开头就缓冲下溢。
-    /// 若超过 [`PREBUFFER_TIMEOUT`] 仍未达标（网络太慢/流异常），也照常返回，
-    /// 宁可先出声后卡顿，也不让播放无限等待。
+    /// Wait until the stream download has buffered [`PREBUFFER_BYTES`] bytes (or finished
+    /// downloading) before returning, giving playback a head buffer so a slow stream download
+    /// doesn't underrun at the start. If [`PREBUFFER_TIMEOUT`] is exceeded without reaching the
+    /// target (slow network or a broken stream), also return as usual — better to start playing
+    /// with occasional stutter than to block playback indefinitely.
     async fn wait_for_prebuffer(&self, progress: &StreamProgress) {
         let deadline = tokio::time::Instant::now() + PREBUFFER_TIMEOUT;
         loop {
@@ -262,7 +271,7 @@ impl AudioSource {
             .map_err(|_| "sonar 歌曲注册表损坏".to_string())?
             .get(&song.id)
             .cloned()
-            .or_else(|| self.cache.thirdparty_song(song.id).map(Arc::new))
+            .or_else(|| self.cache.thirdparty_song(song.id))
             .ok_or_else(|| "搜索结果音源信息丢失".to_string())?;
 
         let play = self

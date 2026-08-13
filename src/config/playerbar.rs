@@ -43,7 +43,7 @@ pub struct PlayerbarConfig {
     pub unfilled_color: String,
     #[serde(default = "default_pb_unfilled_color_cached")]
     pub unfilled_color_cached: String,
-    /// 进度条渐变预设。空串或未知名称表示不启用渐变。
+    /// Progress bar gradient preset. An empty string or unknown name disables the gradient.
     #[serde(default, deserialize_with = "deserialize_optional")]
     pub gradient_preset: Option<GradientPreset>,
     #[serde(default)]

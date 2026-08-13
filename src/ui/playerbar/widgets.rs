@@ -142,34 +142,15 @@ pub(super) fn draw_gauge_bar(
     if player.current_song.is_none() {
         return;
     }
-
-    let unfilled_color = if player.cached {
-        pb.unfilled_color_cached.as_str()
-    } else {
-        pb.unfilled_color.as_str()
-    };
-
-    let ratio = player.progress.clamp(0.0, 1.0);
-
-    if let Some(preset) = pb.gradient_preset {
-        let gauge = GradientLineGauge::new(preset)
-            .ratio(ratio)
-            .label(Line::from(""))
-            .filled_symbol(&pb.filled_symbol)
-            .unfilled_symbol(&pb.unfilled_symbol)
-            .unfilled_style(Style::default().fg(colors.field_color(unfilled_color)));
-        f.render_widget(gauge, area);
-    } else {
-        let gauge = LineGauge::default()
-            .filled_symbol(&pb.filled_symbol)
-            .unfilled_symbol(&pb.unfilled_symbol)
-            .filled_style(Style::default().fg(colors.field_color(&pb.filled_color)))
-            .unfilled_style(Style::default().fg(colors.field_color(unfilled_color)))
-            .label("")
-            .ratio(ratio);
-
-        f.render_widget(gauge, area);
-    }
+    render_gauge(
+        f,
+        pb,
+        colors,
+        player.cached,
+        player.progress.clamp(0.0, 1.0),
+        Line::from(""),
+        area,
+    );
 }
 
 pub(super) fn draw_gauge_with_label(
@@ -194,8 +175,24 @@ pub(super) fn draw_gauge_with_label(
     } else {
         0.0
     };
+    let label = Line::from(Span::styled(time_buf, Style::default().fg(colors.text)));
+    render_gauge(f, pb, colors, player.cached, ratio, label, area);
+}
 
-    let unfilled_color = if player.cached {
+/// Render a progress gauge using the configured filled/unfilled symbols and
+/// colors. Uses `GradientLineGauge` when a gradient preset is configured,
+/// otherwise the plain `LineGauge`. `cached` selects the cached-file unfilled
+/// color when true.
+fn render_gauge(
+    f: &mut Frame,
+    pb: &PlayerbarConfig,
+    colors: &Theme,
+    cached: bool,
+    ratio: f64,
+    label: Line,
+    area: Rect,
+) {
+    let unfilled_color = if cached {
         pb.unfilled_color_cached.as_str()
     } else {
         pb.unfilled_color.as_str()
@@ -204,10 +201,7 @@ pub(super) fn draw_gauge_with_label(
     if let Some(preset) = pb.gradient_preset {
         let gauge = GradientLineGauge::new(preset)
             .ratio(ratio)
-            .label(Line::from(Span::styled(
-                time_buf,
-                Style::default().fg(colors.text),
-            )))
+            .label(label)
             .filled_symbol(&pb.filled_symbol)
             .unfilled_symbol(&pb.unfilled_symbol)
             .unfilled_style(Style::default().fg(colors.field_color(unfilled_color)));
@@ -219,7 +213,7 @@ pub(super) fn draw_gauge_with_label(
             .filled_style(Style::default().fg(colors.field_color(&pb.filled_color)))
             .unfilled_style(Style::default().fg(colors.field_color(unfilled_color)))
             .ratio(ratio)
-            .label(Span::styled(time_buf, Style::default().fg(colors.text)));
+            .label(label);
         f.render_widget(gauge, area);
     }
 }

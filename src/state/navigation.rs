@@ -9,9 +9,9 @@ use crate::config::NavConfig;
 use super::Page;
 use super::PaginationInfo;
 use super::content::{ContentState, TableMode};
-use super::login::LoginState;
 use super::search::SearchState;
 
+pub use crate::config::NavItemConfig;
 pub use crate::config::NavSectionConfig as NavSection;
 
 pub struct NavState {
@@ -19,7 +19,7 @@ pub struct NavState {
     pub section_states: Vec<ListState>,
     pub focus_section: usize,
     pub subtitle: Option<String>,
-    /// 顶部导航模式下的水平滚动偏移（单元格）。
+    /// Horizontal scroll offset (in cells) for the top navigation mode.
     pub scroll_x: u16,
 }
 
@@ -64,10 +64,38 @@ impl NavState {
             }
         }
     }
+
+    /// The focused section, if the focus index is in range.
+    pub fn focused_section(&self) -> Option<&NavSection> {
+        self.sections.get(self.focus_section)
+    }
+
+    /// Selected item index within the focused section.
+    pub fn selected_index(&self) -> Option<usize> {
+        self.section_states
+            .get(self.focus_section)
+            .and_then(|st| st.selected())
+    }
+
+    /// The currently focused and selected nav item, if any.
+    pub fn selected_item(&self) -> Option<&NavItemConfig> {
+        let section = self.focused_section()?;
+        self.selected_index().and_then(|i| section.items.get(i))
+    }
+
+    /// The api of the currently focused nav item, if any.
+    pub fn selected_api(&self) -> Option<&str> {
+        self.selected_item().and_then(|item| item.api.as_deref())
+    }
+
+    /// The display name of the currently focused nav item, if any.
+    pub fn selected_name(&self) -> Option<&str> {
+        self.selected_item().map(|item| item.name.as_str())
+    }
 }
 
 /// (rendered title, focus_section, selected_index, generation, content item count)
-type TitleCache = (String, usize, Option<usize>, u64, usize);
+type TitleCache = (Arc<String>, usize, Option<usize>, u64, usize);
 
 #[derive(Clone)]
 pub struct BreadcrumbEntry {
@@ -82,7 +110,6 @@ pub struct BreadcrumbEntry {
 
 pub struct NavigationState {
     pub page: Page,
-    pub login: LoginState,
     pub user: Option<LoginInfo>,
     pub nav: NavState,
     pub content: Arc<ContentState>,
@@ -92,6 +119,9 @@ pub struct NavigationState {
     pub table_mode: TableMode,
     pub table_state: TableState,
     pub playlist_selected: usize,
+    /// Horizontal scroll offset of the queue's tab bar (persisted across renders
+    /// so the selected tab stays in view).
+    pub queue_tab_scroll_x: u16,
     pub search: SearchState,
     pub pagination: Option<PaginationInfo>,
     pub generation: u64,
@@ -118,13 +148,7 @@ impl NavigationState {
     }
 
     pub fn push_breadcrumb(&mut self) {
-        let api = self
-            .nav
-            .section_states
-            .get(self.nav.focus_section)
-            .and_then(|st| st.selected())
-            .and_then(|i| self.nav.sections[self.nav.focus_section].items.get(i))
-            .and_then(|item| item.api.clone());
+        let api = self.nav.selected_api().map(str::to_string);
         self.history.push(BreadcrumbEntry {
             content: Arc::clone(&self.content),
             api,

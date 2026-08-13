@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use ratatui::{
     Frame,
     layout::{Constraint, Rect},
@@ -7,8 +9,9 @@ use ratatui::{
 };
 
 use super::BlockStyle;
+use super::block::CornerBlock;
+use crate::app::App;
 use crate::state::{CommandAction, CommandItem};
-use crate::{app::App, ui::block::create_block_surfaced};
 
 pub(super) fn draw(f: &mut Frame, app: &App, area: Rect) {
     let panel = &app.state.command_panel;
@@ -31,7 +34,7 @@ pub(super) fn draw(f: &mut Frame, app: &App, area: Rect) {
         border: &app.state.border,
         tick: app.state.tick,
     };
-    let block = create_block_surfaced(title, &style, false);
+    let block = CornerBlock::from_color(&style, colors.surface).title(title, colors);
     let inner = block.inner(popup_area);
 
     f.render_widget(Clear, popup_area);
@@ -47,14 +50,12 @@ pub(super) fn draw(f: &mut Frame, app: &App, area: Rect) {
             ..inner
         };
 
-        let display = match item {
+        let display: Cow<'_, str> = match item {
             CommandItem::Action {
                 name,
                 action: CommandAction::SwitchTheme(n),
                 ..
-            } if n == &app.config.default_theme => {
-                format!("{} *", name)
-            }
+            } if n == &app.config.default_theme => Cow::Owned(format!("{} *", name)),
             CommandItem::Action {
                 name,
                 action: CommandAction::ToggleSaveOnPlay,
@@ -65,9 +66,11 @@ pub(super) fn draw(f: &mut Frame, app: &App, area: Rect) {
                 } else {
                     "OFF"
                 };
-                format!("{name}: {state}")
+                Cow::Owned(format!("{name}: {state}"))
             }
-            CommandItem::Action { name, .. } | CommandItem::SubMenu { name, .. } => name.clone(),
+            CommandItem::Action { name, .. } | CommandItem::SubMenu { name, .. } => {
+                Cow::Borrowed(name)
+            }
         };
 
         let prefix = if i == panel.selected { "▶ " } else { "  " };

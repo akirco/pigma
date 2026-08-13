@@ -3,15 +3,15 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-/// 歌词高亮渐变预设
+/// Lyric highlight gradient presets.
 ///
-/// 复刻 colorgrad 预设的真实算法
+/// Faithfully reproduces the colorgrad preset algorithms.
 ///
-/// - warm / cubehelix：Cubehelix 色彩模型（hue 插值）
-/// - rainbow：Cubehelix 逐点公式
-/// - turbo：5 次多项式（colorgrad 原实现）
-/// - spectral / viridis：精确 hex 色站 + RGB 线性插值（BlendMode::Rgb）
-///   未知名称回退到 rainbow
+/// - warm / cubehelix: Cubehelix color model (hue interpolation)
+/// - rainbow: Cubehelix point-by-point formula
+/// - turbo: 5th-degree polynomial (original colorgrad implementation)
+/// - spectral / viridis: exact hex color stops + RGB linear interpolation (BlendMode::Rgb)
+///   Unknown names fall back to rainbow
 ///   Gradient preset enum — avoids per-call string comparison in hot render paths.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

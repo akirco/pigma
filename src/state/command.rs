@@ -2,6 +2,7 @@
 pub enum CommandAction {
     ToggleBordered,
     ToggleSaveOnPlay,
+    CycleNavPosition,
     SwitchTheme(String),
 }
 

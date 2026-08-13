@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-/// 把文件名中的非法字符替换为 `_`。
+/// Replace illegal characters in a file name with `_`.
 pub fn sanitize_filename(s: &str) -> String {
     s.trim()
         .chars()
@@ -11,14 +11,14 @@ pub fn sanitize_filename(s: &str) -> String {
         .collect()
 }
 
-/// pigma 缓存根目录（缓存文件、播放队列均在此之下）。
+/// pigma cache root directory (cache files and play queues live under it).
 pub fn pigma_cache_dir() -> PathBuf {
     dirs::cache_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("pigma")
 }
 
-/// pigma 配置根目录。
+/// pigma config root directory.
 pub fn pigma_config_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))

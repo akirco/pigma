@@ -354,9 +354,10 @@ impl PlaylistStorage {
     /// Remove a queue file. If it was the active queue, clear the
     /// `active_queue.txt` marker so a later restart doesn't point at it.
     ///
-    /// 同步删除：调用方（如 `clear_queue`）紧接着会 `refresh_queue_keys()`
-    /// 从磁盘重新扫描，若此处用 `spawn_blocking` 异步删除，扫描时文件可能仍存在
-    /// 导致刚清空的队列标签重新出现。
+    /// Synchronous deletion: the caller (e.g. `clear_queue`) immediately calls
+    /// `refresh_queue_keys()` to rescan from disk; if this deleted asynchronously via
+    /// `spawn_blocking`, the file might still exist during the scan and cause a just-cleared
+    /// queue tab to reappear.
     pub(super) fn delete_queue(&self, id: &str, display: &str) {
         if id.is_empty() {
             return;

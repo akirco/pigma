@@ -1,3 +1,6 @@
+//! Main screen area layout: splits the frame into topbar, navigation, content and
+//! player-bar regions (plus the splash layout).
+
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
 
 use crate::config::NavPosition;
@@ -30,17 +33,22 @@ pub fn splash(area: Rect) -> SplashLayout {
 
 pub struct LoginLayout {
     pub status: Rect,
+    pub logo: Rect,
     pub login_box: Rect,
 }
 
 pub fn login(area: Rect) -> LoginLayout {
-    let [status_area, box_area] = Layout::vertical([Constraint::Length(1), Constraint::Min(26)])
+    let [status_area, body] = Layout::vertical([Constraint::Length(1), Constraint::Min(26)])
         .flex(Flex::Center)
         .spacing(1)
         .areas(area);
 
+    let [logo_area, box_area] =
+        Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).areas(body);
+
     LoginLayout {
         status: status_area,
+        logo: logo_area,
         login_box: box_area,
     }
 }
@@ -101,7 +109,7 @@ pub fn build_layout(area: Rect, page: Page, nav_position: NavPosition) -> Layout
                 ])
                 .areas(area);
 
-                // 终端<60 列时隐藏侧边栏，内容占满整个区域
+                // Hide the sidebar when the terminal is narrower than 60 columns; content fills the whole area
                 let (sidebar, right) = if area.width < 60 {
                     (Rect::default(), middle)
                 } else {

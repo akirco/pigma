@@ -1,3 +1,6 @@
+//! Audio playback subsystem: re-exports the `PlaybackEngine` plus the queue/scan/
+//! lyrics/cover state and play-mode types used across the app.
+
 mod controller;
 mod cover;
 mod engine;

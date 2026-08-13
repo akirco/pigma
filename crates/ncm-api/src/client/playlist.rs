@@ -3,13 +3,14 @@ use crate::{error::NcmError, model::*};
 use serde_json::Value;
 
 impl NcmClient {
-    // ===== 歌单 =====
+    // ===== Playlist =====
 
-    /// 获取歌单详情（含歌曲列表）
+    /// Get playlist details (including the song list)
     ///
-    /// 网易云单次请求最多返回 1000 首，超过的歌单按 `offset` 分页拉全。
+    /// A single NetEase Cloud request returns at most 1000 songs; larger playlists are
+    /// fetched page by page via `offset`.
     ///
-    /// * `id` — 歌单 ID
+    /// * `id` — playlist ID
     pub async fn song_list_detail(&self, id: u64) -> Result<PlayListDetail, NcmError> {
         const PAGE: u32 = 1000;
         const MAX_OFFSET: u32 = 200_000;
@@ -55,12 +56,12 @@ impl NcmClient {
         Ok(detail)
     }
 
-    /// 获取歌单元信息 + 完整 `trackIds`（用于惰性分页）。
+    /// Get the playlist metadata plus the full `trackIds` (for lazy pagination).
     ///
-    /// 与 `song_list_detail` 不同，这里只请求一次 `/weapi/v6/playlist/detail` 拿到
-    /// `trackIds` 全量 id；歌曲本体由 [`NcmClient::playlist_songs`] 按页切片走
-    /// `songs_detail` 获取，因此 >1000 首的歌单也不会一次拉完（对齐官方
-    /// `playlist_track_all` 的做法）。
+    /// Unlike `song_list_detail`, this makes only one `/weapi/v6/playlist/detail` request to
+    /// get all `trackIds`; the songs themselves are fetched page by page by
+    /// [`NcmClient::playlist_songs`] via `songs_detail`, so playlists with >1000 songs are
+    /// never fetched all at once (matching the official `playlist_track_all` approach).
     pub async fn playlist_detail(&self, id: u64) -> Result<(PlayListDetail, Vec<u64>), NcmError> {
         let id_str = id.to_string();
         let params = vec![
@@ -80,7 +81,7 @@ impl NcmClient {
         Ok((detail, track_ids))
     }
 
-    /// 按 `trackIds` 切片取本页歌曲（走 [`NcmClient::songs_detail`]）。
+    /// Slice `trackIds` to fetch this page's songs (via [`NcmClient::songs_detail`]).
     pub async fn playlist_songs(
         &self,
         track_ids: &[u64],
@@ -95,9 +96,9 @@ impl NcmClient {
         self.songs_detail(&track_ids[offset..end]).await
     }
 
-    /// 获取我喜欢的歌曲 ID 列表（不含歌曲详情，适合大歌单轻量同步）。
+    /// Get the IDs of my liked songs (without song details, suitable for lightweight sync of large playlists).
     ///
-    /// * `uid` — 用户 ID
+    /// * `uid` — user ID
     pub async fn liked_song_ids(&self, uid: u64) -> Result<Vec<u64>, NcmError> {
         let uid_str = uid.to_string();
         let result = self
@@ -108,7 +109,7 @@ impl NcmClient {
         parse_song_id_list(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 获取我喜欢的歌曲
+    /// Get my liked songs
     pub async fn liked_songs(&self, uid: u64) -> Result<Vec<SongInfo>, NcmError> {
         let uid_str = uid.to_string();
         let result = self
@@ -125,11 +126,11 @@ impl NcmClient {
         self.songs_detail(&ids).await
     }
 
-    /// 获取用户歌单列表
+    /// Get a user's playlist list
     ///
-    /// * `uid` — 用户 ID
-    /// * `offset` — 偏移量
-    /// * `limit` — 数量
+    /// * `uid` — user ID
+    /// * `offset` — offset
+    /// * `limit` — count
     pub async fn user_song_list(
         &self,
         uid: u64,
@@ -150,7 +151,7 @@ impl NcmClient {
         parse_song_list(&value, &["playlist"]).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 获取用户创建的歌单列表
+    /// Get the playlists created by a user
     pub async fn user_created_playlist(
         &self,
         uid: u64,
@@ -180,7 +181,7 @@ impl NcmClient {
         parse_song_list(&value, &["data", "playlist"]).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 获取用户收藏的歌单列表
+    /// Get the playlists collected by a user
     pub async fn user_collected_playlist(
         &self,
         uid: u64,
@@ -210,9 +211,9 @@ impl NcmClient {
         parse_song_list(&value, &["data", "playlist"]).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 获取用户喜欢的歌曲 ID 列表
+    /// Get the list of song IDs liked by a user
     ///
-    /// * `uid` — 用户 ID
+    /// * `uid` — user ID
     pub async fn user_song_id_list(&self, uid: u64) -> Result<Vec<u64>, NcmError> {
         let uid_str = uid.to_string();
         let params = vec![("uid", uid_str.as_str())];
@@ -222,10 +223,10 @@ impl NcmClient {
         parse_song_id_list(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 获取用户收藏的专辑列表
+    /// Get the albums collected by a user
     ///
-    /// * `offset` — 偏移量
-    /// * `limit` — 数量
+    /// * `offset` — offset
+    /// * `limit` — count
     pub async fn album_sublist(&self, offset: u16, limit: u16) -> Result<Vec<SongList>, NcmError> {
         let offset_str = offset.to_string();
         let limit_str = limit.to_string();
@@ -240,10 +241,10 @@ impl NcmClient {
         parse_song_list(&value, &["data"]).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 收藏/取消收藏歌单
+    /// Like/unlike a playlist
     ///
-    /// * `id` — 歌单 ID
-    /// * `like` — `true` 收藏，`false` 取消
+    /// * `id` — playlist ID
+    /// * `like` — `true` to like, `false` to unlike
     pub async fn song_list_like(&self, id: u64, like: bool) -> Result<Msg, NcmError> {
         let path = if like {
             "/weapi/playlist/subscribe"
@@ -257,9 +258,9 @@ impl NcmClient {
         parse_msg(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 获取歌单动态信息（播放/收藏/评论数）
+    /// Get playlist dynamic info (play/like/comment counts)
     ///
-    /// * `id` — 歌单 ID
+    /// * `id` — playlist ID
     pub async fn songlist_detail_dynamic(
         &self,
         id: u64,
@@ -274,7 +275,7 @@ impl NcmClient {
         parse_playlist_detail_dynamic(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 获取每日推荐歌单
+    /// Get the daily recommended playlists
     pub async fn recommend_resource(&self) -> Result<Vec<SongList>, NcmError> {
         let result = self
             .request_weapi("/weapi/v1/discovery/recommend/resource", &[])
@@ -284,7 +285,7 @@ impl NcmClient {
         parse_song_list(&value, &["recommend"]).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 获取每日推荐歌曲
+    /// Get the daily recommended songs
     pub async fn recommend_songs(&self) -> Result<Vec<SongInfo>, NcmError> {
         let params = vec![("afresh", "false")];
         let result = self
@@ -296,12 +297,12 @@ impl NcmClient {
             .map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 获取热门歌单（分类浏览）
+    /// Get popular playlists (category browsing)
     ///
-    /// * `cat` — 分类（如 `"全部"`、`"华语"`、`"流行"`）
-    /// * `order` — 排序：`"hot"` 或 `"new"`
-    /// * `offset` — 偏移量
-    /// * `limit` — 数量
+    /// * `cat` — category (e.g. `"全部"`, `"华语"`, `"流行"`)
+    /// * `order` — sort order: `"hot"` or `"new"`
+    /// * `offset` — offset
+    /// * `limit` — count
     pub async fn top_song_list(
         &self,
         cat: &str,
@@ -324,11 +325,11 @@ impl NcmClient {
         parse_song_list(&value, &["playlists"]).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 获取精品歌单
+    /// Get high-quality playlists
     ///
-    /// * `cat` — 分类（如 `"全部"`、`"华语"`、`"流行"`）
-    /// * `lasttime` — 分页参数，上一页最后一个歌单的 `updateTime`
-    /// * `limit` — 数量
+    /// * `cat` — category (e.g. `"全部"`, `"华语"`, `"流行"`)
+    /// * `lasttime` — pagination parameter, the `updateTime` of the last playlist on the previous page
+    /// * `limit` — count
     pub async fn top_song_list_highquality(
         &self,
         cat: &str,

@@ -39,7 +39,19 @@ impl App {
             let config = sonar::SearchConfig::new()
                 .with_providers(vec![source])
                 .with_timeout(15000);
-            let finder = sonar::SonarFinder::new(config);
+            let finder = match sonar::SonarFinder::new(config) {
+                Ok(f) => f,
+                Err(e) => {
+                    send_event(
+                        &sender,
+                        NavigationEvent::ContentLoaded(ContentState::Error(format!(
+                            "搜索初始化失败: {e}"
+                        )))
+                        .into(),
+                    );
+                    return;
+                }
+            };
             let state = match finder.search(&sonar::SearchQuery::new(&keyword)).await {
                 Ok(result) => {
                     let songs: Vec<ncm_api::SongInfo> = result
@@ -83,16 +95,10 @@ impl App {
 
         nav.set_content(ContentState::Empty);
 
-        let api = nav
-            .nav
-            .section_states
-            .get(nav.nav.focus_section)
-            .and_then(|st| st.selected())
-            .and_then(|i| nav.nav.sections.get(nav.nav.focus_section)?.items.get(i))
-            .and_then(|item| item.api.as_ref());
+        let api = nav.nav.selected_api();
         if let Some(api) = api {
             let sender = self.state.events.sender();
-            send_event(&sender, NavigationEvent::NavSelect(api.clone()).into());
+            send_event(&sender, NavigationEvent::NavSelect(api.to_string()).into());
         }
     }
 

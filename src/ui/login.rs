@@ -4,11 +4,12 @@ use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Padding, Paragraph},
+    widgets::Paragraph,
 };
 
 use super::BlockStyle;
 use super::block::CornerBlock;
+use super::splash::LOGO;
 use crate::config::Theme;
 use crate::layout::LoginLayout;
 use crate::state::LoginState;
@@ -16,7 +17,37 @@ use crate::state::LoginState;
 pub(super) fn draw(f: &mut Frame, login: &LoginState, bs: &BlockStyle<'_>, layout: &LoginLayout) {
     let colors = bs.colors;
     render_status(f, colors, layout.status);
-    render_box(f, login, colors, bs.border.enabled, layout.login_box);
+    render_logo(f, colors, layout.logo);
+    render_box(f, login, bs, layout.login_box);
+}
+
+fn render_logo(f: &mut Frame, colors: &Theme, area: Rect) {
+    if area.width < 20 {
+        return;
+    }
+    let rows = LOGO.len() as u16;
+    let top = if area.height > rows {
+        area.y + (area.height - rows) / 2
+    } else {
+        area.y
+    };
+    for (i, line) in LOGO.iter().enumerate() {
+        let span = Span::styled(
+            line.to_string(),
+            Style::default()
+                .fg(colors.accent)
+                .add_modifier(Modifier::BOLD),
+        );
+        f.render_widget(
+            Paragraph::new(Line::from(span)).alignment(Alignment::Center),
+            Rect {
+                x: area.x,
+                y: top + i as u16,
+                width: area.width,
+                height: 1,
+            },
+        );
+    }
 }
 
 fn render_status(f: &mut Frame, colors: &Theme, area: Rect) {
@@ -32,7 +63,8 @@ fn render_status(f: &mut Frame, colors: &Theme, area: Rect) {
     f.render_widget(Paragraph::new(line).alignment(Alignment::Right), area);
 }
 
-fn render_box(f: &mut Frame, login: &LoginState, colors: &Theme, enabled: bool, area: Rect) {
+fn render_box(f: &mut Frame, login: &LoginState, bs: &BlockStyle<'_>, area: Rect) {
+    let colors = bs.colors;
     let box_width = area.width.saturating_sub(10).min(64);
     let box_x = area.x + (area.width.saturating_sub(box_width)) / 2;
 
@@ -40,46 +72,10 @@ fn render_box(f: &mut Frame, login: &LoginState, colors: &Theme, enabled: bool, 
     let box_height = (8 + content_rows).min(area.height);
     let box_y = area.y + (area.height.saturating_sub(box_height)) / 2;
 
-    let block = if enabled {
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(colors.border))
-            .title(
-                Line::from(vec![
-                    Span::styled(" ► ", Style::default().fg(colors.accent)),
-                    Span::styled(
-                        "AUTHENTICATION REQUIRED",
-                        Style::default()
-                            .fg(colors.accent)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ])
-                .alignment(Alignment::Left),
-            )
-            .title_style(Style::default().fg(colors.border))
-            .padding(Padding::horizontal(1))
-    } else {
-        Block::default()
-            .borders(Borders::TOP)
-            .border_style(Style::default().fg(colors.border))
-            .title(
-                Line::from(vec![
-                    Span::styled(" ► ", Style::default().fg(colors.accent)),
-                    Span::styled(
-                        "AUTHENTICATION REQUIRED",
-                        Style::default()
-                            .fg(colors.accent)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ])
-                .alignment(Alignment::Left),
-            )
-            .title_style(Style::default().fg(colors.border))
-    };
-
-    let block = CornerBlock::new(block)
-        .corner_color(colors.border)
-        .corner_sizes(2, 1);
+    let block = CornerBlock::from_color(bs, colors.bg).title(
+        " <accent> ► <b>AUTHENTICATION REQUIRED</b></accent>",
+        colors,
+    );
 
     let box_area = Rect {
         x: box_x,
@@ -138,7 +134,16 @@ fn render_qr_content(f: &mut Frame, login: &LoginState, colors: &Theme, area: Re
                 .fg(colors.muted)
                 .add_modifier(Modifier::SLOW_BLINK),
         ));
-        f.render_widget(Paragraph::new(msg).alignment(Alignment::Center), area);
+        let centered_row = Rect {
+            x: area.x,
+            y: area.y + area.height / 2,
+            width: area.width,
+            height: 1,
+        };
+        f.render_widget(
+            Paragraph::new(msg).alignment(Alignment::Center),
+            centered_row,
+        );
         return;
     }
 
@@ -204,7 +209,7 @@ fn render_footer(f: &mut Frame, colors: &Theme, area: Rect) {
     let line = Line::from(vec![
         Span::styled("ENTER login", Style::default().fg(colors.muted)),
         Span::raw("   "),
-        Span::styled("ESC exit", Style::default().fg(colors.muted)),
+        Span::styled("ESC 返回", Style::default().fg(colors.muted)),
     ]);
     f.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
 }

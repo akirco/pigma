@@ -1,3 +1,6 @@
+//! TOML configuration: the runtime `Config` plus the border/cache/column/
+//! navigation/playerbar/theme registries.
+
 mod border;
 mod cache;
 mod column;
@@ -38,23 +41,27 @@ pub struct Config {
     pub titles: TitlesConfig,
     #[serde(default)]
     pub columns: ColumnsConfig,
-    /// 歌词高亮渐变风格：warm / cubehelix / rainbow / spectral / viridis / turbo。
+    /// Lyrics highlight gradient style: warm / cubehelix / rainbow / spectral / viridis / turbo.
     #[serde(default)]
     pub lyric_gradient: GradientPreset,
-    /// 代理地址（留空则不使用代理）。
+    /// Proxy address (leave empty to disable the proxy).
     #[serde(default = "default_proxy")]
     pub proxy: String,
-    /// 代理目标：`normal` 仅代理 YouTube（默认，国内用户），`reversed` 除 YouTube 外
-    /// 全部走代理（海外用户），`both` 全部走代理。
+    /// Proxy target: `normal` proxies only YouTube (default, domestic users),
+    /// `reversed` proxies everything except YouTube (overseas users),
+    /// `both` proxies everything.
     #[serde(default = "default_proxy_target")]
     pub proxy_target: ProxyTarget,
-    /// 搜索结果数量上限。
+    /// Maximum number of search results.
     #[serde(default = "default_search_limit")]
     pub search_limit: u16,
-    /// 导航栏位置：left（左侧，默认）、right（右侧）、top（顶部）或 bottom（底部）。
+    /// Navigation bar position: left (default), right, top, or bottom.
     #[serde(default)]
     pub navigation_position: NavPosition,
-    /// sonar 兜底源配置（NCM 播放失败时的多源兜底）。
+    /// Minimum splash screen display time (seconds); auto-transition waits for this even if boot finishes instantly.
+    #[serde(default = "default_splash_duration")]
+    pub splash_duration_secs: f64,
+    /// sonar fallback source config (multi-source fallback when NCM playback fails).
     #[serde(default)]
     pub source_fallback: SonarConfig,
 }
@@ -70,15 +77,15 @@ fn default_proxy_target() -> ProxyTarget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProxyTarget {
-    /// 国内默认：仅 YouTube 走代理，其余直连。
+    /// Domestic default: only YouTube goes through the proxy; everything else connects directly.
     Normal,
-    /// 海外用户：除 YouTube 外全部走代理。
+    /// Overseas users: everything except YouTube goes through the proxy.
     Reversed,
-    /// 全部走代理。
+    /// Everything goes through the proxy.
     Both,
 }
 
-/// 导航栏位置：左侧（默认）、右侧、顶部或底部。
+/// Navigation bar position: left (default), right, top, or bottom.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum NavPosition {
@@ -89,20 +96,46 @@ pub enum NavPosition {
     Bottom,
 }
 
+impl NavPosition {
+    /// The next position in the left → right → top → bottom cycle.
+    pub fn cycle(self) -> Self {
+        match self {
+            NavPosition::Left => NavPosition::Right,
+            NavPosition::Right => NavPosition::Top,
+            NavPosition::Top => NavPosition::Bottom,
+            NavPosition::Bottom => NavPosition::Left,
+        }
+    }
+
+    /// Human-readable Chinese label used for toasts.
+    pub fn label(self) -> &'static str {
+        match self {
+            NavPosition::Left => "左侧",
+            NavPosition::Right => "右侧",
+            NavPosition::Top => "顶部",
+            NavPosition::Bottom => "底部",
+        }
+    }
+}
+
 fn default_search_limit() -> u16 {
     100
 }
 
-/// 兜底源配置（sonar 多源兜底）。
+fn default_splash_duration() -> f64 {
+    2.0
+}
+
+/// Fallback source config (sonar multi-source fallback).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SonarConfig {
-    /// 是否启用兜底源。
+    /// Whether fallback sources are enabled.
     pub enabled: bool,
-    /// 参与兜底的源，按优先级从高到低排列：
-    /// `kuwo`, `kugou`, `bilivideo`, `youtube`。
+    /// Sources participating in fallback, ordered from highest to lowest priority:
+    /// `kuwo`, `kugou`, `bilivideo`, `youtube`.
     pub providers: Vec<String>,
-    /// 单个源搜索超时（毫秒）。
+    /// Per-source search timeout (milliseconds).
     pub timeout_ms: u64,
 }
 
@@ -132,6 +165,7 @@ impl Default for Config {
             proxy_target: default_proxy_target(),
             search_limit: default_search_limit(),
             navigation_position: NavPosition::default(),
+            splash_duration_secs: default_splash_duration(),
             logger: Logger::default(),
             cache: CacheConfig::default(),
             playerbar: PlayerbarConfig::default(),
@@ -195,10 +229,10 @@ impl Config {
             .unwrap()
             .parse::<toml_edit::DocumentMut>()
             .unwrap();
-        // navigation 设为隐式
+        // Make navigation implicit
         doc["navigation"].as_table_mut().unwrap().set_implicit(true);
 
-        // 遍历每个 section，把 items 转为内联表数组
+        // Iterate over each section and convert items to inline table arrays
         let sections = doc["navigation"]["sections"]
             .as_array_of_tables_mut()
             .unwrap();

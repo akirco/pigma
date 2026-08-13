@@ -1,7 +1,7 @@
 use super::song::{SongCopyright, SongInfo};
 use serde_json::Value;
 
-// --- 电台 / 智能播放解析 ---
+// --- Radio / smart-play parsing ---
 
 pub(crate) fn parse_radio_programs(value: &Value) -> Result<Vec<SongInfo>, String> {
     let array = value["programs"].as_array().ok_or("programs not found")?;

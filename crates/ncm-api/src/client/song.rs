@@ -3,11 +3,11 @@ use crate::{error::NcmError, model::*};
 use serde_json::Value;
 
 impl NcmClient {
-    // ===== 歌曲 =====
+    // ===== Song =====
 
-    /// 获取歌曲详情
+    /// Get song details
     ///
-    /// * `ids` — 歌曲 ID 列表
+    /// * `ids` — list of song IDs
     pub async fn songs_detail(&self, ids: &[u64]) -> Result<Vec<SongInfo>, NcmError> {
         let c: String = ids
             .iter()
@@ -23,10 +23,11 @@ impl NcmClient {
             .map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 获取歌曲播放 URL（基于码率）
+    /// Get song playback URLs (based on bitrate)
     ///
-    /// * `ids` — 歌曲 ID 列表
-    /// * `br` — 码率：`128000` / `192000` / `320000` / `999000` / `1900000`
+    /// * `ids` — list of song IDs
+    /// * `br` — bitrate: `128000` / `192000` / `320000` / `999000` / `1900000`
+    #[deprecated(note = "use `songs_url_v1` (quality-level based) instead")]
     pub async fn songs_url(&self, ids: &[u64], br: &str) -> Result<Vec<SongUrl>, NcmError> {
         let ids_json = serde_json::to_string(ids).map_err(|e| NcmError::Crypto(e.to_string()))?;
         let params = vec![("ids", ids_json.as_str()), ("br", br)];
@@ -38,10 +39,10 @@ impl NcmClient {
         parse_song_url(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 获取歌曲播放 URL（基于音质等级）
+    /// Get song playback URLs (based on quality level)
     ///
-    /// * `ids` — 歌曲 ID 列表
-    /// * `level` — 音质等级，见 [`SongQuality`]
+    /// * `ids` — list of song IDs
+    /// * `level` — quality level, see [`SongQuality`]
     pub async fn songs_url_v1(
         &self,
         ids: &[u64],
@@ -68,9 +69,9 @@ impl NcmClient {
         parse_song_url(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 获取歌词
+    /// Get lyrics
     ///
-    /// * `id` — 歌曲 ID
+    /// * `id` — song ID
     pub async fn song_lyric(&self, id: u64) -> Result<Lyrics, NcmError> {
         let id_str = id.to_string();
         let params = vec![("id", id_str.as_str()), ("lv", "-1"), ("tv", "-1")];

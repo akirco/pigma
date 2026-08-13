@@ -14,7 +14,7 @@ use crate::config::Theme;
 use crate::playback::PlaybackState;
 
 use super::BlockStyle;
-use super::create_block;
+use super::block::CornerBlock;
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct LayoutArea {
@@ -57,7 +57,7 @@ pub(super) trait Playerbar {
         is_sixel: bool,
     ) {
         let colors = bs.colors;
-        let block = create_block("", bs, false).block_padding(Padding::horizontal(1));
+        let block = CornerBlock::from_color(bs, bs.colors.bg).block_padding(Padding::horizontal(1));
         let inner = block.inner(area);
         f.render_widget(block, area);
 

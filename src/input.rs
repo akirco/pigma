@@ -1,3 +1,6 @@
+//! Keyboard (and mouse) input handling: dispatches key events to the per-view
+//! handlers (navigation, content, search, login, help, command, splash, table).
+
 mod command;
 mod content;
 mod help;
@@ -9,7 +12,7 @@ mod splash;
 mod table;
 
 use crate::app::App;
-use crate::event::{AppEvent, CommandEvent, CommandPanelAction};
+use crate::event::{AppEvent, CommandEvent, CommandPanelAction, NavigationEvent};
 use crate::state::Page;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
 
@@ -59,6 +62,15 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> color_eyre::Resu
         return Ok(());
     }
 
+    // Uppercase L: go to the login page (lowercase `l` toggles lyrics on the main page).
+    // No-op when already logged in.
+    if key_event.code == KeyCode::Char('L') && !app.service.client().is_logged_in() {
+        app.state
+            .events
+            .send(NavigationEvent::Navigate(Page::Login));
+        return Ok(());
+    }
+
     if let KeyCode::Char(c) = key_event.code
         && c.eq_ignore_ascii_case(&'w')
         && key_event.modifiers == KeyModifiers::NONE
@@ -71,8 +83,9 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> color_eyre::Resu
                     app.playback.queue_current_index().unwrap_or(0);
                 app.toast(format!("▣ 队列: {key}"));
             } else if let Some(key) = app.playback.queue_keys().last().cloned() {
-                // 清空后仅剩最后一个队列：switch_queue 在只剩一个时返回 None，
-                // 这里显式聚焦它（取最右侧/最后一个标签），避免出现空焦点。
+                // After clearing, only one queue remains: switch_queue returns None when only
+                // one is left, so explicitly focus it here (the rightmost/last tab) to avoid
+                // an empty focus.
                 app.playback.activate_queue(&key);
                 app.state.navigation.playlist_selected =
                     app.playback.queue_current_index().unwrap_or(0);

@@ -40,9 +40,10 @@ pub const THIRD_PARTY_QUEUE_KEY: &str = "第三方搜索";
 /// songs are stored in the single `ncm_search.json`.
 pub const NCM_SEARCH_QUEUE_KEY: &str = "官方搜索";
 
-/// 判断是否为瞬时音频流错误（缓冲下溢/溢出）。这类错误在流下载跟不上播放速度
-/// （如 YouTube）时高频出现，rodio 会自动恢复，应直接忽略。大小写不敏感以覆盖
-/// cpal 的 "Buffer underrun/overrun occurred." 与解码器自带的各种措辞。
+/// Return whether an error is a transient audio stream error (buffer underrun/overrun). These
+/// occur frequently when the stream download can't keep up with playback (e.g. YouTube), and
+/// rodio recovers automatically, so they should be ignored. Case-insensitive to cover cpal's
+/// "Buffer underrun/overrun occurred." and various decoder-specific wordings.
 fn is_transient_stream_error(err: &str) -> bool {
     let lower = err.to_lowercase();
     lower.contains("underrun") || lower.contains("overrun")
@@ -78,7 +79,7 @@ pub struct PlaybackEngine {
     pub(super) service: ApiService,
     playlist_id: Option<u64>,
     consecutive_errors: u32,
-    /// 用户"我喜欢的音乐"歌曲 ID 集合（与 `App` 共享同一 `Arc`）。
+    /// Set of song IDs in the user's "我喜欢的音乐" collection (shares the same `Arc` with `App`).
     liked_ids: Arc<std::sync::Mutex<HashSet<u64>>>,
     /// In-flight `start_current_song` resolve task. Aborted when the user
     /// switches songs so a stale resolve neither consumes bandwidth nor sends a
@@ -91,7 +92,7 @@ impl PlaybackEngine {
     pub fn new(
         event_tx: mpsc::UnboundedSender<Event>,
         service: ApiService,
-        cache: CacheManager,
+        cache: Arc<CacheManager>,
         base_dir: std::path::PathBuf,
         quality: SongQuality,
         save_on_play: bool,
@@ -139,7 +140,8 @@ impl PlaybackEngine {
         self.state.current_song.clone()
     }
 
-    /// 根据当前歌曲是否在"我喜欢的音乐"集合中，刷新 `state.liked` 供播放栏渲染。
+    /// Refresh `state.liked` for the player bar based on whether the current song is in the
+    /// "我喜欢的音乐" set.
     pub fn update_liked_status(&mut self) {
         self.state.liked = self
             .state
@@ -225,7 +227,7 @@ impl PlaybackEngine {
     /// (`spawn_blocking`), so a key seen once (or still being persisted) must
     /// not vanish from the cache on a later synchronous scan.
     fn refresh_queue_keys(&mut self) {
-        let mut entries = self.queue_entries_cache.clone();
+        let mut entries = std::mem::take(&mut self.queue_entries_cache);
         for (id, display) in self.storage.list_queues() {
             if !entries.iter().any(|(i, _)| i == &id) {
                 entries.push((id, display));
@@ -343,7 +345,7 @@ impl PlaybackEngine {
         }
         let (next_display, next_id) = (next.1.clone(), next.0.clone());
         self.activate_by_id(&next_display, &next_id, true);
-        Some(self.active_queue_key.clone())
+        Some(next_display)
     }
 
     /// Append today's `MM-DD` to a breadcrumb context, producing the full queue
@@ -525,7 +527,8 @@ impl PlaybackEngine {
         self.state.paused = false;
         self.state.current_song = None;
         self.state.progress = 0.0;
-        // 播放已停止，退出 32ms 的 seeking 轮询循环，否则事件循环会无限自旋。
+        // Playback has stopped; exit the 32ms seeking poll loop, otherwise the event loop
+        // would spin forever.
         self.state.seeking = false;
     }
 
@@ -546,7 +549,8 @@ impl PlaybackEngine {
             self.state.paused = false;
             self.state.current_song = None;
             self.state.progress = 0.0;
-            // 同上：停止后必须退出 seeking 轮询，避免 32ms 死循环。
+            // Same as above: after stopping we must exit the seeking poll to avoid a 32ms
+            // busy loop.
             self.state.seeking = false;
         }
         if let Ok(mut registry) = self.source.sonar_songs.lock() {
@@ -638,8 +642,9 @@ impl PlaybackEngine {
     }
 
     pub fn on_playback_error(&mut self, err: String) {
-        // 缓冲下溢/溢出是瞬时事件（如 YouTube 流下载跟不上播放速度），rodio
-        // 会自动恢复，直接忽略，避免误切歌或重复报错。
+        // Buffer underruns/overruns are transient events (e.g. YouTube streams downloading
+        // slower than playback), and rodio recovers automatically, so ignore them to avoid
+        // wrongly switching songs or duplicating error reports.
         if is_transient_stream_error(&err) {
             log::warn!("忽略瞬时音频流错误: {err}");
             return;
@@ -681,7 +686,7 @@ impl PlaybackEngine {
         self.source.cache.flush_index();
     }
 
-    /// 运行时切换边听边存：下次解析音源时生效。
+    /// Toggle save-on-play at runtime: takes effect the next time the audio source is resolved.
     pub fn set_save_on_play(&mut self, enabled: bool) {
         self.source.set_save_on_play(enabled);
     }

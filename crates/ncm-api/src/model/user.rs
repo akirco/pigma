@@ -2,7 +2,7 @@ use super::song::{SongCopyright, SongInfo};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-// --- 用户 / 云盘模型 ---
+// --- User / cloud disk models ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoginInfo {
@@ -24,7 +24,7 @@ pub struct Msg {
 pub struct CloudUploadResult {
     pub song_id: u64,
     pub song_name: String,
-    /// 服务端返回的原始合并响应，便于调试 / UI 取私有云字段
+    /// The raw merged response returned by the server, for debugging / UI access to private-cloud fields
     pub raw: serde_json::Value,
 }
 
@@ -35,7 +35,7 @@ pub struct CloudDiskResult {
     pub count: u64,
 }
 
-// --- 用户 / 云盘解析 ---
+// --- User / cloud disk parsing ---
 
 pub(crate) fn parse_login_info(value: &Value) -> Result<LoginInfo, String> {
     let code = value["code"].as_i64().unwrap_or(0) as i32;

@@ -32,6 +32,7 @@ impl App {
     pub(super) fn start_splash_boot(&self) {
         let sender = self.state.events.sender();
         let client = self.service.client().clone();
+        let duration = std::time::Duration::from_secs_f64(self.config.splash_duration_secs);
 
         tokio::spawn(async move {
             let send = |progress: f64, text: &str, level: LogLevel| {
@@ -48,31 +49,44 @@ impl App {
                     .into(),
                 );
             };
+            // Pace the boot sequence across `splash_duration_secs` so the progress
+            // bar animates; real async work may naturally take longer.
+            let start = std::time::Instant::now();
+            let wait_to = |frac: f64| {
+                let target = start + duration.mul_f64(frac);
+                let rem = target.saturating_duration_since(std::time::Instant::now());
+                tokio::time::sleep(rem)
+            };
 
             send(0.05, "Initializing engine...", LogLevel::Success);
 
-            send(0.10, "Checking network connectivity...", LogLevel::Info);
+            wait_to(0.12).await;
+            send(0.12, "Checking network connectivity...", LogLevel::Info);
             let online = check_network(&client).await;
+            wait_to(0.30).await;
 
             if online {
                 send(
-                    0.25,
+                    0.30,
                     "Network: connected to music.163.com",
                     LogLevel::Success,
                 );
+                wait_to(0.38).await;
 
-                send(0.35, "Loading user session...", LogLevel::Info);
+                send(0.38, "Loading user session...", LogLevel::Info);
                 if client.is_logged_in() {
-                    send(0.45, "Session: cookies found", LogLevel::Success);
+                    send(0.48, "Session: cookies found", LogLevel::Success);
                 } else {
-                    send(0.45, "Session: not logged in", LogLevel::Info);
+                    send(0.48, "Session: not logged in", LogLevel::Info);
                 }
             } else {
                 send_event(&sender, SplashEvent::SetOffline.into());
-                send(0.25, "Network: offline, offline mode", LogLevel::Warning);
+                send(0.30, "Network: offline, offline mode", LogLevel::Warning);
             }
 
+            wait_to(0.60).await;
             send(0.98, "Ready.", LogLevel::Success);
+            wait_to(1.0).await;
             send_event(
                 &sender,
                 SplashEvent::Tick {

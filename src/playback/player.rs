@@ -239,10 +239,12 @@ impl Drop for StderrGuard {
     }
 }
 
-/// rodio 默认的错误回调会直接 `eprintln!("audio stream error: {err}")` 到 stderr，
-/// 在 crossterm 原始模式下会污染 TUI 渲染（典型触发：YouTube 流下载跟不上播放速度
-/// 导致音频设备缓冲下溢）。这里换成走文件日志 + 事件通道的回调：
-/// 瞬时下溢/溢出（rodio 会自动恢复）仅记日志；其余流错误交由应用现有错误处理。
+/// rodio's default error callback prints `eprintln!("audio stream error: {err}")` straight to
+/// stderr, which pollutes the TUI render in crossterm raw mode (typically triggered by YouTube
+/// streams downloading slower than playback, causing audio device buffer underruns). We replace
+/// it with a callback that logs to a file and sends events: transient underruns/overruns (which
+/// rodio recovers from automatically) are only logged; other stream errors are handed off to
+/// the app's existing error handling.
 fn stream_error_callback(
     event_tx: mpsc::UnboundedSender<Event>,
 ) -> impl FnMut(rodio::cpal::StreamError) + Send + 'static + Clone {

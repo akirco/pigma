@@ -7,7 +7,8 @@ async fn main() {
         SearchConfig::new()
             .with_providers(vec![SonarSource::Kuwo])
             .with_timeout(15000),
-    );
+    )
+    .unwrap();
     let result = finder
         .search(&SearchQuery::new("晴天 周杰伦"))
         .await

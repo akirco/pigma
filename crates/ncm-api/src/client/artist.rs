@@ -3,11 +3,11 @@ use crate::{error::NcmError, model::*};
 use serde_json::Value;
 
 impl NcmClient {
-    // ===== 歌手 =====
+    // ===== Artist =====
 
-    /// 获取歌手热门歌曲
+    /// Get an artist's hot songs
     ///
-    /// * `id` — 歌手 ID
+    /// * `id` — artist ID
     pub async fn singer_songs(&self, id: u64) -> Result<Vec<SongInfo>, NcmError> {
         let path = format!("/weapi/v1/artist/{}", id);
         let result = self.request_weapi(&path, &[]).await?;
@@ -17,12 +17,12 @@ impl NcmClient {
             .map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 获取歌手全部歌曲
+    /// Get all songs of an artist
     ///
-    /// * `id` — 歌手 ID
-    /// * `order` — `"hot"`（热门）或 `"time"`（时间）
-    /// * `offset` — 偏移量
-    /// * `limit` — 数量
+    /// * `id` — artist ID
+    /// * `order` — `"hot"` (trending) or `"time"` (chronological)
+    /// * `offset` — offset
+    /// * `limit` — count
     pub async fn singer_all_songs(
         &self,
         id: u64,
@@ -50,7 +50,7 @@ impl NcmClient {
             .map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 获取热门歌手
+    /// Get hot/trending artists
     pub async fn top_artists(&self, offset: u16, limit: u16) -> Result<Vec<SingerInfo>, NcmError> {
         let offset_str = offset.to_string();
         let limit_str = limit.to_string();
@@ -65,9 +65,9 @@ impl NcmClient {
         parse_singer_info(&value, &["artists"]).map_err(|e| NcmError::parse(e, &value))
     }
 
-    /// 获取歌手榜（排行榜）
+    /// Get the artist chart (leaderboard)
     ///
-    /// * `r#type` — 榜单类型（1-华语, 2-欧美, 3-韩国, 4-日本）
+    /// * `r#type` — chart type (1-Chinese, 2-Western, 3-Korean, 4-Japanese)
     pub async fn toplist_artist(&self, r#type: u8) -> Result<Vec<SingerInfo>, NcmError> {
         let limit_str = 100u16.to_string();
         let offset_str = 0u16.to_string();

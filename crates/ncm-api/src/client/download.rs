@@ -2,14 +2,14 @@ use super::NcmClient;
 use crate::error::NcmError;
 
 impl NcmClient {
-    // ===== 下载 =====
+    // ===== Download =====
 
-    /// 从网络下载图片到本地
+    /// Download an image from the network to a local path
     ///
-    /// * `url` — 图片 URL
-    /// * `path` — 本地保存路径（含文件名）
-    /// * `width` — 请求宽度
-    /// * `height` — 请求高度
+    /// * `url` — image URL
+    /// * `path` — local save path (including the file name)
+    /// * `width` — requested width
+    /// * `height` — requested height
     pub async fn download_img(
         &self,
         url: &str,
@@ -37,10 +37,10 @@ impl NcmClient {
         Ok(())
     }
 
-    /// 从网络下载歌曲到本地
+    /// Download a song from the network to a local path
     ///
-    /// * `url` — 歌曲 URL
-    /// * `path` — 本地保存路径（含文件名）
+    /// * `url` — song URL
+    /// * `path` — local save path (including the file name)
     pub async fn download_song(&self, url: &str, path: std::path::PathBuf) -> Result<(), NcmError> {
         if path.exists() {
             return Ok(());

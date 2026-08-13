@@ -5,7 +5,7 @@ use super::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-// --- 歌曲模型 ---
+// --- Song models ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SongInfo {
@@ -77,7 +77,7 @@ pub struct Lyrics {
     pub tlyric: Vec<String>,
 }
 
-// --- 歌曲解析 ---
+// --- Song parsing ---
 
 pub(crate) fn parse_song_info(v: &Value, context: SongContext) -> Result<SongInfo, String> {
     let name = str_val(v, "name");
@@ -319,7 +319,7 @@ mod tests {
 
     #[test]
     fn test_parse_song_id_list_like_get() {
-        // /api/song/like/get 真实响应形态（含 code 与 ids）。
+        // The real response shape of /api/song/like/get (including code and ids).
         let v = json!({
             "code": 200,
             "ids": [100, 200, 300, 400],

@@ -1,3 +1,49 @@
+## [0.2.8] - 2026-08-13
+
+### 🚀 Features
+
+- Enhance theme configuration and navigation features (akirco)
+- Updated default theme colors for better visibility and aesthetics.
+- Added navigation event handling for login functionality in input handling.
+- Improved login key handling to navigate to the main page upon escape.
+- Enhanced main input handling with volume adjustment and navigation position cycling.
+- Refined splash screen input handling to streamline user experience.
+- Modified layout structures to accommodate new logo rendering in the login screen.
+- Implemented API service checks for login requirements on specific endpoints.
+- Introduced command actions for cycling navigation positions.
+- Enhanced splash state to track display duration.
+- Updated UI components for better rendering and user feedback.
+- Added help text for new login functionality and volume controls.
+- Improved overall code structure and readability across multiple files.
+
+### 🐛 Bug Fixes
+
+- *(scan)* Prevent ID collision with sonar song-id by clearing top bit (akirco)
+- *(splash)* Update version display to use dynamic package version (akirco)
+
+### 🚜 Refactor
+
+- *(ui)* Replace create_block with CornerBlock for improved block handling (akirco)
+- *(README)* Update feature list and improve markup syntax explanation (akirco)
+- Refactor navigation state and UI components for improved clarity and functionality
+- Updated NavState to include methods for retrieving focused section, selected index, and selected item.
+- Removed unused LoginState from NavigationState and adjusted related references.
+- Enhanced navigation drawing logic to utilize new NavState methods for better readability.
+- Added documentation comments to clarify the purpose of various functions and structures.
+- Refined text input and UI rendering components with improved comments and organization.
+- Implemented a new render_gauge function to streamline gauge rendering in the player bar.
+- Updated utility functions for better clarity and consistency in naming conventions.
+- Enhanced gradient and path utilities with improved documentation for better understanding.
+
+### ⚙️ Miscellaneous Tasks
+
+- *(ncm_client)* Fmt (akirco)
+
+### 📚 Documentation
+
+- *(README)* add splash screen and plan sections to improve documentation clarity
+- *(config)* document splash duration setting in configuration example
+
 ## [0.2.7] - 2026-08-11
 
 ### 🚀 Features

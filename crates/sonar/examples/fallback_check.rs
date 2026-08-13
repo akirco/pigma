@@ -3,7 +3,7 @@ use sonar::{SearchConfig, SearchQuery, SonarFinder, SonarSource};
 #[tokio::main]
 async fn main() {
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let finder = SonarFinder::new(SearchConfig::default().with_timeout(15000));
+    let finder = SonarFinder::new(SearchConfig::default().with_timeout(15000)).unwrap();
 
     for src in [
         SonarSource::Kugou,

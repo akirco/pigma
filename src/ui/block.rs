@@ -19,6 +19,9 @@ pub struct CornerBlock<'a> {
     border_gradient: Option<GradientPreset>,
     border_gradient_speed: f64,
     tick: u64,
+    no_border: bool,
+    has_title: bool,
+    horizontal_padding: u16,
 }
 
 impl<'a> CornerBlock<'a> {
@@ -35,6 +38,9 @@ impl<'a> CornerBlock<'a> {
             border_gradient: None,
             border_gradient_speed: 0.0,
             tick: 0,
+            no_border: false,
+            has_title: false,
+            horizontal_padding: 0,
         }
     }
 
@@ -72,8 +78,72 @@ impl<'a> CornerBlock<'a> {
         self
     }
 
+    pub(super) fn from_color(style: &'a BlockStyle<'a>, no_border_bg: Color) -> Self {
+        let border_color = style.colors.border;
+        let border_type = if style.border.rounded {
+            BorderType::Rounded
+        } else {
+            BorderType::Plain
+        };
+        let (block, horizontal_padding, no_border) = if style.border.enabled {
+            (
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(border_type)
+                    .border_style(Style::default().fg(border_color))
+                    .title_style(Style::default().fg(style.colors.muted)),
+                0,
+                false,
+            )
+        } else {
+            let padding = Padding::new(1, 1, 1, 0);
+            (
+                Block::default()
+                    .borders(Borders::NONE)
+                    .border_style(Style::default().fg(border_color))
+                    .style(Style::default().bg(no_border_bg))
+                    .title_style(Style::default().fg(style.colors.muted))
+                    .padding(padding),
+                1,
+                true,
+            )
+        };
+        Self::new(block)
+            .corner_color(style.colors.accent)
+            .corner_sizes(2, 1)
+            .follow_corner_color(style.border.follow_corner_color)
+            .border_gradient(style.border.border_gradient)
+            .border_gradient_speed(style.border.border_gradient_speed)
+            .tick(style.tick)
+            .set_borderless(horizontal_padding, no_border)
+    }
+
+    pub(super) fn set_borderless(mut self, horizontal_padding: u16, no_border: bool) -> Self {
+        self.horizontal_padding = horizontal_padding;
+        self.no_border = no_border;
+        self
+    }
+
+    pub(super) fn title(mut self, title: &'a str, colors: &'a Theme) -> Self {
+        let title_line = ratatui::text::Line::from(styled_text::parse_styled(title, colors));
+        self.block = self
+            .block
+            .title(title_line)
+            .title_style(Style::default().fg(colors.muted));
+        if self.no_border {
+            let h = self.horizontal_padding;
+            self.block = self.block.padding(Padding::new(h, h, 0, 0));
+        }
+        self.has_title = true;
+        self
+    }
+
     pub(super) fn block_padding(mut self, padding: ratatui::widgets::Padding) -> Self {
-        self.block = self.block.padding(padding);
+        if self.no_border && !self.has_title && padding.top == 0 {
+            self.block = self.block.padding(Padding { top: 1, ..padding });
+        } else {
+            self.block = self.block.padding(padding);
+        }
         self
     }
 
@@ -131,7 +201,7 @@ impl<'a> Widget for CornerBlock<'a> {
             }
         }
 
-        // border gradient: 优先于 follow_corner_color
+        // border gradient: takes precedence over follow_corner_color
         if let Some(preset) = self.border_gradient {
             let h_span = right.saturating_sub(left);
             let v_span = bottom.saturating_sub(top);
@@ -190,7 +260,7 @@ impl<'a> Widget for CornerBlock<'a> {
                 }
             }
         } else if self.follow_corner_color {
-            // follow_corner_color: 将横竖边框也染成 corner 色
+            // follow_corner_color: also paint the horizontal and vertical borders with the corner color
             for x in (left + max_h)..=(right - max_h) {
                 if let Some(cell) = buf.cell_mut((x, top)) {
                     cell.fg = tl;
@@ -211,7 +281,7 @@ impl<'a> Widget for CornerBlock<'a> {
     }
 }
 
-// create block fn
+// create block builder
 
 use ratatui::style::Style;
 use ratatui::widgets::{BorderType, Borders, Padding};
@@ -224,58 +294,4 @@ pub struct BlockStyle<'a> {
     pub colors: &'a Theme,
     pub border: &'a BorderConfig,
     pub tick: u64,
-}
-
-pub(super) fn create_block<'a>(
-    title: &'a str,
-    style: &'a BlockStyle<'a>,
-    _focused: bool,
-) -> CornerBlock<'a> {
-    create_block_bg(title, style, _focused, style.colors.bg)
-}
-
-pub(super) fn create_block_surfaced<'a>(
-    title: &'a str,
-    style: &'a BlockStyle<'a>,
-    _focused: bool,
-) -> CornerBlock<'a> {
-    create_block_bg(title, style, _focused, style.colors.surface)
-}
-
-fn create_block_bg<'a>(
-    title: &'a str,
-    style: &'a BlockStyle<'a>,
-    _focused: bool,
-    no_border_bg: Color,
-) -> CornerBlock<'a> {
-    let border_color = style.colors.border;
-    let border_type = if style.border.rounded {
-        BorderType::Rounded
-    } else {
-        BorderType::Plain
-    };
-    let title_line = ratatui::text::Line::from(styled_text::parse_styled(title, style.colors));
-    let block = if style.border.enabled {
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(border_type)
-            .border_style(Style::default().fg(border_color))
-            .title(title_line)
-            .title_style(Style::default().fg(style.colors.muted))
-    } else {
-        Block::default()
-            .borders(Borders::NONE)
-            .border_style(Style::default().fg(border_color))
-            .style(Style::default().bg(no_border_bg))
-            .title(title_line)
-            .title_style(Style::default().fg(style.colors.muted))
-            .padding(Padding::horizontal(1))
-    };
-    CornerBlock::new(block)
-        .corner_color(style.colors.accent)
-        .corner_sizes(2, 1)
-        .follow_corner_color(style.border.follow_corner_color)
-        .border_gradient(style.border.border_gradient)
-        .border_gradient_speed(style.border.border_gradient_speed)
-        .tick(style.tick)
 }

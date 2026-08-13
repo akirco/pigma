@@ -1,12 +1,12 @@
 use toml_edit::{Array, InlineTable, Table, Value};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-/// 将表中指定字段从 ArrayOfTables 转为多行内联表数组
+/// Convert a named field in the table from an array of tables into a multi-line inline table array.
 ///
-/// # 参数
-/// - `table`: 要修改的表（如某个 section）
-/// - `key`: 字段名（如 "items"）
-/// - `indent`: 每个内联表前的缩进（如 "\n  "）
+/// # Arguments
+/// - `table`: the table to modify (e.g. a section)
+/// - `key`: the field name (e.g. "items")
+/// - `indent`: the indentation before each inline table (e.g. "\n  ")
 pub fn convert_aot_to_inline(table: &mut Table, key: &str, indent: &str) -> bool {
     let item = match table.remove(key) {
         Some(item) => item,
@@ -16,7 +16,7 @@ pub fn convert_aot_to_inline(table: &mut Table, key: &str, indent: &str) -> bool
     let aot = match item.as_array_of_tables() {
         Some(aot) => aot,
         None => {
-            table.insert(key, item); // 不是 ArrayOfTables，放回去
+            table.insert(key, item); // Not an array of tables, so put it back
             return false;
         }
     };
@@ -40,9 +40,9 @@ pub fn convert_aot_to_inline(table: &mut Table, key: &str, indent: &str) -> bool
     true
 }
 
-/// 将表中所有 ArrayOfTables 字段转为内联表数组
+/// Convert all array-of-tables fields in the table into inline table arrays.
 pub fn convert_all_aot_to_inline(table: &mut Table, indent: &str) {
-    // 先收集需要转换的 key（不能在遍历时修改）
+    // Collect the keys to convert first (cannot modify while iterating)
     let keys: Vec<String> = table
         .iter()
         .filter(|(_, item)| item.is_array_of_tables())
