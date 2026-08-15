@@ -1,3 +1,39 @@
+## [0.2.9] - 2026-08-15
+
+### 🚀 Features
+
+- Add IPC support for pigma status and msg commands (akirco)
+- *(waybar)* Add configuration and scripts for Pigma integration (akirco)
+- Enhance IPC with queue management and headless mode support (akirco)
+- *(ipc)* Add Windows named pipe support and update IPC documentation (akirco)
+- *(ci)* Add aarch64 and aarch64-musl build jobs to CI workflow (akirco)
+- *(ci)* Remove Linux audio dependencies installation and add pre-build scripts for aarch64 targets (akirco)
+- *(ci)* Replace build script with inline pre-build steps for aarch64-musl target (akirco)
+- *(ci)* Add x86_64-musl build job and update pre-build steps for ALSA (akirco)
+
+### 🐛 Bug Fixes
+
+- *(search)* Clamp search limit to prevent exceeding API constraints (akirco)
+- *(ci)* Update ALSA_URL to point to the official ALSA project site (akirco)
+- *(ci)* Update pre-build steps and environment variables for aarch64 and x86_64 targets (akirco)
+- *(ci)* Update ALSA version and add environment variables for cross-compilation (akirco)
+- *(ci)* Streamline environment variable setup and remove unnecessary build.env section (akirco)
+- *(playback)* Update cfg attributes for Linux to include GNU environment (akirco)
+- *(ci)* Add 'sed' to install dependencies for ALSA build (akirco)
+- *(playback)* Refine Linux target configuration to include GNU environment (akirco)
+- *(ci)* Add installation of musl-tools and ALSA build steps (akirco)
+- *(ci)* Update musl-tools installation and setup for ALSA build (akirco)
+- *(ci)* Enhance musl-tools installation for ALSA build with additional flags (akirco)
+- *(ci)* Add symlink for asm-generic in musl-tools installation (akirco)
+
+### 🚜 Refactor
+
+- *(sonar)* Update dependencies and improve MD5 usage (akirco)
+
+### ⚙️ Miscellaneous Tasks
+
+- Add VSCode settings for CSS file association (akirco)
+- *(ci)* Fmt (akirco)
 ## [0.2.8] - 2026-08-13
 
 ### 🚀 Features
