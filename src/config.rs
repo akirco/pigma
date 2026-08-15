@@ -64,6 +64,12 @@ pub struct Config {
     /// sonar fallback source config (multi-source fallback when NCM playback fails).
     #[serde(default)]
     pub source_fallback: SonarConfig,
+    /// Default template for `pigma status` (plain format).
+    #[serde(default = "default_cli_status_template")]
+    pub cli_status_template: String,
+    /// Default format for `pigma status`: `plain` or `json`.
+    #[serde(default = "default_cli_status_format")]
+    pub cli_status_format: String,
 }
 
 fn default_proxy() -> String {
@@ -126,6 +132,14 @@ fn default_splash_duration() -> f64 {
     2.0
 }
 
+fn default_cli_status_template() -> String {
+    "{name}  {artist}  {current}/{duration}  {status}  vol {volume}%".into()
+}
+
+fn default_cli_status_format() -> String {
+    "plain".into()
+}
+
 /// Fallback source config (sonar multi-source fallback).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -174,6 +188,8 @@ impl Default for Config {
             themes: Vec::new(),
             navigation: NavConfig::default(),
             columns: ColumnsConfig::default(),
+            cli_status_template: default_cli_status_template(),
+            cli_status_format: default_cli_status_format(),
         }
     }
 }

@@ -11,6 +11,7 @@ use futures::{FutureExt, StreamExt};
 use ncm_api::{LoginInfo, SongInfo};
 use tokio::sync::mpsc;
 
+use crate::ipc::IpcEvent;
 use crate::playback::LyricLine;
 use crate::state::{ContentState, Page, PaginationInfo, SplashLogEntry};
 
@@ -29,6 +30,8 @@ pub enum AppEvent {
     Navigation(NavigationEvent),
     Command(CommandEvent),
     Toast(String),
+    /// Control request received over the IPC socket (`pigma msg`).
+    Ipc(IpcEvent),
 }
 
 #[derive(Clone, Debug)]
@@ -161,15 +164,20 @@ pub struct EventHandler {
 
 impl Default for EventHandler {
     fn default() -> Self {
-        Self::new()
+        Self::new(true)
     }
 }
 
 impl EventHandler {
-    pub fn new() -> Self {
+    /// Create an event channel. With `with_terminal = true` a task reading
+    /// crossterm terminal events is spawned; pass `false` for headless daemon
+    /// mode (no terminal available).
+    pub fn new(with_terminal: bool) -> Self {
         let (sender, receiver) = mpsc::unbounded_channel();
-        let actor = EventTask::new(sender.clone());
-        tokio::spawn(async { actor.run().await });
+        if with_terminal {
+            let actor = EventTask::new(sender.clone());
+            tokio::spawn(async { actor.run().await });
+        }
         Self { sender, receiver }
     }
 

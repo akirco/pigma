@@ -1,0 +1,92 @@
+{
+  "layer": "top",
+  "position": "top",
+  "reload_style_on_change": true,
+  "mod": "dock",
+  "exclusive": true,
+  "passthrough": false,
+  "gtk-layer-shell": true,
+  "height": 50,
+  "modules-left": [
+    "hyprland/workspaces"
+  ],
+  "modules-right": [
+    "group/pigma",
+    "group/system"
+  ],
+  "group/pigma": {
+    "orientation": "horizontal",
+    "modules": [
+      "custom/pigma",
+      "custom/pigma#like",
+      "custom/pigma#prev",
+      "custom/pigma#play",
+      "custom/pigma#next"
+    ],
+    "drawer": {
+      "transition-duration": 300,
+      "transition-left-to-right": true,
+      "children-class": "drawer-child"
+    }
+  },
+  "group/system": {
+    "orientation": "horizontal",
+    "modules": [
+      "battery",
+      "cpu",
+      "memory",
+      "temperature"
+    ],
+    "drawer": {
+      "transition-duration": 300,
+      "transition-left-to-right": true,
+      "children-class": "drawer-child"
+    }
+  },
+  "custom/pigma#like": {
+    "exec": "~/.config/waybar/scripts/pigma --icon like",
+    "interval": 1,
+    "return-type": "json",
+    "on-click": "~/.config/waybar/scripts/pigma --like",
+    "on-scroll-up": "pigma msg volume +5",
+    "on-scroll-down": "pigma msg volume -5",
+    "format": "{}"
+  },
+  "custom/pigma#prev": {
+    "exec": "~/.config/waybar/scripts/pigma --icon prev",
+    "interval": "once",
+    "return-type": "json",
+    "on-click": "~/.config/waybar/scripts/pigma --previous",
+    "on-scroll-up": "pigma msg volume +5",
+    "on-scroll-down": "pigma msg volume -5",
+    "format": "{}"
+  },
+  "custom/pigma#play": {
+    "exec": "~/.config/waybar/scripts/pigma --icon play",
+    "interval": 1,
+    "return-type": "json",
+    "on-click": "~/.config/waybar/scripts/pigma --toggle",
+    "on-scroll-up": "pigma msg volume +5",
+    "on-scroll-down": "pigma msg volume -5",
+    "format": "{}"
+  },
+  "custom/pigma#next": {
+    "exec": "~/.config/waybar/scripts/pigma --icon next",
+    "interval": "once",
+    "return-type": "json",
+    "on-click": "~/.config/waybar/scripts/pigma --next",
+    "on-scroll-up": "pigma msg volume +5",
+    "on-scroll-down": "pigma msg volume -5",
+    "format": "{}"
+  },
+  "custom/pigma": {
+    "exec": "~/.config/waybar/scripts/pigma",
+    "interval": 1,
+    "tooltip": true,
+    "return-type": "json",
+    "on-click-right": "pigma msg mode",
+    "on-scroll-up": "pigma msg volume +5",
+    "on-scroll-down": "pigma msg volume -5",
+    "format": "{}"
+  }
+}

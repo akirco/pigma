@@ -19,7 +19,7 @@ use super::state::PlaybackState;
 use super::storage::PlaylistStorage;
 
 /// Read the current RSS in KB from /proc/self/status.
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
 pub(super) fn mem_rss_kb() -> u64 {
     std::fs::read_to_string("/proc/self/status")
         .ok()
@@ -359,6 +359,14 @@ impl PlaybackEngine {
 
     /// Replace the queue for `key` with `songs` and start playing `index`.
     pub fn play_songs(&mut self, key: &str, songs: Vec<Arc<SongInfo>>, index: usize) {
+        self.load_songs(key, songs, index);
+        self.start_current_song(None);
+    }
+
+    /// Load `songs` as the active queue without starting playback, so the first
+    /// song is shown (paused/stopped) and can be started later via `play`/
+    /// toggle. Same queue bookkeeping as `play_songs`, minus `start_current_song`.
+    pub fn load_songs(&mut self, key: &str, songs: Vec<Arc<SongInfo>>, index: usize) {
         if songs.is_empty() || index >= songs.len() {
             return;
         }
@@ -369,7 +377,12 @@ impl PlaybackEngine {
         self.queue = PlaylistQueue::from_songs(songs, index);
         self.strategy =
             mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);
-        self.start_current_song(None);
+        self.state.current_song = self.queue.current_song().cloned();
+        self.state.progress = 0.0;
+        self.state.playing = false;
+        self.state.paused = false;
+        self.state.seeking = false;
+        self.update_liked_status();
     }
 
     /// The dated queue key `context` maps to (same derivation as `play_songs`),
@@ -758,10 +771,10 @@ impl PlaybackEngine {
             log::error!("Failed to send PlaybackStarted: receiver dropped");
         }
 
-        #[cfg(target_os = "linux")]
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
         let song_id = song.id;
         self.current_resolve = Some(tokio::spawn(async move {
-            #[cfg(target_os = "linux")]
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
             log::info!(
                 "[HEAP] before resolve {} (id={}): {} kB",
                 song.name,
@@ -771,14 +784,14 @@ impl PlaybackEngine {
             let input = match source.resolve(&song).await {
                 Ok(input) => input,
                 Err(e) => {
-                    #[cfg(target_os = "linux")]
+                    #[cfg(all(target_os = "linux", target_env = "gnu"))]
                     log::info!(
                         "[HEAP] after resolve FAIL {} (id={}): {} kB",
                         song.name,
                         song_id,
                         mem_rss_kb()
                     );
-                    #[cfg(target_os = "linux")]
+                    #[cfg(all(target_os = "linux", target_env = "gnu"))]
                     unsafe {
                         libc::malloc_trim(0);
                     }
@@ -788,14 +801,14 @@ impl PlaybackEngine {
                     return;
                 }
             };
-            #[cfg(target_os = "linux")]
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
             log::info!(
                 "[HEAP] after resolve OK {} (id={}): {} kB",
                 song.name,
                 song_id,
                 mem_rss_kb()
             );
-            #[cfg(target_os = "linux")]
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
             unsafe {
                 libc::malloc_trim(0);
             }

@@ -22,6 +22,10 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
     - [From source (cargo)](#from-source-cargo)
     - [Build from source](#build-from-source)
   - [Usage](#usage)
+    - [CLI 控制（status / msg）](#cli-控制status--msg)
+      - [直接走 Unix socket（socat / 脚本）](#直接走-unix-socketsocat--脚本)
+      - [Windows：命名管道控制（PowerShell）](#windows命名管道控制powershell)
+    - [无头守护进程模式（pigma -d）](#无头守护进程模式pigma--d)
   - [Configuration](#configuration)
     - [Columns Configuration](#columns-configuration)
       - [Column width types](#column-width-types)
@@ -78,14 +82,14 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 - [x] 优化主题配色
 - [x] styled_text标记语法嵌套
 - [x] 重构进入程序流程
-- [ ] JSON IPC控制（waybar.etc）
+- [x] 命令行控制（status/msg）+ JSON IPC（waybar 等）
+- [x] 守护进程模式（`pigma -d`）
 - [ ] 重写splash
 - [ ] command panel重写，更多运行时配置支持
 - [ ] 云盘源作为fallback
 - [ ] 本地音频歌词，元数据重写
 - [ ] landing page
 - [ ] 歌手信息
-- [ ] 行内简易模式
 - [ ] ~~修复手机验证码\邮箱登录~~
 - [ ] ~~新增可选歌词页(沉浸式封面+歌词)~~
 - [ ] ~~ascii art style 歌词~~
@@ -182,14 +186,131 @@ cargo build --release
 | u             |  上传`本地音乐`或`下载管理`的音频到音乐云盘  |
 | g/G           |                列表顶部/底部                 |
 
+### CLI 控制（status / msg）
 
+查询/控制一个**正在运行**的 pigma 实例（交互界面或守护进程均可），
+通过 `~/.cache/pigma/pigma.sock` 上的 Unix socket 通信：
 
+| 命令 | 说明 |
+|---|---|
+| `pigma status` | 查询状态（默认 plain 文本） |
+| `pigma status --json` | 以 JSON 输出 |
+| `pigma status -L` | 列出当前播放队列（`>` 标记当前曲目），`-L --json` 输出原始 `QueueSnapshot` |
+| `pigma status --template "{name}  {artist}  {current}/{duration}  {status}  vol {volume}%"` | 自定义 plain 输出模板 |
+| `pigma list <endpoint>` | 列出端点解析出的歌单/歌曲（带序号），序号即 `--playlist N` 用的下标；无需运行实例 |
+| `pigma msg next` / `pigma msg previous` | 下一首 / 上一首 |
+| `pigma msg pause` / `pigma msg play` | 暂停 / 播放 |
+| `pigma msg mode` | 切换播放模式 |
+| `pigma msg like` / `pigma msg dislike` | 喜欢 / 不喜欢 |
+| `pigma msg toggle_like` | 喜欢/取消喜欢（切换当前曲目） |
+| `pigma msg switch-list <endpoint>` | 动态切换守护进程的队列到指定端点（如 `recommend_songs`、`toplist`），歌单端点可用 `--playlist N` 选第 N 个 |
+| `pigma msg volume 75` | 绝对音量（0-100） |
+| `pigma msg volume +5` / `-10` | 相对 ±%（与 TUI 的 `+` / `-` 一致，支持负数） |
 
+`pigma status` 的 `--template` 支持占位符：`{name}` `{artist}` `{album}` `{current}`/`{position}`
+`{duration}` `{volume}` `{status}` `{mode}` `{id}` `{liked}`。
+未指定时默认模板来自配置项 `cli_status_template`；`--json` 优先于配置项
+`cli_status_format`（见 [config.example.toml](./config.example.toml)）。
 
+#### 直接走 Unix socket（socat / 脚本）
 
+#### 直接走 Unix socket（socat / 脚本）
+
+> **仅 Linux/macOS**：`status` / `msg` 子命令底层就是往 `~/.cache/pigma/pigma.sock`
+> 发一行 JSON。Windows 用的是命名管道，见下节。
+> 不想用 `pigma` 二进制时，可用 `socat` 或任何 Unix socket 客户端直接控制：
+
+```bash
+# 查询状态（返回一行 JSON）
+printf '{"cmd":"status"}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
+
+# 列出播放队列
+printf '{"cmd":"list"}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
+
+# 播放控制
+printf '{"cmd":"msg","action":"next"}\n'      | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":"previous"}\n'  | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":"pause"}\n'     | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":"play"}\n'      | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":"mode"}\n'      | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":"like"}\n'      | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":"dislike"}\n'   | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":"toggle_like"}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
+
+# 音量：绝对（0.0-1.0）或相对增量
+printf '{"cmd":"msg","action":"volume","absolute":0.75}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":"volume","delta":0.05}\n'    | socat - "$HOME/.cache/pigma/pigma.sock"
+
+# 切换队列到指定端点（歌单端点可用 "playlist" 选第 N 个，1 起始）
+printf '{"cmd":"msg","action":"switch_list","endpoint":"toplist","playlist":2}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
+```
+
+约定：每行请求须以换行结尾，服务端每连接处理一个请求并回一行 JSON
+（`msg` 成功回 `{"ok":true}`）。socket 路径可用 `--socket <path>` 自定义。
+
+#### Windows：命名管道控制（PowerShell）
+
+Windows 上 IPC 走命名管道 `\\.\pipe\pigma`（可用 `--socket <pipe-name>` 自定义），
+协议相同（一行 JSON + 换行，服务端回一行 JSON）。用 PowerShell 控制：
+
+```powershell
+function Send-Pigma($json) {
+    $pipe = New-Object System.IO.Pipes.NamedPipeClientStream('.', 'pigma', [System.IO.Pipes.PipeDirection]::InOut)
+    $pipe.Connect(5000)
+    $sw = New-Object System.IO.StreamWriter($pipe)
+    $sw.NewLine = "`n"
+    $sw.WriteLine($json); $sw.Flush()
+    $sr = New-Object System.IO.StreamReader($pipe)
+    return $sr.ReadLine()
+}
+
+Send-Pigma '{"cmd":"status"}'                 # 查询状态
+Send-Pigma '{"cmd":"list"}'                   # 列出播放队列
+Send-Pigma '{"cmd":"msg","action":"next"}'    # 下一首
+Send-Pigma '{"cmd":"msg","action":"volume","absolute":0.75}'  # 音量 75%
+```
+
+### 无头守护进程模式（pigma -d）
+
+以无终端方式后台运行（可挂在 waybar / systemd 下），加载指定的 API 作为初始队列（**不自动播放**，用 `pigma msg play` 或 waybar 的 toggle 按钮开始）。
+
+| 选项 | 说明 |
+|---|---|
+| `pigma -d` | 等价于 `pigma -d __liked__` |
+| `pigma -d toplist` | 加载指定端点 |
+| `pigma --daemon user_cloud_disk` | `-d` 的全写形式 |
+| `pigma -d toplist --playlist 3` | 歌单/榜单端点用 `--playlist N` 选第 N 个（1 起始） |
+
+支持的内置 API 与导航项一致：
+
+| 端点 | 类型 | 说明 |
+|---|---|---|
+| `__liked__` | 歌曲（默认） | 我喜欢的音乐，需登录 |
+| `recommend_songs` | 歌曲 | 每日推荐歌曲 |
+| `user_cloud_disk` | 歌曲 | 我的云盘 |
+| `__download__` | 歌曲 | 本地下载 |
+| `__local_music__` | 歌曲 | 本地音乐 |
+| `__recent__` | 歌曲 | 最近播放 |
+| `recommend_resource` | 歌单 | 每日推荐歌单 |
+| `toplist` | 歌单 | 排行榜 |
+| `top_song_list` | 歌单 | 热门歌单 |
+| `user_radio_sublist` | 歌单 | 我的电台 |
+| `user_song_list` | 歌单 | 用户歌单 |
+| `user_created_song_list` | 歌单 | 创建的歌单 |
+| `user_subscribed_song_list` | 歌单 | 订阅的歌单 |
+| `album_sublist` | 歌单 | 收藏的专辑 |
+| `search` | 其他 | 搜索热榜（无可播队列） |
+| `top_singers` | 其他 | 热门歌手（无可播队列） |
+
+歌单类端点解析出来是一组歌单，默认加载第一个；可用 `--playlist N` 选择第 N 个（1 起始）。先运行 `pigma list <endpoint>` 查看可用的歌单及其序号：
+
+启动后即用 `pigma status` / `pigma msg` 控制；`SIGINT`/`SIGTERM` 会保存会话并干净退出。
+
+**Waybar 集成**：
+
+ - 参考[waybar](./waybar)
 
 ## Configuration
-
 Config file location:
 
 - linux: `~/.config/pigma/config.toml`
@@ -522,13 +643,10 @@ cargo run
 
 ## Plan
 
-```sh
-# cli 设计
-# template: current/duration/artist/name/volume/status/previous/next
-pigma status --template "" --format [json/plain] # config.toml default value
-pigma msg [previous/next/pause/play/volume/mode/like/dislike] # or socat
-pigma --api [.../random](default:recommend_songs) # inline mode
-```
+- 完善 waybar/systemd 集成文档与示例配置
+- 守护进程模式下更多端点的支持（榜单/歌单自动展开）
+- `pigma msg` 更多动作（seek、queue 操作等）
+
 ## License
 
 Licensed under the [Apach-2.0](LICENSE) license.

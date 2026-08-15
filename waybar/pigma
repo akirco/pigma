@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+
+# 环境变量:
+#   PIGMA_BIN   pigma 二进制 (默认 pigma)
+#   PIGMA_ARGS  daemon 附加参数 (默认 -d)
+#   PIGMA_LOG   daemon 日志 (默认 ~/.cache/pigma/waybar-daemon.log)
+#   PIGMA_LOCK  启动互斥锁文件
+
+PIGMA_BIN="${PIGMA_BIN:-pigma}"
+PIGMA_ARGS="${PIGMA_ARGS:--d}"
+PIGMA_LOG="${PIGMA_LOG:-${XDG_CACHE_HOME:-$HOME/.cache}/pigma/waybar-daemon.log}"
+PIGMA_LOCK="${XDG_RUNTIME_DIR:-/tmp}/pigma-waybar.lock"
+
+fmt_time() {
+    local ms=$1
+    printf "%d:%02d" $((ms / 60000)) $(((ms % 60000) / 1000))
+}
+
+ensure_daemon() {
+    "$PIGMA_BIN" status >/dev/null 2>&1 && return 0
+    (
+        flock -n 9 || return 0
+        "$PIGMA_BIN" status >/dev/null 2>&1 && return 0
+        mkdir -p "$(dirname "$PIGMA_LOG")"
+        setsid "$PIGMA_BIN" $PIGMA_ARGS >>"$PIGMA_LOG" 2>&1 </dev/null &
+    ) 9>"$PIGMA_LOCK"
+}
+
+toggle() {
+    state=$("$PIGMA_BIN" status --json 2>/dev/null)
+    playing=$(jq -r '.playing // false' <<<"$state" 2>/dev/null)
+    paused=$(jq -r '.paused // false' <<<"$state" 2>/dev/null)
+    if [ "$playing" = "true" ] && [ "$paused" = "false" ]; then
+        "$PIGMA_BIN" msg pause
+    else
+        "$PIGMA_BIN" msg play
+    fi
+}
+
+case "${1:-}" in
+"--toggle")
+    ensure_daemon
+    toggle
+    exit 0
+    ;;
+"--previous")
+    ensure_daemon
+    "$PIGMA_BIN" msg previous 2>/dev/null
+    exit 0
+    ;;
+"--next")
+    ensure_daemon
+    "$PIGMA_BIN" msg next 2>/dev/null
+    exit 0
+    ;;
+"--like")
+    ensure_daemon
+    "$PIGMA_BIN" msg toggle_like 2>/dev/null
+    exit 0
+    ;;
+"--icon")
+    case "${2:-}" in
+    "prev") text=""; cls="button" ;;
+    "next") text=""; cls="button" ;;
+    "play")
+        state=$("$PIGMA_BIN" status --json 2>/dev/null)
+        playing=$(jq -r '.playing // false' <<<"$state" 2>/dev/null)
+        paused=$(jq -r '.paused // false' <<<"$state" 2>/dev/null)
+        if [ "$playing" = "true" ] && [ "$paused" = "false" ]; then
+            text="⏸"
+            cls="button"
+        else
+            text="▶"
+            cls="button"
+        fi
+        ;;
+    "like")
+state=$("$PIGMA_BIN" status --json 2>/dev/null)
+        liked=$(jq -r '.liked // false' <<<"$state" 2>/dev/null)
+        if [ "$liked" = "true" ]; then
+            text=""
+            cls="button liked"
+        else
+            text=""
+            cls="button"
+        fi
+        ;;
+    *) text="♪"; cls="button" ;;
+    esac
+    echo "{\"text\":\"$text\",\"class\":\"$cls\"}"
+    exit 0
+    ;;
+esac
+
+ensure_daemon
+
+state=$("$PIGMA_BIN" status --json 2>/dev/null)
+if [ -z "$state" ]; then
+    echo '{"text":"♪  off","class":"off","tooltip":"pigma is not running","alt":"off"}'
+    exit 0
+fi
+
+name=$(jq -r '.name' <<<"$state")
+if [ -z "$name" ]; then
+    echo '{"text":"♪  idle","class":"idle","tooltip":"no song playing","alt":"idle"}'
+    exit 0
+fi
+
+artist=$(jq -r '.artist' <<<"$state")
+album=$(jq -r '.album' <<<"$state")
+playing=$(jq -r '.playing' <<<"$state")
+paused=$(jq -r '.paused' <<<"$state")
+position=$(jq -r '.position_ms' <<<"$state")
+duration=$(jq -r '.duration_ms' <<<"$state")
+volume=$(jq -r '.volume' <<<"$state")
+mode=$(jq -r '.mode' <<<"$state")
+liked=$(jq -r '.liked' <<<"$state")
+
+if [ "$playing" = "true" ]; then
+    if [ "$paused" = "true" ]; then
+        icon="⏸"
+        cls="paused"
+        alt="paused"
+    else
+        icon="▶"
+        cls="playing"
+        alt="playing"
+    fi
+else
+    icon="■"
+    cls="stopped"
+    alt="stopped"
+fi
+
+if [ "$liked" = "true" ]; then
+    heart=""
+else
+    heart=""
+fi
+vol_pct=$(awk -v v="$volume" 'BEGIN{printf "%.0f", v*100}')
+
+# 跑马灯：仅播放中且文字超长时按时间滚动（PIGMA_WINDOW 窗口字符数, PIGMA_SPEED 每秒字符数）；
+# 暂停/停止/长度合适时静态显示全名，不额外耗性能。
+full="$name — $artist"
+len=$(printf '%s' "$full" | wc -m)
+win="${PIGMA_WINDOW:-20}"
+gap=8
+if [ "$playing" = "true" ] && [ "$paused" != "true" ] && [ "$len" -gt "$win" ]; then
+    speed="${PIGMA_SPEED:-7}"
+    span=$((len + gap))
+    now_ms=$(( $(date +%s%N) / 1000000 ))
+    pos=$(( (now_ms / 1000 * speed) % span ))
+    text2="$full$(printf '%*s' "$gap" '')$full"
+    disp=$(printf '%s' "$text2" | cut -c"$((pos + 1))-$((pos + win))")
+    text="$disp"
+else
+    text="$full"
+fi
+
+tooltip="$name
+$artist — $album
+$(fmt_time "$position") / $(fmt_time "$duration") · vol ${vol_pct}% · $mode ${heart}"
+
+jq -c -n \
+    --arg text "$text" \
+    --arg tooltip "$tooltip" \
+    --arg class "$cls" \
+    --arg alt "$alt" \
+    '{text:$text, tooltip:$tooltip, class:$class, alt:$alt}'

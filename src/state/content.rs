@@ -34,6 +34,10 @@ impl ContentState {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn content_type(&self) -> ContentType {
         match self {
             ContentState::Songs(_) => ContentType::Songs,

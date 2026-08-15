@@ -1,0 +1,86 @@
+/* ------------------------------ common styles ----------------------------- */
+
+@define-color waybar-bg rgba(14, 16, 17, 0.9);
+/* @import "/home/neil/.cache/cwal/colors-waybar.css"; */
+/* @define-color waybar-bg @color0; */
+
+/* --------------------------------- pigma ---------------------------------- */
+
+#pigma {
+  margin-right: 12px;
+}
+
+#custom-pigma.prev,
+#custom-pigma.like,
+#custom-pigma.play,
+#custom-pigma,
+#custom-pigma.next {
+  margin-top: 4px;
+  background: @waybar-bg;
+  color: #cdd6f4;
+  min-width: 16px;
+}
+
+#custom-pigma {
+  padding: 2px 10px 2px 10px;
+  margin-right: 0;
+  border-radius: 30px;
+}
+
+#pigma:hover > widget > #custom-pigma {
+  border-radius: 30px 0 0 30px;
+}
+
+#custom-pigma.like,
+#custom-pigma.prev,
+#custom-pigma.play {
+  padding: 2px 10px 2px 10px;
+  margin-right: 0;
+  border-radius: 0;
+}
+
+#custom-pigma.next {
+  padding: 2px 10px 2px 10px;
+  margin-right: 0;
+  border-radius: 0 30px 30px 0;
+}
+
+#custom-pigma.like.liked {
+  color: #f38ba8;
+}
+
+#custom-pigma.like:hover {
+  color: #f38ba8;
+}
+
+#custom-pigma.playing {
+  color: #a6e3a1;
+  animation: blink 1s steps(5, start) infinite;
+}
+
+#custom-pigma.paused {
+  color: #f9e2af;
+}
+
+#custom-pigma.stopped {
+  color: #f38ba8;
+}
+
+#custom-pigma.off,
+#custom-pigma.idle {
+  color: #6c7086;
+}
+
+#custom-pigma.prev:hover,
+#custom-pigma.next:hover {
+  color: #a6e3a1;
+}
+
+
+/* -------------------------------- animation ------------------------------- */
+
+@keyframes blink {
+  to {
+    color: #6c7086;
+  }
+}

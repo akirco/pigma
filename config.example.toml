@@ -19,6 +19,13 @@ navigation_position = "left"
 # 启动 splash 界面最短显示时长 (秒), 启动流程的进度条会按此时长播放动画,
 splash_duration_secs = 2.0
 
+# `pigma status` 的 plain 输出模板, 可用占位符:
+#   {current}/{position} {duration} {artist} {name} {album} {volume} {status} {mode} {id} {liked}
+cli_status_template = "{name}  {artist}  {current}/{duration}  {status}  vol {volume}%"
+
+# `pigma status` 默认输出格式: "plain" 或 "json"
+cli_status_format = "plain"
+
 # 歌词渐变效果: "rainbow", "fire", "ocean", "forest", "sunset", "neon", "pastel", "monochrome"
 lyric_gradient = "rainbow"
 

@@ -2,6 +2,10 @@ use super::NcmClient;
 use crate::{error::NcmError, model::*};
 use serde_json::Value;
 
+/// The `/weapi/search/get` endpoint rejects requests with `limit` above this
+/// value (`{"code":400}`), so every search call clamps to it.
+const MAX_SEARCH_LIMIT: u16 = 100;
+
 impl NcmClient {
     // ===== Search =====
 
@@ -17,7 +21,7 @@ impl NcmClient {
         limit: u16,
     ) -> Result<SearchResult, NcmError> {
         let offset_str = offset.to_string();
-        let limit_str = limit.to_string();
+        let limit_str = limit.min(MAX_SEARCH_LIMIT).to_string();
         let params = vec![
             ("s", keyword),
             ("type", "1"),
@@ -47,7 +51,7 @@ impl NcmClient {
         limit: u16,
     ) -> Result<Vec<SongList>, NcmError> {
         let offset_str = offset.to_string();
-        let limit_str = limit.to_string();
+        let limit_str = limit.min(MAX_SEARCH_LIMIT).to_string();
         let params = vec![
             ("s", keyword),
             ("type", "1000"),
@@ -72,7 +76,7 @@ impl NcmClient {
         limit: u16,
     ) -> Result<Vec<SingerInfo>, NcmError> {
         let offset_str = offset.to_string();
-        let limit_str = limit.to_string();
+        let limit_str = limit.min(MAX_SEARCH_LIMIT).to_string();
         let params = vec![
             ("s", keyword),
             ("type", "100"),
@@ -97,7 +101,7 @@ impl NcmClient {
         limit: u16,
     ) -> Result<Vec<SongList>, NcmError> {
         let offset_str = offset.to_string();
-        let limit_str = limit.to_string();
+        let limit_str = limit.min(MAX_SEARCH_LIMIT).to_string();
         let params = vec![
             ("s", keyword),
             ("type", "10"),
@@ -130,7 +134,7 @@ impl NcmClient {
         limit: u16,
     ) -> Result<Vec<SongInfo>, NcmError> {
         let offset_str = offset.to_string();
-        let limit_str = limit.to_string();
+        let limit_str = limit.min(MAX_SEARCH_LIMIT).to_string();
         let params = vec![
             ("s", keyword),
             ("type", "1006"),

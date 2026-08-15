@@ -2,7 +2,7 @@ use crate::error::{Result, SonarError};
 use base64::{Engine as _, engine::general_purpose};
 use time::OffsetDateTime;
 
-use md5;
+use md5::{Digest, Md5};
 use reqwest::Client;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -16,7 +16,14 @@ const KUWO_SOURCE: &str = "kwplayer_ar_5.1.0.0_B_jiakong_vh.apk";
 /// query parameter when requesting a play URL from `trackercdn.kugou.com`.
 pub fn kugou_md5_key(hash: &str) -> String {
     let input = format!("{}{}", hash, KUGOU_KEY_SUFFIX);
-    format!("{:x}", md5::compute(input))
+    md5_hex(&input)
+}
+
+fn md5_hex(s: &str) -> String {
+    Md5::digest(s.as_bytes())
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -323,7 +330,7 @@ pub async fn wbi_sign(client: &Client, params: &mut Vec<(String, String)>) -> Re
         .join("&");
 
     let sign_input = format!("{}{}", query, mixin_key);
-    let w_rid = format!("{:x}", md5::compute(sign_input));
+    let w_rid = md5_hex(&sign_input);
 
     Ok(format!("{}&w_rid={}", query, w_rid))
 }

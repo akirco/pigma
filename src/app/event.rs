@@ -18,18 +18,18 @@ impl App {
             tokio::select! {
                 biased;
                 result = self.state.events.next() => {
-                    self.dispatch_event(result?)?;
+                    self.dispatch_event(result?).await?;
                 }
                 _ = sleep(Duration::from_millis(32)) => {}
             }
         } else {
             let event = self.state.events.next().await?;
-            self.dispatch_event(event)?;
+            self.dispatch_event(event).await?;
         }
         Ok(())
     }
 
-    fn dispatch_event(&mut self, event: Event) -> color_eyre::Result<()> {
+    async fn dispatch_event(&mut self, event: Event) -> color_eyre::Result<()> {
         match event {
             Event::Crossterm(event) => match event {
                 CrosstermEvent::Key(key) if key.kind == crossterm::event::KeyEventKind::Press => {
@@ -48,6 +48,7 @@ impl App {
                 AppEvent::Navigation(e) => self.handle_navigation_event(e),
                 AppEvent::Command(e) => self.handle_command_event(e),
                 AppEvent::Toast(msg) => self.toast(msg),
+                AppEvent::Ipc(e) => self.handle_ipc_event(e).await,
             },
         }
         Ok(())
