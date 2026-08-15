@@ -24,8 +24,11 @@ async fn status_round_trip() {
     let snapshot = Arc::new(Mutex::new(snapshot));
 
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-    let _guard =
-        ipc::start_server(Arc::clone(&snapshot), Arc::new(Mutex::new(QueueSnapshot::default())), tx);
+    let _guard = ipc::start_server(
+        Arc::clone(&snapshot),
+        Arc::new(Mutex::new(QueueSnapshot::default())),
+        tx,
+    );
 
     // Give the server a moment to bind.
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;

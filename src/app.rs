@@ -15,11 +15,11 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+use ncm_api::SongList;
 use ratatui::layout::Rect;
 use ratatui::widgets::TableState;
 use ratatui::{DefaultTerminal, Frame};
 use ratatui_image::picker::Picker;
-use ncm_api::SongList;
 use reqwest::Client;
 use sonar::{SonarFinder, Song};
 
@@ -445,10 +445,9 @@ impl App {
             ContentState::Songs(songs.into_iter().map(std::sync::Arc::new).collect())
         } else if api == ApiEndpoint::LocalMusic {
             let music_dir = dirs::home_dir().unwrap_or_default().join("Music");
-            let songs =
-                tokio::task::spawn_blocking(move || scan_local_music(&music_dir))
-                    .await
-                    .unwrap_or_default();
+            let songs = tokio::task::spawn_blocking(move || scan_local_music(&music_dir))
+                .await
+                .unwrap_or_default();
             ContentState::Songs(songs.into_iter().map(std::sync::Arc::new).collect())
         } else {
             let (state, _) = self
@@ -462,7 +461,8 @@ impl App {
         // (default first, or `--playlist N`) and load its songs.
         let content = match content {
             ContentState::SongLists(lists) => {
-                self.load_headless_list_songs(api, lists, playlist_index).await
+                self.load_headless_list_songs(api, lists, playlist_index)
+                    .await
             }
             ContentState::TopLists(lists) => {
                 let lists: Vec<SongList> = lists
@@ -475,7 +475,8 @@ impl App {
                         subscribed: false,
                     })
                     .collect();
-                self.load_headless_list_songs(api, lists, playlist_index).await
+                self.load_headless_list_songs(api, lists, playlist_index)
+                    .await
             }
             other => other,
         };
@@ -520,11 +521,17 @@ impl App {
         match api {
             ApiEndpoint::SavedAlbums => self.service.load_album(list.id).await,
             ApiEndpoint::UserRadioSublist => {
-                let (state, _, _) = self.service.load_playlist_detail(list.id, true, limit).await;
+                let (state, _, _) = self
+                    .service
+                    .load_playlist_detail(list.id, true, limit)
+                    .await;
                 state
             }
             _ => {
-                let (state, _, _) = self.service.load_playlist_detail(list.id, false, limit).await;
+                let (state, _, _) = self
+                    .service
+                    .load_playlist_detail(list.id, false, limit)
+                    .await;
                 state
             }
         }

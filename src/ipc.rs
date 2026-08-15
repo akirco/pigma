@@ -36,7 +36,9 @@ pub enum IpcRequest {
     Status,
     /// Return the current playback queue (`pigma status -L`).
     List,
-    Msg { action: MsgAction },
+    Msg {
+        action: MsgAction,
+    },
 }
 
 /// A playback control action for `pigma msg`.
