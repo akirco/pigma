@@ -5,8 +5,7 @@ pre-build = [
 ]
 
 [target.aarch64-unknown-linux-musl]
-pre-build = [
-  """
+pre-build = ["""
 set -eux
 SYSROOT="/usr/local/aarch64-linux-musl"
 ALSA_VERSION="1.2.16.1"
@@ -24,12 +23,10 @@ make -j"$(nproc)"
 make install
 sed -i '/Requires:/d' "$SYSROOT/usr/lib/pkgconfig/alsa.pc"
 ls "$SYSROOT/usr/lib/pkgconfig/alsa.pc"
-"""
-]
+"""]
 
 [target.x86_64-unknown-linux-musl]
-pre-build = [
-  """
+pre-build = ["""
 set -eux
 SYSROOT="/usr/local/x86_64-linux-musl"
 ALSA_VERSION="1.2.16.1"
@@ -47,5 +44,4 @@ make -j"$(nproc)"
 make install
 sed -i '/Requires:/d' "$SYSROOT/usr/lib/pkgconfig/alsa.pc"
 ls "$SYSROOT/usr/lib/pkgconfig/alsa.pc"
-"""
-]
+"""]
