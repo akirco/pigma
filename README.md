@@ -24,6 +24,7 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
   - [Usage](#usage)
     - [CLI 控制（status / msg）](#cli-控制status--msg)
       - [直接走 Unix socket（socat / 脚本）](#直接走-unix-socketsocat--脚本)
+      - [Windows：命名管道控制（PowerShell）](#windows命名管道控制powershell)
     - [无头守护进程模式（pigma -d）](#无头守护进程模式pigma--d)
   - [Configuration](#configuration)
     - [Columns Configuration](#columns-configuration)
@@ -213,8 +214,11 @@ cargo build --release
 
 #### 直接走 Unix socket（socat / 脚本）
 
-`status` / `msg` 子命令底层就是往 `~/.cache/pigma/pigma.sock` 发一行 JSON。
-不想用 `pigma` 二进制时，可用 `socat` 或任何 Unix socket 客户端直接控制：
+#### 直接走 Unix socket（socat / 脚本）
+
+> **仅 Linux/macOS**：`status` / `msg` 子命令底层就是往 `~/.cache/pigma/pigma.sock`
+> 发一行 JSON。Windows 用的是命名管道，见下节。
+> 不想用 `pigma` 二进制时，可用 `socat` 或任何 Unix socket 客户端直接控制：
 
 ```bash
 # 查询状态（返回一行 JSON）
@@ -243,6 +247,28 @@ printf '{"cmd":"msg","action":"switch_list","endpoint":"toplist","playlist":2}\n
 
 约定：每行请求须以换行结尾，服务端每连接处理一个请求并回一行 JSON
 （`msg` 成功回 `{"ok":true}`）。socket 路径可用 `--socket <path>` 自定义。
+
+#### Windows：命名管道控制（PowerShell）
+
+Windows 上 IPC 走命名管道 `\\.\pipe\pigma`（可用 `--socket <pipe-name>` 自定义），
+协议相同（一行 JSON + 换行，服务端回一行 JSON）。用 PowerShell 控制：
+
+```powershell
+function Send-Pigma($json) {
+    $pipe = New-Object System.IO.Pipes.NamedPipeClientStream('.', 'pigma', [System.IO.Pipes.PipeDirection]::InOut)
+    $pipe.Connect(5000)
+    $sw = New-Object System.IO.StreamWriter($pipe)
+    $sw.NewLine = "`n"
+    $sw.WriteLine($json); $sw.Flush()
+    $sr = New-Object System.IO.StreamReader($pipe)
+    return $sr.ReadLine()
+}
+
+Send-Pigma '{"cmd":"status"}'                 # 查询状态
+Send-Pigma '{"cmd":"list"}'                   # 列出播放队列
+Send-Pigma '{"cmd":"msg","action":"next"}'    # 下一首
+Send-Pigma '{"cmd":"msg","action":"volume","absolute":0.75}'  # 音量 75%
+```
 
 ### 无头守护进程模式（pigma -d）
 

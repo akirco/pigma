@@ -1,33 +1,39 @@
-//! Unix-domain-socket IPC between the running TUI and the `pigma status` /
-//! `pigma msg` CLI commands.
+//! IPC between the running TUI and the `pigma status` / `pigma msg` CLI
+//! commands.
 //!
-//! The TUI binds a socket at `~/.cache/pigma/pigma.sock` and accepts one-line
-//! JSON requests:
+//! The TUI binds a listener and accepts one-line JSON requests:
 //!
 //! - `{"cmd":"status"}` → the server replies with a serialized `StatusSnapshot`.
 //! - `{"cmd":"msg","action":...}` → the server forwards an `IpcEvent` into the
 //!   app's event channel and replies `{"ok":true}`.
 //!
-//! The socket file is user-scoped (`pigma_cache_dir`) so no authentication is
-//! needed.
+//! Transport is platform-specific: a Unix domain socket at
+//! `~/.cache/pigma/pigma.sock` on Linux/macOS, and a named pipe `\\.\pipe\pigma`
+//! on Windows. The endpoint is user-scoped so no authentication is needed.
 
 use std::cell::RefCell;
-use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
+
+#[cfg(unix)]
+use std::fs;
 
 use color_eyre::eyre::{OptionExt, WrapErr};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc;
 
 use crate::event::{AppEvent, Event};
 use crate::playback::PlayMode;
+#[cfg(unix)]
 use crate::utils::pigma_cache_dir;
 
-/// Socket file name inside `pigma_cache_dir()`.
+/// Socket file name inside `pigma_cache_dir()` (Unix only).
 pub const SOCKET_FILE: &str = "pigma.sock";
+
+/// Default named-pipe name on Windows.
+#[cfg(windows)]
+const PIPE_NAME: &str = r"\\.\pipe\pigma";
 
 /// Request sent from the CLI to the running TUI.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -194,7 +200,14 @@ pub struct QueueSnapshot {
 }
 
 fn socket_path() -> PathBuf {
-    pigma_cache_dir().join(SOCKET_FILE)
+    #[cfg(unix)]
+    {
+        pigma_cache_dir().join(SOCKET_FILE)
+    }
+    #[cfg(windows)]
+    {
+        PathBuf::from(PIPE_NAME)
+    }
 }
 
 thread_local! {
@@ -229,31 +242,104 @@ fn resolve_socket_path() -> PathBuf {
         .unwrap_or_else(|| SOCKET_GLOBAL.get().cloned().unwrap_or_else(socket_path))
 }
 
-/// Bind the socket, clearing any stale file left by a previous run. Returns the
-/// listener, or `None` when another pigma instance already holds the socket.
-fn bind() -> Option<UnixListener> {
-    let path = resolve_socket_path();
-    if let Some(dir) = path.parent() {
-        let _ = fs::create_dir_all(dir);
+/// The stream a client connects with (Unix socket on unix, named pipe on
+/// Windows).
+#[cfg(unix)]
+type ClientStream = tokio::net::UnixStream;
+#[cfg(windows)]
+type ClientStream = tokio::net::windows::named_pipe::NamedPipeClient;
+
+/// Connect to the running instance's listener endpoint.
+async fn client_connect(path: &Path) -> std::io::Result<ClientStream> {
+    #[cfg(unix)]
+    {
+        ClientStream::connect(path).await
     }
-    match UnixListener::bind(&path) {
-        Ok(listener) => Some(listener),
-        Err(_) => {
-            // Either a live instance owns the socket or it is stale.
-            // A non-blocking connect probe tells us which: if we can connect,
-            // another instance is running and we must not steal the socket.
-            if std::os::unix::net::UnixStream::connect(&path).is_ok() {
-                log::warn!(
-                    "ipc: another pigma instance already owns {}",
-                    path.display()
-                );
-                return None;
+    #[cfg(windows)]
+    {
+        tokio::net::windows::named_pipe::ClientOptions::new().open(path.to_string_lossy().as_ref())
+    }
+}
+
+/// Platform-specific listener for the IPC server. On Windows a named pipe is
+/// re-created for every connection, so `next()` holds the pipe name rather than
+/// a persistent handle.
+enum IpcListener {
+    #[cfg(unix)]
+    Unix(tokio::net::UnixListener),
+    #[cfg(windows)]
+    Pipe { name: String },
+}
+
+/// Bind the listener, clearing any stale file left by a previous run on Unix.
+/// Returns `None` when another pigma instance already holds the endpoint.
+impl IpcListener {
+    fn bind() -> Option<Self> {
+        let path = resolve_socket_path();
+        #[cfg(unix)]
+        {
+            if let Some(dir) = path.parent() {
+                let _ = fs::create_dir_all(dir);
             }
-            let _ = fs::remove_file(&path);
-            UnixListener::bind(&path).ok()
+            match tokio::net::UnixListener::bind(&path) {
+                Ok(listener) => Some(Self::Unix(listener)),
+                Err(_) => {
+                    // Either a live instance owns the socket or it is stale.
+                    // A non-blocking connect probe tells us which: if we can
+                    // connect, another instance is running and we must not
+                    // steal the socket.
+                    if std::os::unix::net::UnixStream::connect(&path).is_ok() {
+                        log::warn!(
+                            "ipc: another pigma instance already owns {}",
+                            path.display()
+                        );
+                        return None;
+                    }
+                    let _ = fs::remove_file(&path);
+                    tokio::net::UnixListener::bind(&path).ok().map(Self::Unix)
+                }
+            }
+        }
+        #[cfg(windows)]
+        {
+            let name = path.to_string_lossy().into_owned();
+            match tokio::net::windows::named_pipe::ServerOptions::new().create(&name) {
+                Ok(_) => Some(Self::Pipe { name }),
+                Err(e) => {
+                    // Windows releases the pipe name when the owning process
+                    // exits, so a failed bind always means a live instance.
+                    log::warn!("ipc: another pigma instance already owns the pipe {name}: {e}");
+                    None
+                }
+            }
+        }
+    }
+
+    /// Wait for the next incoming connection, returning the accepted stream.
+    async fn next(&mut self) -> Option<AcceptedStream> {
+        match self {
+            #[cfg(unix)]
+            Self::Unix(l) => l.accept().await.ok().map(|(stream, _)| stream),
+            #[cfg(windows)]
+            Self::Pipe { name } => {
+                // A fresh server instance per connection; after a client
+                // attaches, that instance becomes the connection stream.
+                let server = tokio::net::windows::named_pipe::ServerOptions::new()
+                    .create(name)
+                    .ok()?;
+                server.connect().await.ok()?;
+                Some(server)
+            }
         }
     }
 }
+
+/// The stream accepted by the server (Unix socket on unix, named pipe on
+/// Windows).
+#[cfg(unix)]
+type AcceptedStream = tokio::net::UnixStream;
+#[cfg(windows)]
+type AcceptedStream = tokio::net::windows::named_pipe::NamedPipeServer;
 
 /// Start the IPC server for the running TUI.
 ///
@@ -266,15 +352,16 @@ pub fn start_server(
     queue_snapshot: Arc<Mutex<QueueSnapshot>>,
     event_tx: mpsc::UnboundedSender<Event>,
 ) -> IpcServerGuard {
-    let listener = match bind() {
+    let listener = match IpcListener::bind() {
         Some(l) => l,
         None => return IpcServerGuard::new(false),
     };
     let path = resolve_socket_path();
+    let mut listener = listener;
     tokio::spawn(async move {
         loop {
-            match listener.accept().await {
-                Ok((stream, _)) => {
+            match listener.next().await {
+                Some(stream) => {
                     let snapshot = Arc::clone(&status_snapshot);
                     let queue = Arc::clone(&queue_snapshot);
                     let tx = event_tx.clone();
@@ -282,8 +369,8 @@ pub fn start_server(
                         handle_connection(stream, snapshot, queue, tx).await;
                     });
                 }
-                Err(e) => {
-                    log::error!("ipc: accept failed: {e}");
+                None => {
+                    log::error!("ipc: accept failed");
                     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                 }
             }
@@ -293,8 +380,10 @@ pub fn start_server(
     IpcServerGuard::new(true)
 }
 
-/// Removes the socket file on drop (clean shutdown of the TUI).
+/// Removes the Unix socket file on drop (clean shutdown of the TUI).
+/// On Windows the OS releases the pipe name automatically, so nothing to do.
 pub struct IpcServerGuard {
+    #[cfg_attr(windows, allow(dead_code))]
     remove_on_drop: bool,
 }
 
@@ -306,24 +395,28 @@ impl IpcServerGuard {
 
 impl Drop for IpcServerGuard {
     fn drop(&mut self) {
+        #[cfg(unix)]
         if self.remove_on_drop {
             let _ = fs::remove_file(resolve_socket_path());
         }
     }
 }
 
-/// Remove the socket file unconditionally (used on shutdown paths where the
-/// guard may already be dropped).
+/// Remove the Unix socket file unconditionally (used on shutdown paths where
+/// the guard may already be dropped). No-op on Windows.
 pub fn remove_socket() {
+    #[cfg(unix)]
     let _ = fs::remove_file(resolve_socket_path());
 }
 
-async fn handle_connection(
-    stream: UnixStream,
+async fn handle_connection<S>(
+    stream: S,
     snapshot: Arc<Mutex<StatusSnapshot>>,
     queue: Arc<Mutex<QueueSnapshot>>,
     event_tx: mpsc::UnboundedSender<Event>,
-) {
+) where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
     let mut stream = BufReader::new(stream);
     let mut line = String::new();
     if stream.read_line(&mut line).await.is_err() {
@@ -360,11 +453,11 @@ async fn handle_connection(
     let _ = stream.write_all(framed.as_bytes()).await;
 }
 
-/// Connect to the running TUI's socket, returning a descriptive error when no
+/// Connect to the running TUI's listener, returning a descriptive error when no
 /// instance is up.
-async fn connect() -> color_eyre::Result<UnixStream> {
+async fn connect() -> color_eyre::Result<ClientStream> {
     let path = resolve_socket_path();
-    UnixStream::connect(&path)
+    client_connect(&path)
         .await
         .wrap_err("pigma is not running (socket not found)")
 }

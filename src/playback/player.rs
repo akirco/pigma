@@ -6,7 +6,7 @@ use rodio::Source;
 use rodio::mixer::Mixer;
 use tokio::sync::mpsc;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
 use super::engine::mem_rss_kb;
 #[cfg(target_os = "linux")]
 use rodio::cpal::traits::{DeviceTrait, HostTrait};
@@ -143,7 +143,7 @@ pub(super) fn run(
                         reader = SharedReader(Arc::new(Mutex::new(Box::new(std::io::empty()))));
                         total_duration = None;
                         seek_offset = Duration::default();
-                        #[cfg(target_os = "linux")]
+                        #[cfg(all(target_os = "linux", target_env = "gnu"))]
                         log::info!("[HEAP] after ControlCmd::Stop: {} kB", mem_rss_kb());
                     }
                     ControlCmd::Pause => {
@@ -169,7 +169,7 @@ pub(super) fn run(
 
             if let Some(ref p) = player {
                 if p.empty() && !p.is_paused() {
-                    #[cfg(target_os = "linux")]
+                    #[cfg(all(target_os = "linux", target_env = "gnu"))]
                     log::info!(
                         "[HEAP] song finished (playback complete): {} kB",
                         mem_rss_kb()
@@ -179,7 +179,7 @@ pub(super) fn run(
                     drop(player.take());
                     total_duration = None;
                     seek_offset = Duration::default();
-                    #[cfg(target_os = "linux")]
+                    #[cfg(all(target_os = "linux", target_env = "gnu"))]
                     log::info!("[HEAP] after player drop on finish: {} kB", mem_rss_kb());
                     continue;
                 }

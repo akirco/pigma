@@ -10,7 +10,7 @@ use stream_download::storage::temp::TempStorageProvider;
 use stream_download::{Settings, StreamDownload, StreamPhase};
 use tokio::sync::mpsc;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
 use super::engine::mem_rss_kb;
 use super::player::{AudioInput, AudioReader, SharedReader};
 use super::stream_client::HeadersClient;
@@ -251,7 +251,7 @@ impl AudioSource {
             .await
             .map_err(|e| format!("sonar 兜底失败: {e}"))?;
 
-        #[cfg(target_os = "linux")]
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
         log::info!(
             "[HEAP] after sonar search (id={}): {} kB — {} ({})",
             song.id,
@@ -280,7 +280,7 @@ impl AudioSource {
             .await
             .map_err(|e| format!("获取音源失败 ({}): {e}", msong.source))?;
 
-        #[cfg(target_os = "linux")]
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
         log::info!(
             "[HEAP] after get_play_url_for_song (id={}): {} kB — {} ({})",
             song.id,
@@ -387,7 +387,7 @@ impl AudioSource {
                     );
                 }
                 Err(e) => {
-                    #[cfg(target_os = "linux")]
+                    #[cfg(all(target_os = "linux", target_env = "gnu"))]
                     log::info!(
                         "[HEAP] after resolve_ncm FAIL (id={}): {} kB — {}",
                         song.id,
@@ -408,7 +408,7 @@ impl AudioSource {
             }
         }
 
-        #[cfg(target_os = "linux")]
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
         log::info!(
             "[HEAP] after resolve_ncm retries exhausted (id={}): {} kB",
             song.id,

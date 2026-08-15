@@ -3,9 +3,18 @@ use std::sync::{Arc, Mutex};
 use pigma::ipc::{self, IpcEvent, QueueSnapshot, StatusSnapshot};
 
 fn tmp_socket(tag: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("pigma-ipc-test-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    dir.join(format!("{tag}.sock"))
+    #[cfg(unix)]
+    {
+        let dir = std::env::temp_dir().join(format!("pigma-ipc-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join(format!("{tag}.sock"))
+    }
+    #[cfg(windows)]
+    {
+        // Named pipes live in a global namespace, so make the name unique per
+        // test (parallel-safe) and per process.
+        std::path::PathBuf::from(format!(r"\\.\pipe\pigma-test-{}-{tag}", std::process::id()))
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]

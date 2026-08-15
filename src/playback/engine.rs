@@ -19,7 +19,7 @@ use super::state::PlaybackState;
 use super::storage::PlaylistStorage;
 
 /// Read the current RSS in KB from /proc/self/status.
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
 pub(super) fn mem_rss_kb() -> u64 {
     std::fs::read_to_string("/proc/self/status")
         .ok()
@@ -771,10 +771,10 @@ impl PlaybackEngine {
             log::error!("Failed to send PlaybackStarted: receiver dropped");
         }
 
-        #[cfg(target_os = "linux")]
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
         let song_id = song.id;
         self.current_resolve = Some(tokio::spawn(async move {
-            #[cfg(target_os = "linux")]
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
             log::info!(
                 "[HEAP] before resolve {} (id={}): {} kB",
                 song.name,
@@ -784,14 +784,14 @@ impl PlaybackEngine {
             let input = match source.resolve(&song).await {
                 Ok(input) => input,
                 Err(e) => {
-                    #[cfg(target_os = "linux")]
+                    #[cfg(all(target_os = "linux", target_env = "gnu"))]
                     log::info!(
                         "[HEAP] after resolve FAIL {} (id={}): {} kB",
                         song.name,
                         song_id,
                         mem_rss_kb()
                     );
-                    #[cfg(target_os = "linux")]
+                    #[cfg(all(target_os = "linux", target_env = "gnu"))]
                     unsafe {
                         libc::malloc_trim(0);
                     }
@@ -801,14 +801,14 @@ impl PlaybackEngine {
                     return;
                 }
             };
-            #[cfg(target_os = "linux")]
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
             log::info!(
                 "[HEAP] after resolve OK {} (id={}): {} kB",
                 song.name,
                 song_id,
                 mem_rss_kb()
             );
-            #[cfg(target_os = "linux")]
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
             unsafe {
                 libc::malloc_trim(0);
             }
