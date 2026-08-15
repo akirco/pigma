@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - "v[0-9]+.*"
+      - 'v[0-9]+.*'
   workflow_dispatch:
 
 permissions:
@@ -23,6 +23,15 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             use-cross: false
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            use-cross: true
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            use-cross: true
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            use-cross: true
           - target: x86_64-apple-darwin
             os: macos-latest
             use-cross: false
@@ -51,7 +60,59 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y lld clang pkg-config libasound2-dev
+          sudo apt-get install -y lld clang pkg-config libasound2-dev musl-tools wget make sed linux-libc-dev
+
+      - name: Setup Cargo Env
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p .cargo
+          case "${{ matrix.target }}" in
+            aarch64-unknown-linux-gnu)
+              cat <<EOF >> .cargo/config.toml
+          [env]
+          PKG_CONFIG_ALLOW_CROSS = "1"
+          PKG_CONFIG_PATH = "/usr/lib/aarch64-linux-gnu/pkgconfig"
+          EOF
+              ;;
+            aarch64-unknown-linux-musl)
+              cat <<EOF >> .cargo/config.toml
+          [env]
+          PKG_CONFIG_ALLOW_CROSS = "1"
+          PKG_CONFIG_PATH = "/usr/local/aarch64-linux-musl/usr/lib/pkgconfig"
+          EOF
+              ;;
+            x86_64-unknown-linux-musl)
+              SYSROOT="/usr/local/x86_64-linux-musl"
+              sudo mkdir -p "$SYSROOT/usr/include"
+              sudo chown -R $USER "$SYSROOT"
+
+              ln -sfn /usr/include/linux "$SYSROOT/usr/include/linux"
+              ln -sfn /usr/include/x86_64-linux-gnu/asm "$SYSROOT/usr/include/asm"
+              ln -sfn /usr/include/asm-generic "$SYSROOT/usr/include/asm-generic"
+
+              ALSA_VERSION="1.2.16.1"
+              ALSA_URL="https://www.alsa-project.org/files/pub/lib/alsa-lib-${ALSA_VERSION}.tar.bz2"
+              cd /tmp
+              wget -q "$ALSA_URL"
+              tar xf "alsa-lib-${ALSA_VERSION}.tar.bz2"
+              cd "alsa-lib-${ALSA_VERSION}"
+
+              export CC="musl-gcc"
+              export CFLAGS="-fPIC -isystem $SYSROOT/usr/include"
+              export LDFLAGS="-L$SYSROOT/usr/lib"
+
+              ./configure --host=x86_64-linux-musl --prefix="$SYSROOT/usr" --enable-static --disable-shared --disable-python --without-versioned
+              make -j"$(nproc)"
+              make install
+              sed -i '/Requires:/d' "$SYSROOT/usr/lib/pkgconfig/alsa.pc"
+
+              cat <<EOF >> .cargo/config.toml
+          [env]
+          PKG_CONFIG_ALLOW_CROSS = "1"
+          PKG_CONFIG_PATH = "/usr/local/x86_64-linux-musl/usr/lib/pkgconfig"
+          EOF
+              ;;
+          esac
 
       - name: Set up aarch64 cross linker (gnu)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
@@ -186,4 +247,3 @@ jobs:
           fi
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-
