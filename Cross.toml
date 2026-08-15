@@ -5,43 +5,43 @@ pre-build = [
 ]
 
 [target.aarch64-unknown-linux-musl]
-pre-build = ["""
-set -eux
-SYSROOT="/usr/local/aarch64-linux-musl"
-ALSA_VERSION="1.2.16.1"
-ALSA_URL="https://www.alsa-project.org/files/pub/lib/alsa-lib-${ALSA_VERSION}.tar.bz2"
-apt-get update
-apt-get install --assume-yes --no-install-recommends wget make sed
-cd /tmp
-wget -q "$ALSA_URL"
-tar xf "alsa-lib-${ALSA_VERSION}.tar.bz2"
-cd "alsa-lib-${ALSA_VERSION}"
-export CC="aarch64-linux-musl-gcc"
-export CFLAGS="-fPIC"
-./configure --host=aarch64-linux-musl --prefix="$SYSROOT/usr" --enable-static --disable-shared --disable-python --without-versioned
-make -j"$(nproc)"
-make install
-sed -i '/Requires:/d' "$SYSROOT/usr/lib/pkgconfig/alsa.pc"
-ls "$SYSROOT/usr/lib/pkgconfig/alsa.pc"
-"""]
+pre-build = [
+  "set -eux",
+  "SYSROOT=\"/usr/local/aarch64-linux-musl\"",
+  "ALSA_VERSION=\"1.2.16.1\"",
+  "ALSA_URL=\"https://www.alsa-project.org/files/pub/lib/alsa-lib-${ALSA_VERSION}.tar.bz2\"",
+  "apt-get update",
+  "apt-get install --assume-yes --no-install-recommends wget make sed",
+  "cd /tmp",
+  "wget -q \"$ALSA_URL\"",
+  "tar xf \"alsa-lib-${ALSA_VERSION}.tar.bz2\"",
+  "cd \"alsa-lib-${ALSA_VERSION}\"",
+  "export CC=\"aarch64-linux-musl-gcc\"",
+  "export CFLAGS=\"-fPIC\"",
+  "./configure --host=aarch64-linux-musl --prefix=\"$SYSROOT/usr\" --enable-static --disable-shared --disable-python --without-versioned",
+  "make -j\"$(nproc)\"",
+  "make install",
+  "sed -i '/Requires:/d' \"$SYSROOT/usr/lib/pkgconfig/alsa.pc\"",
+  "ls \"$SYSROOT/usr/lib/pkgconfig/alsa.pc\"",
+]
 
 [target.x86_64-unknown-linux-musl]
-pre-build = ["""
-set -eux
-SYSROOT="/usr/local/x86_64-linux-musl"
-ALSA_VERSION="1.2.16.1"
-ALSA_URL="https://www.alsa-project.org/files/pub/lib/alsa-lib-${ALSA_VERSION}.tar.bz2"
-apt-get update
-apt-get install --assume-yes --no-install-recommends wget make sed
-cd /tmp
-wget -q "$ALSA_URL"
-tar xf "alsa-lib-${ALSA_VERSION}.tar.bz2"
-cd "alsa-lib-${ALSA_VERSION}"
-export CC="x86_64-linux-musl-gcc"
-export CFLAGS="-fPIC"
-./configure --host=x86_64-linux-musl --prefix="$SYSROOT/usr" --enable-static --disable-shared --disable-python --without-versioned
-make -j"$(nproc)"
-make install
-sed -i '/Requires:/d' "$SYSROOT/usr/lib/pkgconfig/alsa.pc"
-ls "$SYSROOT/usr/lib/pkgconfig/alsa.pc"
-"""]
+pre-build = [
+  "set -eux",
+  "SYSROOT=\"/usr/local/x86_64-linux-musl\"",
+  "ALSA_VERSION=\"1.2.16.1\"",
+  "ALSA_URL=\"https://www.alsa-project.org/files/pub/lib/alsa-lib-${ALSA_VERSION}.tar.bz2\"",
+  "apt-get update",
+  "apt-get install --assume-yes --no-install-recommends wget make sed",
+  "cd /tmp",
+  "wget -q \"$ALSA_URL\"",
+  "tar xf \"alsa-lib-${ALSA_VERSION}.tar.bz2\"",
+  "cd \"alsa-lib-${ALSA_VERSION}\"",
+  "export CC=\"x86_64-linux-musl-gcc\"",
+  "export CFLAGS=\"-fPIC\"",
+  "./configure --host=x86_64-linux-musl --prefix=\"$SYSROOT/usr\" --enable-static --disable-shared --disable-python --without-versioned",
+  "make -j\"$(nproc)\"",
+  "make install",
+  "sed -i '/Requires:/d' \"$SYSROOT/usr/lib/pkgconfig/alsa.pc\"",
+  "ls \"$SYSROOT/usr/lib/pkgconfig/alsa.pc\"",
+]
