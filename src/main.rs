@@ -54,7 +54,9 @@ async fn main() -> color_eyre::Result<()> {
 
     // Headless daemon mode
     if let Some(endpoint) = cli.daemon {
-        return App::new(config, false)?.run_headless(&endpoint, cli.playlist).await;
+        return App::new(config, false)?
+            .run_headless(&endpoint, cli.playlist)
+            .await;
     }
 
     let terminal = ratatui::init();
