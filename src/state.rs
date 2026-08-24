@@ -52,6 +52,12 @@ pub struct PaginationInfo {
     pub loading: bool,
 }
 
+impl PaginationInfo {
+    /// Offset of the next page after the currently loaded page.
+    pub fn next_offset(&self) -> u32 {
+        self.offset.saturating_add(self.limit)
+    }
+}
 impl Default for PaginationInfo {
     fn default() -> Self {
         Self {
@@ -62,6 +68,33 @@ impl Default for PaginationInfo {
             total: 0,
             loading: false,
         }
+    }
+}
+
+#[cfg(test)]
+mod pagination_tests {
+    use super::PaginationInfo;
+
+    #[test]
+    fn next_offset_advances_past_current_page() {
+        let pagination = PaginationInfo {
+            offset: 60,
+            limit: 60,
+            ..PaginationInfo::default()
+        };
+
+        assert_eq!(pagination.next_offset(), 120);
+    }
+
+    #[test]
+    fn next_offset_saturates() {
+        let pagination = PaginationInfo {
+            offset: u32::MAX - 5,
+            limit: 60,
+            ..PaginationInfo::default()
+        };
+
+        assert_eq!(pagination.next_offset(), u32::MAX);
     }
 }
 

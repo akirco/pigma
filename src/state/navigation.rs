@@ -175,6 +175,23 @@ impl NavigationState {
         }
     }
 
+    /// Remove a song from the active content while keeping selection and pagination valid.
+    pub fn remove_song(&mut self, song_id: u64) -> bool {
+        if !Arc::make_mut(&mut self.content).remove_song(song_id) {
+            return false;
+        }
+
+        let len = self.content.len();
+        self.content_selected = self.content_selected.min(len.saturating_sub(1));
+        self.table_state
+            .select((len > 0).then_some(self.content_selected));
+        if let Some(pagination) = &mut self.pagination {
+            pagination.total = pagination.total.saturating_sub(1);
+        }
+        *self.title_cache.borrow_mut() = None;
+        true
+    }
+
     pub fn clear_breadcrumb(&mut self) {
         self.history.clear();
     }
