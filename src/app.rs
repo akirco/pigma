@@ -430,7 +430,10 @@ impl App {
                 if self.state.offline {
                     self.navigate_to_local();
                 } else if self.service.client().is_logged_in() {
-                    self.navigate_to_main();
+                    // Wait for the authenticated user info before entering the
+                    // default tab. Login-gated endpoints need the UID returned by
+                    // this request, so loading the tab first can produce a false
+                    // "未登录" error during startup.
                     let service = self.service.clone();
                     let sender = self.state.events.sender();
                     tokio::spawn(async move {
@@ -442,6 +445,9 @@ impl App {
                             }
                             Err(e) => {
                                 log::error!("Failed to get login status: {e}");
+                                if sender.send(AuthEvent::Error(e.to_string()).into()).is_err() {
+                                    log::error!("Failed to send LoginError: receiver dropped");
+                                }
                             }
                         }
                     });

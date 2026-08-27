@@ -4,7 +4,7 @@ use tokio::time::{Duration, sleep};
 
 use super::{App, send_event};
 use crate::{
-    event::{AuthEvent, PlaybackEvent},
+    event::{AuthEvent, NavigationEvent, PlaybackEvent},
     state::Page,
 };
 
@@ -32,11 +32,21 @@ impl App {
     pub(super) fn handle_login_success(&mut self, info: ncm_api::LoginInfo) {
         self.toast(format!("登录成功: {}", info.nickname));
         let uid = info.uid;
+        let was_logged_in = self.state.navigation.user.is_some();
         self.state.login.loading = false;
         self.state.navigation.user = Some(info);
         self.service.client().flush_cookies();
-        if self.state.navigation.page == Page::Login {
+        if matches!(self.state.navigation.page, Page::Login | Page::Splash) {
             self.navigate_to_main();
+        } else if !was_logged_in && self.state.navigation.page == Page::Main {
+            // A login event can arrive after startup has already entered the
+            // main page. Reload the selected tab once its UID is available.
+            if let Some(api) = self.state.navigation.nav.selected_api() {
+                send_event(
+                    &self.state.events.sender(),
+                    NavigationEvent::NavSelect(api.to_string()).into(),
+                );
+            }
         }
 
         // After login, fetch the "我喜欢的音乐" list from the cloud so the local set and the playerbar icon stay in sync.
@@ -60,6 +70,9 @@ impl App {
         self.toast(format!("登录失败: {}", e));
         self.state.login.loading = false;
         self.state.login.error = Some(e);
+        if self.state.navigation.page == Page::Splash {
+            self.navigate_to_main();
+        }
     }
 
     pub(super) fn handle_qr_created(&mut self, url: String, key: String) {
