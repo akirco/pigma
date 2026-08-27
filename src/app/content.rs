@@ -16,7 +16,7 @@ impl App {
 
     pub(super) fn handle_load_more(&mut self) {
         let (api, offset, limit) = match self.state.navigation.pagination.as_ref() {
-            Some(pg) if pg.has_more => (pg.api.clone(), pg.offset, pg.limit),
+            Some(pg) if pg.has_more => (pg.api.clone(), pg.next_offset(), pg.limit),
             _ => return,
         };
 
@@ -61,10 +61,13 @@ impl App {
         // Only song lists (cloud disk, songs within a playlist) support paged appends; other types replace the whole content.
         if same_api
             && let ContentState::Songs(new_songs) = &mut content
-            && let ContentState::Songs(existing) =
-                std::sync::Arc::make_mut(&mut self.state.navigation.content)
+            && matches!(
+                self.state.navigation.content.as_ref(),
+                ContentState::Songs(_)
+            )
         {
-            existing.extend(std::mem::take(new_songs));
+            std::sync::Arc::make_mut(&mut self.state.navigation.content)
+                .append_unique_songs(std::mem::take(new_songs));
             let pg_for_save = pagination.clone();
             self.state.navigation.pagination = Some(pagination);
 

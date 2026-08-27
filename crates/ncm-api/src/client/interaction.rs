@@ -20,6 +20,7 @@ impl NcmClient {
         ];
         let result = self.request_weapi("/api/radio/like", &params).await?;
         let value: Value = serde_json::from_str(&result)?;
+        Self::check_api_code(&value)?;
         parse_msg(&value).map_err(|e| NcmError::parse(e, &value))
     }
 
