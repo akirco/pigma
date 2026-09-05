@@ -3383,9 +3383,9 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "stream-download"
-version = "0.24.3"
+version = "0.24.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4395274fb9883301eab75d32928c328b26c6b1a53d5042bf4fa7b7256204bb14"
+checksum = "3838c412a6dbb469e857b5148043dbb54d01dce49cace8d46709b795cc7697a3"
 dependencies = [
  "bytes",
  "educe",
