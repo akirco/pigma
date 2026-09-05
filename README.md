@@ -51,6 +51,7 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 **注意：**
 
 > 该项目仅供学习与研究使用.
+> 另外由于个人原因，该项目正在寻找维护人员，有兴趣联系
 
 **升级注意备份配置文件，当前自动备份迁移并没有写**
 
