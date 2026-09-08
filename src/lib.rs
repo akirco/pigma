@@ -14,6 +14,7 @@ pub mod input;
 pub mod ipc;
 pub mod layout;
 pub mod logger;
+pub mod mpris;
 pub mod playback;
 pub mod service;
 pub mod state;

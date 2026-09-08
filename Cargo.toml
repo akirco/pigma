@@ -16,6 +16,7 @@ dirs = "6.0.0"
 futures = { version = "0.3.33", default-features = false, features = ["async-await", "std"] }
 image = { version = "0.25.10", default-features = false, features = ["jpeg"] }
 log = { version = "0.4.33", features = ["serde", "std"] }
+mpris-server = { version = "0.10.0", features = ["tokio"] }
 ncm-api = { path = "crates/ncm-api" }
 qrcode = "0.14.1"
 rand = "0.10.2"
