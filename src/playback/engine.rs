@@ -570,6 +570,10 @@ impl PlaybackEngine {
         self.state.seeking = false;
     }
 
+    pub fn stop_for_external_control(&mut self) {
+        self.stop();
+    }
+
     pub fn clear_queue(&mut self) {
         // Only stop the current playback when the cleared queue is the one the
         // playing song came from. Clearing a different queue (viewed on the
@@ -630,6 +634,17 @@ impl PlaybackEngine {
         self.controller.seek_to(Duration::from_secs_f64(new_secs));
     }
 
+    pub fn seek_absolute(&mut self, seconds: f64) {
+        let current = self.state.progress
+            * self
+                .state
+                .current_song
+                .as_ref()
+                .map(|song| song.duration as f64 / 1000.0)
+                .unwrap_or(0.0);
+        self.seek_relative(seconds - current);
+    }
+
     pub fn set_volume(&mut self, volume: f64) {
         self.state.volume = volume;
         self.controller.set_volume(volume as f32);
@@ -652,6 +667,23 @@ impl PlaybackEngine {
         };
         self.set_mode(next);
         next
+    }
+
+    pub fn set_loop_status_key(&mut self, status: &str) {
+        let mode = match status {
+            "track" => PlayMode::RepeatOne,
+            "playlist" => PlayMode::RepeatAll,
+            _ => PlayMode::Sequential,
+        };
+        self.set_mode(mode);
+    }
+
+    pub fn set_shuffle(&mut self, shuffle: bool) {
+        if shuffle {
+            self.set_mode(PlayMode::Shuffle);
+        } else if matches!(self.state.mode, PlayMode::Shuffle) {
+            self.set_mode(PlayMode::Sequential);
+        }
     }
 
     pub(super) fn set_mode(&mut self, mode: PlayMode) {

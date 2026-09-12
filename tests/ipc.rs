@@ -68,6 +68,7 @@ async fn status_round_trip() {
         position_ms: 25_000,
         volume: 0.5,
         playing: true,
+        liked: true,
         ..Default::default()
     };
     let snapshot = Arc::new(Mutex::new(snapshot));
@@ -286,6 +287,7 @@ async fn subscribe_streams_updates() {
         artist: "Artist B".into(),
         playing: true,
         paused: true,
+        liked: true,
         ..Default::default()
     };
     status_tx.send(snapshot.lock().unwrap().clone()).unwrap();
