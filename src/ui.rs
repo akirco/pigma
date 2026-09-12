@@ -209,7 +209,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
 
     if app.state.help.open {
-        help::draw(f, app, area);
+        // Persist the rendered scroll limit so scroll_down clamps at the real
+        // bottom; clamping scroll here also heals drift after a resize.
+        let max_scroll = help::draw(f, app, area);
+        app.state.help.max_scroll = max_scroll;
+        app.state.help.scroll = app.state.help.scroll.min(max_scroll);
     }
 
     toast::draw_toast(f, app, colors);
