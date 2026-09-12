@@ -2,14 +2,17 @@
 //! subcommands, and otherwise initializes the terminal and launches the main
 //! `App` loop until quit.
 
-use std::io::stdout;
+use std::io::{Write, stdout};
 
 use clap::{Parser, error::ErrorKind};
-use crossterm::execute;
+use crossterm::{
+    cursor,
+    event::{DisableMouseCapture, EnableMouseCapture},
+    execute,
+    style::ResetColor,
+};
 use pigma::cli::{Cli, run_cli};
 
-<<<<<<< Updated upstream
-=======
 struct TerminalGuard;
 
 impl Drop for TerminalGuard {
@@ -29,7 +32,6 @@ impl Drop for TerminalGuard {
     }
 }
 
->>>>>>> Stashed changes
 #[tokio::main]
 async fn main() -> color_eyre::Result<()> {
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -58,15 +60,7 @@ async fn main() -> color_eyre::Result<()> {
 
     color_eyre::install()?;
     let terminal = ratatui::init();
-<<<<<<< Updated upstream
-    execute!(stdout(), crossterm::event::EnableMouseCapture)?;
-    let result = app.run(terminal).await;
-    execute!(stdout(), crossterm::event::DisableMouseCapture)?;
-    ratatui::restore();
-    result
-=======
     let _terminal_guard = TerminalGuard;
     execute!(stdout(), EnableMouseCapture)?;
     app.run(terminal).await
->>>>>>> Stashed changes
 }

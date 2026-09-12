@@ -52,6 +52,12 @@ pub struct PaginationInfo {
     pub loading: bool,
 }
 
+impl PaginationInfo {
+    /// Offset of the next page after the currently loaded page.
+    pub fn next_offset(&self) -> u32 {
+        self.offset.saturating_add(self.limit)
+    }
+}
 impl Default for PaginationInfo {
     fn default() -> Self {
         Self {
@@ -64,27 +70,6 @@ impl Default for PaginationInfo {
         }
     }
 }
-
-pub struct State {
-    pub running: bool,
-    pub events: EventHandler,
-    pub border: BorderConfig,
-    pub splash: SplashState,
-    pub login: LoginState,
-    pub navigation: NavigationState,
-    pub command_panel: CommandPanel,
-    pub help: HelpState,
-    pub offline: bool,
-    pub tick: u64,
-    pub last_tick: Instant,
-    pub toast_msg: String,
-    pub toast_time: Option<Instant>,
-    /// Layout rect of the player bar, cached by the draw pass (`ui::draw`) and
-    /// consumed by mouse input to hit-test volume scrolling on the player bar.
-    pub playerbar_area: Rect,
-}
-<<<<<<< Updated upstream
-=======
 
 #[cfg(test)]
 mod pagination_tests {
@@ -112,4 +97,22 @@ mod pagination_tests {
         assert_eq!(pagination.next_offset(), u32::MAX);
     }
 }
->>>>>>> Stashed changes
+
+pub struct State {
+    pub running: bool,
+    pub events: EventHandler,
+    pub border: BorderConfig,
+    pub splash: SplashState,
+    pub login: LoginState,
+    pub navigation: NavigationState,
+    pub command_panel: CommandPanel,
+    pub help: HelpState,
+    pub offline: bool,
+    pub tick: u64,
+    pub last_tick: Instant,
+    pub toast_msg: String,
+    pub toast_time: Option<Instant>,
+    /// Layout rect of the player bar, cached by the draw pass (`ui::draw`) and
+    /// consumed by mouse input to hit-test volume scrolling on the player bar.
+    pub playerbar_area: Rect,
+}

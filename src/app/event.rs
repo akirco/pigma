@@ -121,11 +121,12 @@ impl App {
                 {
                     self.playback.update_liked_status();
                 }
-<<<<<<< Updated upstream
-=======
                 let is_liked_root = self.state.navigation.nav.selected_api() == Some("liked")
                     && self.state.navigation.history.is_empty();
                 if !like && is_liked_root {
+                    // The active list and its cache are snapshots; keep them in sync with the
+                    // optimistic liked-state update instead of showing the removed song until reload.
+                    self.service.cache().remove_content_cache("liked");
                     let playlist_id = self
                         .state
                         .navigation
@@ -147,10 +148,8 @@ impl App {
                         ContentState::Songs(songs) if songs.iter().any(|song| song.id == id)
                     );
                     if !already_present
-                        && let Some(song) = self
-                            .playback
-                            .current_song()
-                            .filter(|song| song.id == id)
+                        && let Some(song) =
+                            self.playback.current_song().filter(|song| song.id == id)
                     {
                         let playlist_id = self
                             .state
@@ -166,10 +165,11 @@ impl App {
                         }
                     }
                 }
->>>>>>> Stashed changes
                 let service = self.service.clone();
                 tokio::spawn(async move {
-                    let _ = service.like_song(id, like).await;
+                    if let Err(e) = service.like_song(id, like).await {
+                        log::warn!("Failed to update liked state for song {id}: {e}");
+                    }
                 });
             }
             PlaybackEvent::LikedUpdated => {

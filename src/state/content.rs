@@ -37,8 +37,6 @@ impl ContentState {
         self.len() == 0
     }
 
-<<<<<<< Updated upstream
-=======
     /// Remove a song by ID from song content. Returns whether an item was removed.
     pub fn remove_song(&mut self, song_id: u64) -> bool {
         let ContentState::Songs(songs) = self else {
@@ -72,7 +70,6 @@ impl ContentState {
         songs.len() - previous_len
     }
 
->>>>>>> Stashed changes
     pub fn content_type(&self) -> ContentType {
         match self {
             ContentState::Songs(_) => ContentType::Songs,
@@ -92,8 +89,6 @@ pub enum TableMode {
     Row,
     Cell,
 }
-<<<<<<< Updated upstream
-=======
 
 #[cfg(test)]
 mod tests {
@@ -143,12 +138,18 @@ mod tests {
         let mut songs = ContentState::Songs(vec![song(1), song(2)]);
 
         assert!(songs.insert_song_at_top(song(3)));
-        assert!(!songs.insert_song_at_top(song(1)), "duplicate must be rejected");
+        assert!(
+            !songs.insert_song_at_top(song(1)),
+            "duplicate must be rejected"
+        );
 
         let ContentState::Songs(songs) = songs else {
             panic!("expected song content");
         };
-        assert_eq!(songs.iter().map(|song| song.id).collect::<Vec<_>>(), vec![3, 1, 2]);
+        assert_eq!(
+            songs.iter().map(|song| song.id).collect::<Vec<_>>(),
+            vec![3, 1, 2]
+        );
     }
 
     #[test]
@@ -176,4 +177,3 @@ mod tests {
         );
     }
 }
->>>>>>> Stashed changes

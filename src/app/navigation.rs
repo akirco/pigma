@@ -100,9 +100,8 @@ impl App {
 
             if ttl > 0
                 && !force
-                && api != ApiEndpoint::Search
+                && !matches!(api, ApiEndpoint::Search | ApiEndpoint::LikedSongs)
                 && let Some((cached, pg)) = cache.load_content_cache_async(&api_str, ttl).await
-                && (api != ApiEndpoint::LikedSongs || pg.is_some())
             {
                 // When restoring playlist pagination from cache, top up the trackIds, otherwise lazy pagination (LoadMore) cannot slice.
                 if let Some(pg) = &pg

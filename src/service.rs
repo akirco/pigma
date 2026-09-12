@@ -263,22 +263,32 @@ impl ApiService {
             };
         };
 
-        let (songs, total) = match self.client.playlist_detail(id).await {
-            Ok((_detail, track_ids)) => {
-                let total = track_ids.len() as u64;
-                let page_limit = limit as u32;
-                let songs = match self.client.playlist_songs(&track_ids, 0, page_limit).await {
-                    Ok(s) => s,
-                    Err(e) => return (ContentState::Error(e.to_string()), None, Some(id)),
-                };
-                // Cache the full trackIds for later lazy pagination (LoadMore) slicing.
-                if let Ok(mut guard) = self.playlist_track_ids.lock() {
-                    guard.insert(id, track_ids);
+        // `liked_song_ids` is authoritative. Playlist detail can lag after an unlike and
+        // must not normally drive this list, otherwise removed songs remain visible.
+        let track_ids = match self.client.liked_song_ids(uid).await {
+            Ok(ids) => ids,
+            Err(liked_error) => match self.client.playlist_detail(id).await {
+                Ok((_detail, ids)) => {
+                    log::warn!(
+                        "liked_song_ids failed ({liked_error}); falling back to playlist detail"
+                    );
+                    ids
                 }
-                (songs, total)
-            }
+                Err(_) => {
+                    return (ContentState::Error(liked_error.to_string()), None, Some(id));
+                }
+            },
+        };
+        let total = track_ids.len() as u64;
+        let page_limit = limit as u32;
+        let songs = match self.client.playlist_songs(&track_ids, 0, page_limit).await {
+            Ok(songs) => songs,
             Err(e) => return (ContentState::Error(e.to_string()), None, Some(id)),
         };
+        // Cache the authoritative IDs for later lazy pagination (LoadMore) slicing.
+        if let Ok(mut guard) = self.playlist_track_ids.lock() {
+            guard.insert(id, track_ids);
+        }
 
         let limit = limit as u32;
         let pagination = PaginationInfo {
@@ -296,8 +306,6 @@ impl ApiService {
         )
     }
 
-<<<<<<< Updated upstream
-=======
     /// Remove a track from a cached playlist ID list after an optimistic local mutation.
     pub fn remove_cached_playlist_track(&self, playlist_id: u64, song_id: u64) {
         if let Ok(mut guard) = self.playlist_track_ids.lock()
@@ -318,7 +326,6 @@ impl ApiService {
         }
     }
 
->>>>>>> Stashed changes
     /// Ensure the playlist's `trackIds` are cached in memory (for `load_more` lazy pagination slicing).
     ///
     /// When content is restored from the disk cache, `playlist_track_ids` has not

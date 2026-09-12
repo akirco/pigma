@@ -175,8 +175,6 @@ impl NavigationState {
         }
     }
 
-<<<<<<< Updated upstream
-=======
     /// Remove a song from the active content while keeping selection and pagination valid.
     pub fn remove_song(&mut self, song_id: u64) -> bool {
         if !Arc::make_mut(&mut self.content).remove_song(song_id) {
@@ -212,7 +210,6 @@ impl NavigationState {
         true
     }
 
->>>>>>> Stashed changes
     pub fn clear_breadcrumb(&mut self) {
         self.history.clear();
     }

@@ -44,7 +44,9 @@ const POPUP_WIDTH: u16 = 64;
 const POPUP_HEIGHT: u16 = 24;
 const KEY_COL_WIDTH: usize = 16;
 
-pub(super) fn draw(f: &mut Frame, app: &App, area: Rect) {
+/// Renders the popup and returns the scroll limit implied by the rendered
+/// geometry, for the caller to persist into [`crate::state::HelpState`].
+pub(super) fn draw(f: &mut Frame, app: &App, area: Rect) -> usize {
     let help = &app.state.help;
     let colors = app.current_theme();
 
@@ -81,7 +83,8 @@ pub(super) fn draw(f: &mut Frame, app: &App, area: Rect) {
     );
 
     let visible = (inner.height.saturating_sub(1)) as usize;
-    let scroll = help.scroll.min(HELP_ITEMS.len().saturating_sub(visible));
+    let max_scroll = HELP_ITEMS.len().saturating_sub(visible);
+    let scroll = help.scroll.min(max_scroll);
     for (i, (key, desc)) in HELP_ITEMS.iter().enumerate().skip(scroll).take(visible) {
         let line_area = Rect {
             y: inner.y + (i - scroll) as u16,
@@ -96,4 +99,5 @@ pub(super) fn draw(f: &mut Frame, app: &App, area: Rect) {
         };
         f.render_widget(Paragraph::new(line).style(style), line_area);
     }
+    max_scroll
 }

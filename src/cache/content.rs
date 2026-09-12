@@ -79,4 +79,12 @@ impl CacheManager {
             }
         }
     }
+
+    pub fn remove_content_cache(&self, api: &str) {
+        match fs::remove_file(self.content_path(api)) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => log::warn!("Failed to remove content cache for {api}: {e}"),
+        }
+    }
 }
