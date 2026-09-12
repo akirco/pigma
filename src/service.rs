@@ -296,6 +296,29 @@ impl ApiService {
         )
     }
 
+<<<<<<< Updated upstream
+=======
+    /// Remove a track from a cached playlist ID list after an optimistic local mutation.
+    pub fn remove_cached_playlist_track(&self, playlist_id: u64, song_id: u64) {
+        if let Ok(mut guard) = self.playlist_track_ids.lock()
+            && let Some(track_ids) = guard.get_mut(&playlist_id)
+        {
+            track_ids.retain(|id| *id != song_id);
+        }
+    }
+
+    /// Insert a track at the front of a cached playlist ID list after an optimistic
+    /// local mutation, keeping `load_more` slicing aligned with the visible list.
+    pub fn insert_cached_playlist_track(&self, playlist_id: u64, song_id: u64) {
+        if let Ok(mut guard) = self.playlist_track_ids.lock()
+            && let Some(track_ids) = guard.get_mut(&playlist_id)
+        {
+            track_ids.retain(|id| *id != song_id);
+            track_ids.insert(0, song_id);
+        }
+    }
+
+>>>>>>> Stashed changes
     /// Ensure the playlist's `trackIds` are cached in memory (for `load_more` lazy pagination slicing).
     ///
     /// When content is restored from the disk cache, `playlist_track_ids` has not

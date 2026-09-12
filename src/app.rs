@@ -79,6 +79,10 @@ pub struct App {
     /// Last queue version the `queue` snapshot was built from; rebuilds only on
     /// change instead of cloning the whole queue every event-loop iteration.
     last_queue_version: u64,
+    /// Guards the startup splash branch: `login_status` is requested exactly
+    /// once, so later events (IPC, mouse...) cannot spawn duplicate requests
+    /// that would double-toast and re-fetch liked IDs.
+    login_status_requested: bool,
 }
 
 impl App {
@@ -230,6 +234,7 @@ impl App {
             // Force the first `update_status_snapshot` to populate the queue,
             // e.g. when a session is restored from disk during engine startup.
             last_queue_version: u64::MAX,
+            login_status_requested: false,
         })
     }
 
@@ -429,8 +434,19 @@ impl App {
             {
                 if self.state.offline {
                     self.navigate_to_local();
+<<<<<<< Updated upstream
                 } else if self.service.client().is_logged_in() {
                     self.navigate_to_main();
+=======
+                } else if self.service.client().is_logged_in()
+                    && !self.login_status_requested
+                {
+                    // Wait for the authenticated user info before entering the
+                    // default tab. Login-gated endpoints need the UID returned by
+                    // this request, so loading the tab first can produce a false
+                    // "未登录" error during startup.
+                    self.login_status_requested = true;
+>>>>>>> Stashed changes
                     let service = self.service.clone();
                     let sender = self.state.events.sender();
                     tokio::spawn(async move {

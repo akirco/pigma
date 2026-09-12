@@ -83,3 +83,33 @@ pub struct State {
     /// consumed by mouse input to hit-test volume scrolling on the player bar.
     pub playerbar_area: Rect,
 }
+<<<<<<< Updated upstream
+=======
+
+#[cfg(test)]
+mod pagination_tests {
+    use super::PaginationInfo;
+
+    #[test]
+    fn next_offset_advances_past_current_page() {
+        let pagination = PaginationInfo {
+            offset: 60,
+            limit: 60,
+            ..PaginationInfo::default()
+        };
+
+        assert_eq!(pagination.next_offset(), 120);
+    }
+
+    #[test]
+    fn next_offset_saturates() {
+        let pagination = PaginationInfo {
+            offset: u32::MAX - 5,
+            limit: 60,
+            ..PaginationInfo::default()
+        };
+
+        assert_eq!(pagination.next_offset(), u32::MAX);
+    }
+}
+>>>>>>> Stashed changes

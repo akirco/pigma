@@ -10,7 +10,7 @@ use crate::{
         PlaybackEvent, SplashEvent,
     },
     input,
-    state::CommandAction,
+    state::{CommandAction, ContentState},
 };
 
 impl App {
@@ -121,6 +121,52 @@ impl App {
                 {
                     self.playback.update_liked_status();
                 }
+<<<<<<< Updated upstream
+=======
+                let is_liked_root = self.state.navigation.nav.selected_api() == Some("liked")
+                    && self.state.navigation.history.is_empty();
+                if !like && is_liked_root {
+                    let playlist_id = self
+                        .state
+                        .navigation
+                        .pagination
+                        .as_ref()
+                        .and_then(|p| p.api.strip_prefix("playlist:"))
+                        .and_then(|id| id.parse::<u64>().ok());
+                    if self.state.navigation.remove_song(id)
+                        && let Some(playlist_id) = playlist_id
+                    {
+                        self.service.remove_cached_playlist_track(playlist_id, id);
+                    }
+                } else if is_liked_root {
+                    // A like can target the current playing song (`S`) without it being the
+                    // selected row. Insert the newly liked song at the top of the open liked
+                    // list so the visible list reflects the change immediately.
+                    let already_present = matches!(
+                        self.state.navigation.content.as_ref(),
+                        ContentState::Songs(songs) if songs.iter().any(|song| song.id == id)
+                    );
+                    if !already_present
+                        && let Some(song) = self
+                            .playback
+                            .current_song()
+                            .filter(|song| song.id == id)
+                    {
+                        let playlist_id = self
+                            .state
+                            .navigation
+                            .pagination
+                            .as_ref()
+                            .and_then(|p| p.api.strip_prefix("playlist:"))
+                            .and_then(|id| id.parse::<u64>().ok());
+                        if self.state.navigation.insert_song_at_top(song)
+                            && let Some(playlist_id) = playlist_id
+                        {
+                            self.service.insert_cached_playlist_track(playlist_id, id);
+                        }
+                    }
+                }
+>>>>>>> Stashed changes
                 let service = self.service.clone();
                 tokio::spawn(async move {
                     let _ = service.like_song(id, like).await;

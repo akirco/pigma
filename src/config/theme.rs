@@ -32,7 +32,7 @@ impl Default for Theme {
             text: cstr("#ffffff"),
             accent: cstr("#c20c0c"),
             muted: cstr("#555555"),
-            border: cstr("0"),
+            border: Color::Reset,
             error: cstr("#f4535a"),
         }
     }
@@ -256,7 +256,7 @@ impl Theme {
             text: cstr("#ff0066"),
             accent: cstr("#ffcc00"),
             muted: cstr("#00f0ff"),
-            border: cstr("0"),
+            border: Color::Reset,
             error: cstr("#b000ff"),
         }
     }
@@ -269,7 +269,7 @@ impl Theme {
             text: cstr("#ffdd00"),
             accent: cstr("#ff00aa"),
             muted: cstr("#00ccff"),
-            border: cstr("0"),
+            border: Color::Reset,
             error: cstr("#ff3300"),
         }
     }
@@ -282,7 +282,7 @@ impl Theme {
             text: cstr("#00f0ff"),
             accent: cstr("#ff0066"),
             muted: cstr("#ccff00"),
-            border: cstr("0"),
+            border: Color::Reset,
             error: cstr("#00ff66"),
         }
     }

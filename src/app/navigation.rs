@@ -139,18 +139,6 @@ impl App {
                 && let Some(uid) = uid
             {
                 let (state, pagination, playlist_id) = service.load_liked_songs(uid, limit).await;
-                let state = if ttl > 0 && !matches!(state, ContentState::Error(_)) {
-                    let cache_clone = cache.clone();
-                    let pg_for_save = pagination.clone();
-                    tokio::task::spawn_blocking(move || {
-                        cache_clone.save_content_cache("liked", &state, pg_for_save.as_ref());
-                        state
-                    })
-                    .await
-                    .unwrap_or(ContentState::Empty)
-                } else {
-                    state
-                };
                 if let Some(pg) = pagination {
                     send_event(
                         &sender,

@@ -1,6 +1,6 @@
 use std::{cell::RefCell, sync::Arc};
 
-use ncm_api::LoginInfo;
+use ncm_api::{LoginInfo, SongInfo};
 use ratatui::widgets::{ListState, TableState};
 
 use super::{
@@ -175,6 +175,44 @@ impl NavigationState {
         }
     }
 
+<<<<<<< Updated upstream
+=======
+    /// Remove a song from the active content while keeping selection and pagination valid.
+    pub fn remove_song(&mut self, song_id: u64) -> bool {
+        if !Arc::make_mut(&mut self.content).remove_song(song_id) {
+            return false;
+        }
+
+        let len = self.content.len();
+        self.content_selected = self.content_selected.min(len.saturating_sub(1));
+        self.table_state
+            .select((len > 0).then_some(self.content_selected));
+        if let Some(pagination) = &mut self.pagination {
+            pagination.total = pagination.total.saturating_sub(1);
+        }
+        *self.title_cache.borrow_mut() = None;
+        true
+    }
+
+    /// Insert a song at the top of the current song content, mirroring a newly
+    /// liked song onto the open "我喜欢的音乐" root. Returns whether an item was inserted.
+    pub fn insert_song_at_top(&mut self, song: Arc<SongInfo>) -> bool {
+        if !Arc::make_mut(&mut self.content).insert_song_at_top(song) {
+            return false;
+        }
+        // Follow the previously selected row, which was shifted down by one.
+        self.content_selected = self.content_selected.saturating_add(1);
+        if self.table_state.selected().is_some() {
+            self.table_state.select(Some(self.content_selected));
+        }
+        if let Some(pagination) = &mut self.pagination {
+            pagination.total = pagination.total.saturating_add(1);
+        }
+        *self.title_cache.borrow_mut() = None;
+        true
+    }
+
+>>>>>>> Stashed changes
     pub fn clear_breadcrumb(&mut self) {
         self.history.clear();
     }

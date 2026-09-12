@@ -36,7 +36,7 @@ pub(super) fn draw_toast(f: &mut Frame, app: &App, colors: &Theme) {
     let block = Block::default()
         .borders(Borders::TOP)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(colors.border))
+        .border_style(Style::default().fg(colors.muted))
         .style(Style::default().bg(colors.surface));
 
     let p = Paragraph::new(format!(" {} ", app.state.toast_msg))

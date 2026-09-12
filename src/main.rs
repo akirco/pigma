@@ -8,6 +8,28 @@ use clap::{Parser, error::ErrorKind};
 use crossterm::execute;
 use pigma::cli::{Cli, run_cli};
 
+<<<<<<< Updated upstream
+=======
+struct TerminalGuard;
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        let mut output = stdout();
+        // Disable mouse reporting even when the app unwinds from a panic. The
+        // ratatui panic hook restores raw mode and the alternate screen, but it
+        // does not know that Pigma enabled mouse capture separately.
+        let _ = execute!(output, DisableMouseCapture, ResetColor, cursor::Show);
+        // On the panic path the ratatui panic hook has already called restore(),
+        // so only call it on clean exits to avoid restoring the terminal twice.
+        if !std::thread::panicking() {
+            ratatui::restore();
+        }
+        let _ = write!(output, "\r\n");
+        let _ = output.flush();
+    }
+}
+
+>>>>>>> Stashed changes
 #[tokio::main]
 async fn main() -> color_eyre::Result<()> {
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -36,9 +58,15 @@ async fn main() -> color_eyre::Result<()> {
 
     color_eyre::install()?;
     let terminal = ratatui::init();
+<<<<<<< Updated upstream
     execute!(stdout(), crossterm::event::EnableMouseCapture)?;
     let result = app.run(terminal).await;
     execute!(stdout(), crossterm::event::DisableMouseCapture)?;
     ratatui::restore();
     result
+=======
+    let _terminal_guard = TerminalGuard;
+    execute!(stdout(), EnableMouseCapture)?;
+    app.run(terminal).await
+>>>>>>> Stashed changes
 }

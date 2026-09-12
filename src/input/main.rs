@@ -150,9 +150,9 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
             app.playback.toggle_pause();
             if let Some(song) = app.playback.current_song() {
                 if was_paused {
-                    app.toast(format!("▶  {}", song.name));
+                    app.toast(format!("\u{f03e4}  {}", song.name));
                 } else {
-                    app.toast(format!("⏸  {}", song.name));
+                    app.toast(format!("\u{f040a}  {}", song.name));
                 }
             }
         }
