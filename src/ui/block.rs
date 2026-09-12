@@ -306,7 +306,9 @@ impl<'a> CornerBlock<'a> {
     /// Blank a cell if it currently holds a border line character, so titles
     /// (non-border glyphs) survive transparent borders.
     fn blank_if_border_line(buf: &mut Buffer, pos: (u16, u16)) {
-        let Some(cell) = buf.cell_mut(pos) else { return };
+        let Some(cell) = buf.cell_mut(pos) else {
+            return;
+        };
         if matches!(
             cell.symbol(),
             "─" | "│" | "┌" | "┐" | "└" | "┘" | "╭" | "╮" | "╰" | "╯"
