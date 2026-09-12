@@ -24,7 +24,6 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
   - [Usage](#usage)
     - [CLI 控制（status / msg）](#cli-控制status--msg)
       - [直接走 Unix socket（socat / 脚本）](#直接走-unix-socketsocat--脚本)
-      - [直接走 Unix socket（socat / 脚本）](#直接走-unix-socketsocat--脚本-1)
       - [Windows：命名管道控制（PowerShell）](#windows命名管道控制powershell)
     - [无头守护进程模式（pigma -d）](#无头守护进程模式pigma--d)
   - [Configuration](#configuration)
@@ -235,7 +234,6 @@ Add-Content $PROFILE '. "$HOME/.config/powershell/pigma.ps1"'
 
 #### 直接走 Unix socket（socat / 脚本）
 
-#### 直接走 Unix socket（socat / 脚本）
 
 > **仅 Linux/macOS**：`status` / `msg` 子命令底层就是往 `~/.cache/pigma/pigma.sock`
 > 发一行 JSON。Windows 用的是命名管道，见下节。

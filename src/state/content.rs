@@ -47,6 +47,18 @@ impl ContentState {
         songs.len() != previous_len
     }
 
+    /// Insert a song at the front of song content. Returns whether an item was inserted.
+    pub fn insert_song_at_top(&mut self, song: Arc<SongInfo>) -> bool {
+        let ContentState::Songs(songs) = self else {
+            return false;
+        };
+        if songs.iter().any(|existing| existing.id == song.id) {
+            return false;
+        }
+        songs.insert(0, song);
+        true
+    }
+
     /// Append only songs whose IDs are not already present. Returns the number appended.
     pub fn append_unique_songs(&mut self, new_songs: Vec<Arc<SongInfo>>) -> usize {
         let ContentState::Songs(songs) = self else {
@@ -119,6 +131,33 @@ mod tests {
         assert!(!empty.remove_song(1));
         assert!(!songs.remove_song(2));
         assert_eq!(songs.len(), 1);
+    }
+
+    #[test]
+    fn insert_song_at_top_prepends_and_dedups() {
+        let mut songs = ContentState::Songs(vec![song(1), song(2)]);
+
+        assert!(songs.insert_song_at_top(song(3)));
+        assert!(
+            !songs.insert_song_at_top(song(1)),
+            "duplicate must be rejected"
+        );
+
+        let ContentState::Songs(songs) = songs else {
+            panic!("expected song content");
+        };
+        assert_eq!(
+            songs.iter().map(|song| song.id).collect::<Vec<_>>(),
+            vec![3, 1, 2]
+        );
+    }
+
+    #[test]
+    fn insert_song_at_top_ignores_non_song_content() {
+        let mut empty = ContentState::Empty;
+
+        assert!(!empty.insert_song_at_top(song(1)));
+        assert!(empty.is_empty());
     }
 
     #[test]

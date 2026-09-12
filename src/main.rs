@@ -22,7 +22,11 @@ impl Drop for TerminalGuard {
         // ratatui panic hook restores raw mode and the alternate screen, but it
         // does not know that Pigma enabled mouse capture separately.
         let _ = execute!(output, DisableMouseCapture, ResetColor, cursor::Show);
-        ratatui::restore();
+        // On the panic path the ratatui panic hook has already called restore(),
+        // so only call it on clean exits to avoid restoring the terminal twice.
+        if !std::thread::panicking() {
+            ratatui::restore();
+        }
         let _ = write!(output, "\r\n");
         let _ = output.flush();
     }
@@ -58,6 +62,5 @@ async fn main() -> color_eyre::Result<()> {
     let terminal = ratatui::init();
     let _terminal_guard = TerminalGuard;
     execute!(stdout(), EnableMouseCapture)?;
-    let result = app.run(terminal).await;
-    result
+    app.run(terminal).await
 }

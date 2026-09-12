@@ -1,3 +1,27 @@
+## [0.2.14] - 2026-09-12
+
+### 🚀 Features
+
+- *(app)* Add login status request guard and improve song management in navigation (akirco)
+
+### 🐛 Bug Fixes
+
+- Restore terminal state and sync startup auth (caojialin)
+- Synchronize liked songs pagination (Mars160)
+- 修复帮助面板滚动溢出导致向上滚动失效的问题 (lorlike)
+
+### 💼 Other
+
+- *(deps)* Bump log from 0.4.33 to 0.4.34 (dependabot[bot])
+- *(deps)* Bump stream-download from 0.24.3 to 0.24.4 (dependabot[bot])
+
+### 📚 Documentation
+
+- *(README)* Enhance completion script instructions for bash, zsh, fish, and powershell (akirco)
+
+### ⚙️ Miscellaneous Tasks
+
+- *(ci)* Fmt (akirco)
 ## [0.2.13] - 2026-08-22
 
 ### 🚀 Features

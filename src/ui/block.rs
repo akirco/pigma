@@ -22,6 +22,7 @@ pub struct CornerBlock<'a> {
     no_border: bool,
     has_title: bool,
     horizontal_padding: u16,
+    transparent_border: bool,
 }
 
 impl<'a> CornerBlock<'a> {
@@ -41,6 +42,7 @@ impl<'a> CornerBlock<'a> {
             no_border: false,
             has_title: false,
             horizontal_padding: 0,
+            transparent_border: false,
         }
     }
 
@@ -75,6 +77,11 @@ impl<'a> CornerBlock<'a> {
 
     fn tick(mut self, tick: u64) -> Self {
         self.tick = tick;
+        self
+    }
+
+    fn transparent_border(mut self, transparent: bool) -> Self {
+        self.transparent_border = transparent;
         self
     }
 
@@ -115,6 +122,7 @@ impl<'a> CornerBlock<'a> {
             .border_gradient(style.border.border_gradient)
             .border_gradient_speed(style.border.border_gradient_speed)
             .tick(style.tick)
+            .transparent_border(border_color == Color::Reset)
             .set_borderless(horizontal_padding, no_border)
     }
 
@@ -169,6 +177,19 @@ impl<'a> Widget for CornerBlock<'a> {
 
         let max_h = self.h_size.min(area.width / 2);
         let max_v = self.v_size.min(area.height / 2);
+
+        // transparent border: blank the horizontal/vertical line segments so
+        // only the corner characters (painted with corner_color below) show.
+        if self.transparent_border {
+            for x in (left + max_h)..=(right - max_h) {
+                Self::blank_if_border_line(buf, (x, top));
+                Self::blank_if_border_line(buf, (x, bottom));
+            }
+            for y in (top + max_v)..=(bottom - max_v) {
+                Self::blank_if_border_line(buf, (left, y));
+                Self::blank_if_border_line(buf, (right, y));
+            }
+        }
 
         // corner pixels
         for i in 0..max_h {
@@ -277,6 +298,22 @@ impl<'a> Widget for CornerBlock<'a> {
                     cell.fg = tr;
                 }
             }
+        }
+    }
+}
+
+impl<'a> CornerBlock<'a> {
+    /// Blank a cell if it currently holds a border line character, so titles
+    /// (non-border glyphs) survive transparent borders.
+    fn blank_if_border_line(buf: &mut Buffer, pos: (u16, u16)) {
+        let Some(cell) = buf.cell_mut(pos) else {
+            return;
+        };
+        if matches!(
+            cell.symbol(),
+            "─" | "│" | "┌" | "┐" | "└" | "┘" | "╭" | "╮" | "╰" | "╯"
+        ) {
+            cell.set_symbol(" ");
         }
     }
 }
