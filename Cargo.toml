@@ -1,6 +1,6 @@
 [package]
 name = "pigma"
-version = "0.2.13"
+version = "0.2.14"
 edition = "2024"
 description = "A netease cloud music client"
 repository = "https://github.com/akirco/pigma.git"
@@ -9,10 +9,10 @@ license = "Apache-2.0"
 
 [dependencies]
 clap = { version = "4.6.6", features = ["derive"] }
-clap_complete = "4.6.3"
+clap_complete = "4.6.9"
 color-eyre = "0.6.5"
 crossterm = { version = "0.29.0", features = ["event-stream"] }
-dirs = "6.0.0"
+dirs = "7.0.0"
 futures = { version = "0.3.33", default-features = false, features = ["async-await", "std"] }
 image = { version = "0.25.10", default-features = false, features = ["jpeg"] }
 log = { version = "0.4.33", features = ["serde", "std"] }
@@ -28,7 +28,7 @@ rustls = { version = "0.23.43", default-features = false, features = ["ring", "s
 serde = { version = "1.0.229", features = ["derive", "rc"] }
 serde_json = "1.0.151"
 sonar = { path = "crates/sonar" }
-stream-download = { version = "0.24.3", default-features = false, features = ["async-read", "reqwest", "temp-storage"] }
+stream-download = { version = "0.24.4", default-features = false, features = ["async-read", "reqwest", "temp-storage"] }
 time = { version = "0.3.55", features = ["formatting", "local-offset", "macros"] }
 tokio = { version = "1.53.1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 toml_edit = { version = "0.25.13", features = ["serde"] }
