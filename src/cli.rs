@@ -495,6 +495,7 @@ mod tests {
             paused: false,
             mode: "sequential".into(),
             liked: true,
+            ..StatusSnapshot::default()
         }
     }
 
