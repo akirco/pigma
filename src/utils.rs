@@ -4,6 +4,7 @@
 pub mod format;
 pub mod gradient;
 pub mod path;
+pub mod process;
 pub mod terminal;
 pub mod time;
 

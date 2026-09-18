@@ -26,6 +26,17 @@ use crate::{
 /// active playback queue.
 pub type SearchResults = Arc<Mutex<HashMap<u64, Arc<SongInfo>>>>;
 
+/// Grouped search subsystem owned by `App`: the shared sonar finder and
+/// synthetic-id registry, the recently-searched result registry backing
+/// `pigma msg play <id>`, and the cross-provider engine serving
+/// `pigma msg search <keyword>`.
+pub struct SearchHost {
+    pub finder: Arc<SonarFinder>,
+    pub sonar_songs: Arc<Mutex<HashMap<u64, Arc<Song>>>>,
+    pub results: SearchResults,
+    pub engine: Arc<SearchEngine>,
+}
+
 /// A sonar search hit: the converted [`SongInfo`] (what gets queued/played)
 /// and the provider tag. The original song lives in the `sonar_songs` registry
 /// keyed by its synthetic id, which is how playback later resolves a play URL.

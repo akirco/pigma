@@ -213,4 +213,23 @@ impl NavigationState {
     pub fn clear_breadcrumb(&mut self) {
         self.history.clear();
     }
+
+    /// Breadcrumb key for the current page: the last breadcrumb level's
+    /// subtitle, falling back to the focused nav item's name. Distinct pages
+    /// get distinct playback queues.
+    pub fn current_queue_key(&self) -> String {
+        if let Some(sub) = self
+            .nav
+            .subtitle
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+        {
+            return sub.to_string();
+        }
+        self.nav
+            .selected_name()
+            .filter(|n| !n.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| "默认队列".into())
+    }
 }

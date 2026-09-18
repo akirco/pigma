@@ -177,3 +177,68 @@ mod tests {
         );
     }
 }
+
+/// Pagination state for a lazily-loaded content view (e.g. a playlist or
+/// search results page). Drives "load more" and the loading indicator.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PaginationInfo {
+    /// API/endpoint key this pagination belongs to.
+    pub api: String,
+    /// Current offset of loaded items.
+    pub offset: u32,
+    /// Page size requested.
+    pub limit: u32,
+    /// Whether more items are available from the API.
+    pub has_more: bool,
+    /// Total item count reported by the API (0 when unknown).
+    pub total: u64,
+    /// Whether a load is currently in flight.
+    pub loading: bool,
+}
+
+impl PaginationInfo {
+    /// Offset of the next page after the currently loaded page.
+    pub fn next_offset(&self) -> u32 {
+        self.offset.saturating_add(self.limit)
+    }
+}
+
+impl Default for PaginationInfo {
+    fn default() -> Self {
+        Self {
+            api: String::new(),
+            offset: 0,
+            limit: 50,
+            has_more: false,
+            total: 0,
+            loading: false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod pagination_tests {
+    use super::PaginationInfo;
+
+    #[test]
+    fn next_offset_advances_past_current_page() {
+        let pagination = PaginationInfo {
+            offset: 60,
+            limit: 60,
+            ..PaginationInfo::default()
+        };
+
+        assert_eq!(pagination.next_offset(), 120);
+    }
+
+    #[test]
+    fn next_offset_saturates() {
+        let pagination = PaginationInfo {
+            offset: u32::MAX - 5,
+            limit: 60,
+            ..PaginationInfo::default()
+        };
+
+        assert_eq!(pagination.next_offset(), u32::MAX);
+    }
+}

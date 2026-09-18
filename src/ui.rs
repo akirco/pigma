@@ -78,7 +78,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 &bs,
                 lay.topbar,
             );
-            app.state.playerbar_area = lay.playerbar;
+            app.playerbar_area = lay.playerbar;
             let is_sixel = app.picker.protocol_type() == ratatui_image::picker::ProtocolType::Sixel;
             playerbar::draw(
                 f,

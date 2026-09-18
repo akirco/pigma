@@ -1,15 +1,9 @@
-use super::App;
+use super::{App, event::send_event};
 use crate::{
-    event::{Event, SplashEvent},
+    event::SplashEvent,
     state::{LogLevel, SplashLogEntry},
     utils::clock_time,
 };
-
-pub(super) fn send_event(tx: &tokio::sync::mpsc::UnboundedSender<Event>, event: Event) {
-    if tx.send(event).is_err() {
-        log::error!("Failed to send event: receiver dropped");
-    }
-}
 
 fn splash_status(progress: f64) -> &'static str {
     if progress < 0.3 {

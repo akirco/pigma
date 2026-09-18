@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tokio::time::{Duration, sleep};
 
-use super::{App, send_event};
+use super::{App, event::send_event};
 use crate::{
     event::{AuthEvent, NavigationEvent, PlaybackEvent},
     state::Page,

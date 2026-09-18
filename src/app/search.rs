@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use super::{
     App,
+    event::send_event,
     search_core::{search_ncm, search_sonar},
-    send_event,
 };
 use crate::{
     event::NavigationEvent,
@@ -30,7 +30,7 @@ impl App {
         let service = self.service.clone();
         let sender = self.state.events.sender();
         let limit = self.config.search_limit as usize;
-        let search_results = self.search_results.clone();
+        let search_results = self.search.results.clone();
         tokio::spawn(async move {
             let state = search_ncm(&service, &search_results, &keyword, limit).await;
             send_event(&sender, NavigationEvent::ContentLoaded(state).into());
@@ -48,8 +48,8 @@ impl App {
         self.state.navigation.content_selected = 0;
         let source = provider.to_sonar().expect("sonar provider");
         let sender = self.state.events.sender();
-        let registry = self.sonar_songs.clone();
-        let search_results = self.search_results.clone();
+        let registry = self.search.sonar_songs.clone();
+        let search_results = self.search.results.clone();
         let limit = self.config.search_limit as usize;
         tokio::spawn(async move {
             let config = sonar::SearchConfig::new()

@@ -1,8 +1,11 @@
+//! Heartbeat play mode: fetch the next song from the heartbeat playlist API
+//! and queue it, falling back to sequential playback on failure.
+
 use std::sync::Arc;
 
 use ncm_api::SongInfo;
 
-use super::{PlayMode, PlaybackEngine};
+use super::{PlaybackEngine, mode::PlayMode};
 use crate::event::PlaybackEvent;
 
 const MAX_HEARTBEAT_SONGS: usize = 500;

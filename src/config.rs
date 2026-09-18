@@ -240,34 +240,36 @@ impl Config {
     }
 
     fn to_toml(&self) -> String {
-        let mut doc = toml_edit::ser::to_string_pretty(self)
-            .unwrap()
-            .parse::<toml_edit::DocumentMut>()
-            .unwrap();
+        // Serializing a `Config` back to TOML is infallible in practice (it
+        // round-trips through the same serde definitions), and the section
+        // reshaping below only applies when the expected tables exist — an
+        // unusual config (e.g. empty `navigation.sections`) just skips the
+        // reshaping instead of panicking.
+        let raw = toml_edit::ser::to_string_pretty(self).unwrap_or_default();
+        let Ok(mut doc) = raw.parse::<toml_edit::DocumentMut>() else {
+            return raw;
+        };
+
         // Make navigation implicit
-        doc["navigation"].as_table_mut().unwrap().set_implicit(true);
-
-        // Iterate over each section and convert items to inline table arrays
-        let sections = doc["navigation"]["sections"]
-            .as_array_of_tables_mut()
-            .unwrap();
-
-        for section in sections.iter_mut() {
-            utils::format::convert_aot_to_inline(section, "items", "\n  ");
+        if let Some(nav) = doc["navigation"].as_table_mut() {
+            nav.set_implicit(true);
+            if let Some(sections) = nav["sections"].as_array_of_tables_mut() {
+                for section in sections.iter_mut() {
+                    utils::format::convert_aot_to_inline(section, "items", "\n  ");
+                }
+            }
         }
 
-        let columns = doc["columns"].as_table_mut().unwrap();
-        columns.set_implicit(true);
-
-        let overrides = columns["overrides"].as_table_mut().unwrap();
-        overrides.set_implicit(true);
-
-        utils::format::convert_all_aot_to_inline(overrides, "\n  ");
-
-        let columns = doc["columns"].as_table_mut().unwrap();
-        utils::format::convert_aot_to_inline(columns, "songs", "\n  ");
-        utils::format::convert_aot_to_inline(columns, "songlist", "\n  ");
-        columns.set_implicit(true);
+        if let Some(columns) = doc["columns"].as_table_mut() {
+            columns.set_implicit(true);
+            if let Some(overrides) = columns["overrides"].as_table_mut() {
+                overrides.set_implicit(true);
+                utils::format::convert_all_aot_to_inline(overrides, "\n  ");
+            }
+            utils::format::convert_aot_to_inline(columns, "songs", "\n  ");
+            utils::format::convert_aot_to_inline(columns, "songlist", "\n  ");
+            columns.set_implicit(true);
+        }
 
         doc.to_string()
     }
@@ -285,5 +287,13 @@ mod tests {
             toml.contains("save_on_play = true"),
             "missing save_on_play in default config:\n{toml}"
         );
+    }
+
+    #[test]
+    fn empty_nav_sections_do_not_panic() {
+        let mut cfg = Config::default();
+        cfg.navigation.sections.clear();
+        let toml = cfg.to_toml();
+        assert!(toml.contains("save_on_play = true"), "unexpected:\n{toml}");
     }
 }

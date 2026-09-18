@@ -14,12 +14,12 @@ use stream_download::{
 };
 use tokio::sync::mpsc;
 
-#[cfg(all(target_os = "linux", target_env = "gnu"))]
-use super::engine::mem_rss_kb;
 use super::{
     player::{AudioInput, AudioReader, SharedReader},
     stream_client::HeadersClient,
 };
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+use crate::utils::process::mem_rss_kb;
 use crate::{
     cache::CacheManager,
     event::{Event, PlaybackEvent},
@@ -213,14 +213,7 @@ impl AudioSource {
                     .and_then(|mut s| s.next_back().map(|s| s.to_string()))
             })
             .unwrap_or_default();
-        let stem = path.rsplit('.').nth(1).unwrap_or("");
-        match stem {
-            "flac" => "flac",
-            "ogg" => "ogg",
-            "wav" => "wav",
-            "m4a" | "mp4" => "m4a",
-            _ => "mp3",
-        }
+        crate::utils::format::canonical_ext(path.rsplit('.').nth(1).unwrap_or(""))
     }
 
     fn to_sonar_quality(quality: SongQuality) -> Quality {

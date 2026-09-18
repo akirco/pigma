@@ -4,7 +4,6 @@
 mod controller;
 mod cover;
 mod engine;
-mod heartbeat;
 mod lyrics;
 mod mode;
 mod player;

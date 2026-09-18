@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use crossterm::event::Event as CrosstermEvent;
-use tokio::time::sleep;
+use tokio::{sync::mpsc::UnboundedSender, time::sleep};
 
 use super::App;
 use crate::{
@@ -10,10 +10,117 @@ use crate::{
         PlaybackEvent, SplashEvent,
     },
     input,
+    ipc::IpcEvent,
+    playback::{NCM_SEARCH_QUEUE_KEY, THIRD_PARTY_QUEUE_KEY},
     state::{CommandAction, ContentState},
 };
 
+/// Send an app event on the event loop channel, logging a dropped-receiver
+/// failure instead of panicking. Shared by the spawn-and-notify pipelines.
+pub(super) fn send_event(tx: &UnboundedSender<Event>, event: Event) {
+    if tx.send(event).is_err() {
+        log::error!("Failed to send event: receiver dropped");
+    }
+}
+
 impl App {
+    /// Apply a control request received over the IPC socket (`pigma msg`).
+    async fn handle_ipc_event(&mut self, event: IpcEvent) {
+        match event {
+            IpcEvent::Previous => self.playback.prev(),
+            IpcEvent::Next => self.playback.next(),
+            IpcEvent::Pause => {
+                // Pause only pauses; when stopped it stays stopped (unlike the
+                // TUI spacebar which toggles/start).
+                if self.playback.state.playing && !self.playback.state.paused {
+                    self.playback.toggle_pause();
+                }
+            }
+            IpcEvent::Play { song_id } => {
+                if let Some(id) = song_id {
+                    // Jump to a song in the active queue and play it. Songs
+                    // returned by `pigma msg search` are not queued, so fall
+                    // back to the shared search-result registry and enqueue the
+                    // result (sonar songs keep their synthetic id, which the
+                    // playback source resolves via `sonar_songs`).
+                    if !self.playback.play_song_by_id(id)
+                        && let Some(song) = self
+                            .search
+                            .results
+                            .lock()
+                            .ok()
+                            .and_then(|m| m.get(&id).cloned())
+                    {
+                        let key = if sonar::is_sonar_song_id(id) {
+                            THIRD_PARTY_QUEUE_KEY
+                        } else {
+                            NCM_SEARCH_QUEUE_KEY
+                        };
+                        self.playback.append_and_play_key(key, &[song], 0);
+                    }
+                    let name = self
+                        .playback
+                        .current_song()
+                        .map(|s| s.name.clone())
+                        .unwrap_or_default();
+                    if name.is_empty() {
+                        self.toast(format!("找不到 id={id} 的歌曲"));
+                    } else {
+                        self.toast(format!("♪ 正在播放: {name}"));
+                    }
+                } else if self.playback.state.paused || !self.playback.state.playing {
+                    // Resume when paused; start when stopped (if a song is queued).
+                    self.playback.toggle_pause();
+                }
+            }
+            IpcEvent::TogglePlay => self.playback.toggle_pause(),
+            IpcEvent::Volume { delta, absolute } => {
+                if let Some(delta) = delta {
+                    self.adjust_volume(delta);
+                } else if let Some(volume) = absolute {
+                    let volume = volume.clamp(0.0, 1.0);
+                    self.playback.set_volume(volume);
+                    self.toast(format!("   {:.0}%", volume * 100.0));
+                }
+            }
+            IpcEvent::Mode => {
+                let mode = self.playback.cycle_mode();
+                let (_, label) = crate::playback::mode_icon(&mode);
+                self.toast(format!("播放模式: {label}"));
+            }
+            IpcEvent::Like => {
+                if let Some(song) = self.playback.current_song() {
+                    self.state
+                        .events
+                        .send(crate::event::PlaybackEvent::LikeSong(song.id, true));
+                }
+            }
+            IpcEvent::Dislike => {
+                if let Some(song) = self.playback.current_song() {
+                    self.state
+                        .events
+                        .send(crate::event::PlaybackEvent::DislikeSong(song.id));
+                }
+            }
+            IpcEvent::ToggleLike => {
+                if let Some(song) = self.playback.current_song() {
+                    let like = !self.playback.state.liked;
+                    self.state
+                        .events
+                        .send(crate::event::PlaybackEvent::LikeSong(song.id, like));
+                }
+            }
+            IpcEvent::SwitchList { endpoint, playlist } => {
+                let loaded = self.load_endpoint(&endpoint, playlist).await;
+                self.toast(if loaded {
+                    format!("已切换到: {endpoint}")
+                } else {
+                    format!("切换失败: {endpoint}")
+                });
+            }
+        }
+    }
+
     pub(super) async fn handle_events(&mut self) -> color_eyre::Result<()> {
         if self.playback.state.seeking {
             tokio::select! {
