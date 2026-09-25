@@ -18,6 +18,19 @@ mod radio;
 mod search;
 mod song;
 
+/// Truncate `s` to at most `max` bytes without splitting a UTF-8 codepoint:
+/// walks back to the nearest char boundary (ASCII input is unaffected).
+///
+/// Debug-log helper — API response bodies are CJK-heavy, and plain byte
+/// slicing mid-codepoint panics (akirco/pigma#88).
+fn debug_truncate(s: &str, max: usize) -> &str {
+    let mut end = s.len().min(max);
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 const BASE_URL: &str = "https://music.163.com";
 const EAPI_BASE: &str = "https://music.163.com";
 
