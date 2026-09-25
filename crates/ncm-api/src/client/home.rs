@@ -70,7 +70,7 @@ impl NcmClient {
             "intelligence list response: song_id={}, playlist_id={}, response={}",
             song_id,
             playlist_id,
-            &result[..result.len().min(2000)]
+            super::debug_truncate(&result, 2000)
         );
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;

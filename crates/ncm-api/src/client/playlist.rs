@@ -174,7 +174,7 @@ impl NcmClient {
             .await?;
         log::debug!(
             "user_created_playlist response: {}",
-            &result[..result.len().min(500)]
+            super::debug_truncate(&result, 500)
         );
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
@@ -204,7 +204,7 @@ impl NcmClient {
             .await?;
         log::debug!(
             "user_collected_playlist response: {}",
-            &result[..result.len().min(500)]
+            super::debug_truncate(&result, 500)
         );
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
