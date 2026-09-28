@@ -90,6 +90,19 @@ pub enum MsgAction {
     Like,
     Dislike,
     ToggleLike,
+    Stop,
+    SeekRelative {
+        seconds: f64,
+    },
+    SeekAbsolute {
+        seconds: f64,
+    },
+    SetLoopStatus {
+        status: String,
+    },
+    SetShuffle {
+        shuffle: bool,
+    },
     /// Dynamically switch the daemon's queue to another endpoint. `endpoint` is
     /// an API endpoint name (e.g. `toplist`, `liked`); `playlist` optionally
     /// picks the 1-based playlist within list-type endpoints.
@@ -117,6 +130,19 @@ pub enum IpcEvent {
     Like,
     Dislike,
     ToggleLike,
+    Stop,
+    SeekRelative {
+        seconds: f64,
+    },
+    SeekAbsolute {
+        seconds: f64,
+    },
+    SetLoopStatus {
+        status: String,
+    },
+    SetShuffle {
+        shuffle: bool,
+    },
     SwitchList {
         endpoint: String,
         playlist: Option<usize>,
@@ -136,6 +162,11 @@ impl From<MsgAction> for IpcEvent {
             MsgAction::Like => IpcEvent::Like,
             MsgAction::Dislike => IpcEvent::Dislike,
             MsgAction::ToggleLike => IpcEvent::ToggleLike,
+            MsgAction::Stop => IpcEvent::Stop,
+            MsgAction::SeekRelative { seconds } => IpcEvent::SeekRelative { seconds },
+            MsgAction::SeekAbsolute { seconds } => IpcEvent::SeekAbsolute { seconds },
+            MsgAction::SetLoopStatus { status } => IpcEvent::SetLoopStatus { status },
+            MsgAction::SetShuffle { shuffle } => IpcEvent::SetShuffle { shuffle },
             MsgAction::SwitchList { endpoint, playlist } => {
                 IpcEvent::SwitchList { endpoint, playlist }
             }
@@ -162,6 +193,8 @@ pub struct StatusSnapshot {
     /// `shuffle` / `heartbeat`.
     pub mode: String,
     pub liked: bool,
+    pub art_url: String,
+    pub lyrics: String,
 }
 
 impl StatusSnapshot {
@@ -183,6 +216,18 @@ impl StatusSnapshot {
             paused: state.paused,
             mode: mode_key(&state.mode).to_string(),
             liked: state.liked,
+            art_url: song.map(|s| s.pic_url.clone()).unwrap_or_default(),
+            lyrics: state
+                .lyrics
+                .as_ref()
+                .map(|lines| {
+                    lines
+                        .iter()
+                        .map(|line| line.text.as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .unwrap_or_default(),
         }
     }
 
@@ -201,6 +246,8 @@ impl StatusSnapshot {
             || self.paused != other.paused
             || self.mode != other.mode
             || self.liked != other.liked
+            || self.art_url != other.art_url
+            || self.lyrics != other.lyrics
     }
 }
 

@@ -349,6 +349,11 @@ impl App {
                 }
             }
             IpcEvent::TogglePlay => self.playback.toggle_pause(),
+            IpcEvent::Stop => self.playback.stop_for_external_control(),
+            IpcEvent::SeekRelative { seconds } => self.playback.seek_relative(seconds),
+            IpcEvent::SeekAbsolute { seconds } => self.playback.seek_absolute(seconds),
+            IpcEvent::SetLoopStatus { status } => self.playback.set_loop_status_key(&status),
+            IpcEvent::SetShuffle { shuffle } => self.playback.set_shuffle(shuffle),
             IpcEvent::Volume { delta, absolute } => {
                 if let Some(delta) = delta {
                     self.adjust_volume(delta);
@@ -421,6 +426,11 @@ impl App {
             self.state.events.sender(),
             Arc::clone(&self.searcher),
         );
+        let _mpris_guard = crate::mpris::start(
+            Arc::clone(&self.status),
+            self.status_tx.clone(),
+            self.state.events.sender(),
+        );
         while self.state.running {
             self.update_status_snapshot();
             terminal.draw(|frame| self.draw(frame))?;
@@ -489,6 +499,11 @@ impl App {
             self.status_tx.clone(),
             self.state.events.sender(),
             Arc::clone(&self.searcher),
+        );
+        let _mpris_guard = crate::mpris::start(
+            Arc::clone(&self.status),
+            self.status_tx.clone(),
+            self.state.events.sender(),
         );
 
         // Resolve the user session from cookies so login-gated endpoints like
