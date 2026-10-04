@@ -47,8 +47,16 @@ pub struct SavedQueue {
     pub current_index: Option<usize>,
     pub mode: PlayMode,
     pub volume: f64,
+    /// Persisted playback speed factor. Absent in files written before speed
+    /// support, where the default is normal (1.0x).
+    #[serde(default = "default_speed")]
+    pub speed: f64,
     #[serde(default)]
     pub progress: f64,
+}
+
+fn default_speed() -> f64 {
+    1.0
 }
 
 /// Deserialize the on-disk `history` field, which may be either the new
@@ -94,6 +102,7 @@ struct SavedQueueRef<'a> {
     current_index: Option<usize>,
     mode: &'a PlayMode,
     volume: f64,
+    speed: f64,
     progress: f64,
 }
 
@@ -103,13 +112,14 @@ impl Serialize for SavedQueueRef<'_> {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("SavedQueueRef", 6)?;
+        let mut s = serializer.serialize_struct("SavedQueueRef", 7)?;
         let queue: Vec<&SongInfo> = self.queue.iter().map(|s| s.as_ref()).collect();
         s.serialize_field("queue", &queue)?;
         s.serialize_field("history", &self.history)?;
         s.serialize_field("current_index", &self.current_index)?;
         s.serialize_field("mode", self.mode)?;
         s.serialize_field("volume", &self.volume)?;
+        s.serialize_field("speed", &self.speed)?;
         s.serialize_field("progress", &self.progress)?;
         s.end()
     }
@@ -260,6 +270,7 @@ impl PlaylistStorage {
         current_index: Option<usize>,
         mode: &PlayMode,
         volume: f64,
+        speed: f64,
         progress: f64,
     ) {
         if id.is_empty() {
@@ -280,6 +291,7 @@ impl PlaylistStorage {
                 current_index,
                 mode: &mode,
                 volume,
+                speed,
                 progress,
             };
             if let Ok(json) = serde_json::to_string(&saved) {
@@ -302,6 +314,7 @@ impl PlaylistStorage {
         current_index: Option<usize>,
         mode: &PlayMode,
         volume: f64,
+        speed: f64,
         progress: f64,
     ) {
         if id.is_empty() {
@@ -313,6 +326,7 @@ impl PlaylistStorage {
             current_index,
             mode,
             volume,
+            speed,
             progress,
         };
         if let Ok(json) = serde_json::to_string(&saved) {
@@ -382,6 +396,8 @@ mod tests {
         }"#;
         let saved: SavedQueue = serde_json::from_str(json).unwrap();
         assert_eq!(saved.history, vec![1, 2, 3]);
+        // Legacy files carry no `speed`; the default must be normal playback.
+        assert_eq!(saved.speed, 1.0);
     }
 
     #[test]

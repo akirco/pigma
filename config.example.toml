@@ -20,7 +20,7 @@ navigation_position = "left"
 splash_duration_secs = 2.0
 
 # `pigma status` 的 plain 输出模板, 可用占位符:
-#   {current}/{position} {duration} {artist} {name} {album} {volume} {status} {mode} {id} {liked}
+#   {current}/{position} {duration} {artist} {name} {album} {volume} {speed} {status} {mode} {id} {liked}
 cli_status_template = "{name}  {artist}  {current}/{duration}  {status}  vol {volume}%"
 
 # `pigma status` 默认输出格式: "plain" 或 "json"

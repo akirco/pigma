@@ -104,6 +104,16 @@ pub(super) fn draw_spinner(f: &mut Frame, tick: u64, colors: &Theme, area: Rect)
     );
 }
 
+/// Compact speed badge, e.g. `1.2x`. Returns `None` at normal (1.0x) speed so
+/// the player bar only shows it when the user actually changed it with `[`/`]`.
+fn speed_badge(player: &PlaybackState) -> Option<String> {
+    if (player.speed - 1.0).abs() < f64::EPSILON {
+        None
+    } else {
+        Some(format!("{:.1}x", player.speed))
+    }
+}
+
 pub(super) fn draw_current_time(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     if let Some(song) = &player.current_song {
         let cur_ms = (player.progress * song.duration as f64) as u64;
@@ -165,9 +175,13 @@ pub(super) fn draw_gauge_with_label(
         format_duration_into(cur_ms, &mut buf);
         buf.push_str(" / ");
         buf.push_str(&format_duration(song.duration));
+        if let Some(badge) = speed_badge(player) {
+            buf.push(' ');
+            buf.push_str(&badge);
+        }
         buf
     } else {
-        "00:00 / 00:00".into()
+        speed_badge(player).unwrap_or_else(|| "00:00 / 00:00".into())
     };
     let ratio = if player.current_song.is_some() {
         player.progress.clamp(0.0, 1.0)
@@ -225,7 +239,7 @@ pub(super) fn draw_song_detail(f: &mut Frame, player: &PlaybackState, colors: &T
         } else {
             colors.muted
         };
-        let detail = Line::from(vec![
+        let mut spans = vec![
             Span::styled(like_icon, Style::default().fg(like_color)),
             Span::raw(" "),
             Span::styled(
@@ -234,8 +248,12 @@ pub(super) fn draw_song_detail(f: &mut Frame, player: &PlaybackState, colors: &T
                     .fg(colors.muted)
                     .add_modifier(Modifier::BOLD),
             ),
-        ])
-        .style(Style::default().fg(colors.muted));
+        ];
+        if let Some(badge) = speed_badge(player) {
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(badge, Style::default().fg(colors.accent)));
+        }
+        let detail = Line::from(spans).style(Style::default().fg(colors.muted));
         f.render_widget(Paragraph::new(detail), area);
     }
 }

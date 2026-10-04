@@ -241,6 +241,12 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
         KeyCode::Char('-' | '_') => {
             app.adjust_volume(-0.05);
         }
+        KeyCode::Char('[') => {
+            app.adjust_speed(-crate::playback::SPEED_STEP);
+        }
+        KeyCode::Char(']') => {
+            app.adjust_speed(crate::playback::SPEED_STEP);
+        }
         KeyCode::Char('z' | 'Z') => {
             app.cycle_nav_position();
         }

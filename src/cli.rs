@@ -62,7 +62,7 @@ pub enum Command {
     /// Show the running instance's status.
     Status {
         /// Output template: {name} {artist} {album} {duration} {position}
-        /// {volume} {status} {mode} {id} {liked}. Defaults to config.
+        /// {volume} {speed} {status} {mode} {id} {liked}. Defaults to config.
         #[arg(long, default_value = "", value_hint = ValueHint::Other)]
         template: String,
         /// Output as JSON.
@@ -80,7 +80,8 @@ pub enum Command {
         /// Playback action. Possible values are listed below.
         action: MsgActionArg,
         /// Value for `play` (a song id), `search` (a keyword), `volume`
-        /// (`75`/`+5`/`-5`), the endpoint for `switch-list`, or omitted.
+        /// (`75`/`+5`/`-5`), `speed` (`1.5`/`+0.1`), the endpoint for
+        /// `switch-list`, or omitted.
         #[arg(allow_hyphen_values = true, value_hint = ValueHint::Other)]
         value: Option<String>,
         /// Playlist index for `switch-list` (1-based).
@@ -124,6 +125,8 @@ pub enum MsgActionArg {
     SwitchList,
     /// Set (absolute 0-100) or adjust (`+5`/`-5`) the volume.
     Volume,
+    /// Set (absolute, e.g. `1.5`) or adjust (`+0.1`/`-0.1`) the playback speed.
+    Speed,
     /// Cycle the playback mode.
     Mode,
     /// Like the current song.
@@ -263,6 +266,12 @@ fn parse_msg_action(
             })?;
             parse_volume(value)
         }
+        MsgActionArg::Speed => {
+            let value = value.ok_or_else(|| {
+                color_eyre::eyre::eyre!("speed requires a value like `1.5`, `+0.1` or `-0.1`")
+            })?;
+            parse_speed(value)
+        }
         MsgActionArg::Mode => Ok(MsgAction::Mode),
         MsgActionArg::Like => Ok(MsgAction::Like),
         MsgActionArg::Dislike => Ok(MsgAction::Dislike),
@@ -300,11 +309,41 @@ fn parse_volume(value: &str) -> color_eyre::Result<MsgAction> {
     }
 }
 
+/// Parse a playback speed value. A leading `+`/`-` is a delta factor applied by
+/// `adjust_speed` (matching the TUI's `[`/`]` keys, e.g. `+0.1`); a bare number
+/// is an absolute factor (e.g. `1.5`). The daemon clamps both into the
+/// supported range.
+fn parse_speed(value: &str) -> color_eyre::Result<MsgAction> {
+    let err = || color_eyre::eyre::eyre!("invalid speed `{value}` (expected e.g. `1.5`, `+0.1`)");
+    if let Some(delta) = value.strip_prefix('+').or_else(|| value.strip_prefix('-')) {
+        let number: f64 = delta.parse().map_err(|_| err())?;
+        let signed = if value.starts_with('-') {
+            -number
+        } else {
+            number
+        };
+        Ok(MsgAction::Speed {
+            delta: Some(signed),
+            absolute: None,
+        })
+    } else {
+        let number: f64 = value.parse().map_err(|_| err())?;
+        if number <= 0.0 {
+            return Err(err());
+        }
+        Ok(MsgAction::Speed {
+            delta: None,
+            absolute: Some(number),
+        })
+    }
+}
+
 /// Replace `{token}` placeholders in a plain-status template.
 fn format_status(template: &str, s: &StatusSnapshot) -> String {
     let duration = format_duration(s.duration_ms);
     let current = format_duration(s.position_ms);
     let volume = (s.volume * 100.0).round() as u64;
+    let speed = format!("{:.1}", s.speed);
     let status = if !s.playing {
         "stopped"
     } else if s.paused {
@@ -320,6 +359,7 @@ fn format_status(template: &str, s: &StatusSnapshot) -> String {
         .replace("{name}", &s.name)
         .replace("{album}", &s.album)
         .replace("{volume}", &volume.to_string())
+        .replace("{speed}", &speed)
         .replace("{status}", status)
         .replace("{mode}", &s.mode)
         .replace("{id}", &s.id.to_string())
@@ -451,6 +491,7 @@ mod tests {
             duration_ms: 125000,
             position_ms: 65000,
             volume: 0.75,
+            speed: 1.0,
             playing: true,
             paused: false,
             mode: "sequential".into(),
@@ -461,10 +502,13 @@ mod tests {
     #[test]
     fn format_status_plain() {
         let out = format_status(
-            "{current}/{duration} {artist} {name} {volume}% {status}",
+            "{current}/{duration} {artist} {name} {volume}% {speed}x {status}",
             &snapshot(),
         );
-        assert_eq!(out, "01:05/02:05 Example Artist Example Song 75% playing");
+        assert_eq!(
+            out,
+            "01:05/02:05 Example Artist Example Song 75% 1.0x playing"
+        );
     }
 
     #[test]
@@ -509,6 +553,33 @@ mod tests {
     fn parse_volume_out_of_range() {
         assert!(parse_volume("150").is_err());
         assert!(parse_volume("abc").is_err());
+    }
+
+    #[test]
+    fn parse_speed_absolute_and_delta() {
+        assert_eq!(
+            parse_speed("1.5").unwrap(),
+            MsgAction::Speed {
+                delta: None,
+                absolute: Some(1.5),
+            }
+        );
+        assert_eq!(
+            parse_speed("+0.1").unwrap(),
+            MsgAction::Speed {
+                delta: Some(0.1),
+                absolute: None,
+            }
+        );
+        assert_eq!(
+            parse_speed("-0.2").unwrap(),
+            MsgAction::Speed {
+                delta: Some(-0.2),
+                absolute: None,
+            }
+        );
+        assert!(parse_speed("0").is_err());
+        assert!(parse_speed("abc").is_err());
     }
 
     #[test]

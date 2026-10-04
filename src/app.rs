@@ -241,6 +241,13 @@ impl App {
         self.toast(format!("   {:.0}%", new * 100.0));
     }
 
+    /// Adjust the playback speed by `delta` (steps of 0.1), clamped to the
+    /// supported range and surfaced as a toast. Keyboard `[`/`]`.
+    pub fn adjust_speed(&mut self, delta: f64) {
+        let new = self.playback.adjust_speed(delta);
+        self.toast(format!("⚡ 速度 {new:.1}x"));
+    }
+
     /* -------------------------------------------------------------------------- */
     /*                                  TUI mode                                   */
     /* -------------------------------------------------------------------------- */

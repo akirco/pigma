@@ -87,6 +87,7 @@ pub enum ControlCmd {
     Resume,
     Stop,
     SetVolume(f32),
+    SetSpeed(f32),
 }
 
 /// Run the audio player as a persistent blocking task. The task is spawned once
@@ -100,6 +101,7 @@ pub(super) fn run(
     initial_reader: SharedReader,
     initial_seek_time: Option<Duration>,
     initial_volume: f32,
+    initial_speed: f32,
     event_tx: mpsc::UnboundedSender<Event>,
     control_rx: std::sync::mpsc::Receiver<ControlCmd>,
 ) {
@@ -109,6 +111,16 @@ pub(super) fn run(
         let mut total_duration: Option<Duration> = None;
         let mut seek_offset: Duration = Duration::default();
         let mut volume = initial_volume;
+        // Playback speed factor. rodio applies it by raising the source's
+        // reported sample rate, so `Player::get_pos()` tracks *wall clock*
+        // elapsed time while the samples consumed advance `speed` times faster.
+        // The song position is therefore `(get_pos - pos_anchor) * speed` from
+        // the position the player was started at (`seek_offset`), where
+        // `pos_anchor` is the `get_pos()` value at the moment the current speed
+        // became effective — re-anchored whenever the speed changes so a
+        // mid-song speed-up never makes the progress jump.
+        let mut speed = initial_speed;
+        let mut pos_anchor: Duration = Duration::default();
         // Owned by this task; recreated whenever the output device is lost.
         let mut sink: Option<rodio::MixerDeviceSink> = None;
         let health = Arc::new(DeviceHealth {
@@ -138,6 +150,15 @@ pub(super) fn run(
             }};
         }
 
+        // Song position (position within the recording) of the currently
+        // playing source, from rodio's wall-clock-ish `Player::get_pos()`.
+        macro_rules! song_pos {
+            ($p:expr) => {{
+                let p: &rodio::Player = $p;
+                song_position(p.get_pos(), pos_anchor, speed, seek_offset)
+            }};
+        }
+
         macro_rules! start_playback {
             ($seek_time:expr) => {{
                 let input = reader.clone();
@@ -158,10 +179,12 @@ pub(super) fn run(
                                 (Box::new(d), Duration::default())
                             };
                         seek_offset = offset;
+                        pos_anchor = Duration::default();
                         let p = rodio::Player::connect_new(
                             &sink.as_ref().expect("sink ensured").mixer().clone(),
                         );
                         p.set_volume(volume);
+                        p.set_speed(speed);
                         p.append(source);
                         last_pos = Duration::default();
                         stall_ticks = 0;
@@ -258,6 +281,7 @@ pub(super) fn run(
                         reader = SharedReader(Arc::new(Mutex::new(Box::new(std::io::empty()))));
                         total_duration = None;
                         seek_offset = Duration::default();
+                        pos_anchor = Duration::default();
                         #[cfg(all(target_os = "linux", target_env = "gnu"))]
                         log::info!("[HEAP] after ControlCmd::Stop: {} kB", mem_rss_kb());
                     }
@@ -277,6 +301,16 @@ pub(super) fn run(
                             p.set_volume(v);
                         }
                     }
+                    ControlCmd::SetSpeed(v) => {
+                        // Re-anchor before switching the factor so the reported
+                        // position stays continuous across the change.
+                        if let Some(ref p) = player {
+                            seek_offset = song_pos!(p);
+                            pos_anchor = p.get_pos();
+                            p.set_speed(v);
+                        }
+                        speed = v;
+                    }
                 },
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
@@ -285,7 +319,7 @@ pub(super) fn run(
             // Fatal stream error (device removed etc.) — rebuild and resume at
             // the last known position.
             if health.device_lost.load(Ordering::Relaxed) {
-                let resume_at = player.as_ref().map(|p| p.get_pos() + seek_offset);
+                let resume_at = player.as_ref().map(|p| song_pos!(p));
                 let was_paused = player.as_ref().is_some_and(|p| p.is_paused());
                 rebuild_sink!(resume_at, was_paused);
                 continue;
@@ -313,7 +347,7 @@ pub(super) fn run(
                             sink_dev_id.as_deref().unwrap_or("?")
                         );
                         follow_diff = 0;
-                        let resume_at = player.as_ref().map(|p| p.get_pos() + seek_offset);
+                        let resume_at = player.as_ref().map(|p| song_pos!(p));
                         let was_paused = player.as_ref().is_some_and(|p| p.is_paused());
                         rebuild_sink!(resume_at, was_paused);
                         continue;
@@ -333,13 +367,14 @@ pub(super) fn run(
                     drop(player.take());
                     total_duration = None;
                     seek_offset = Duration::default();
+                    pos_anchor = Duration::default();
                     #[cfg(all(target_os = "linux", target_env = "gnu"))]
                     log::info!("[HEAP] after player drop on finish: {} kB", mem_rss_kb());
                     continue;
                 }
 
                 if !p.is_paused() {
-                    let pos = p.get_pos() + seek_offset;
+                    let pos = song_pos!(p);
                     let _ = event_tx.send(
                         PlaybackEvent::Progress {
                             position: pos,
@@ -382,6 +417,18 @@ pub(super) fn run(
 /// timestamps are written by the stream error callback.
 fn underrun_now(epoch: &std::time::Instant) -> u64 {
     epoch.elapsed().as_millis() as u64
+}
+
+/// Map rodio's raw `Player::get_pos()` to the position within the recording.
+///
+/// rodio implements speed by raising the source's reported sample rate, so the
+/// mixer pulls `speed` times more source samples per unit of wall clock while
+/// `get_pos()` (samples / reported rate) advances like wall clock. The song
+/// position is thus `offset` plus the wall-clock delta since `anchor` scaled by
+/// `speed` — which keeps it continuous when the speed changes mid-song, because
+/// the caller re-anchors `anchor`/`offset` at that moment.
+fn song_position(raw_pos: Duration, anchor: Duration, speed: f32, offset: Duration) -> Duration {
+    offset + raw_pos.saturating_sub(anchor).mul_f32(speed)
 }
 
 /// Identifier of the current system default output device, used to detect when
@@ -530,4 +577,69 @@ fn open_sink_impl(
     rodio::DeviceSinkBuilder::from_default_device()
         .map(|b| b.with_error_callback(stream_error_callback(health)))
         .and_then(|b| b.open_sink_or_fallback())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::num::NonZero;
+
+    use rodio::buffer::SamplesBuffer;
+
+    use super::*;
+
+    fn secs(t: Duration) -> f64 {
+        t.as_secs_f64()
+    }
+
+    #[test]
+    fn song_position_scales_wall_clock_by_speed() {
+        // 5s of wall clock at 2x covers 10s of the recording.
+        let pos = song_position(Duration::from_secs(5), Duration::ZERO, 2.0, Duration::ZERO);
+        assert!((secs(pos) - 10.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn song_position_stays_continuous_across_speed_change() {
+        // Ten seconds played at normal speed ...
+        let (mut offset, mut anchor, mut speed) = (Duration::ZERO, Duration::ZERO, 1.0f32);
+        let mut raw = Duration::from_secs(10);
+        assert_eq!(secs(song_position(raw, anchor, speed, offset)), 10.0);
+
+        // ... sped up to 2x exactly there (caller re-anchors), then 5 more
+        // wall-clock seconds. Without re-anchoring the factor would also scale
+        // the first 10s and the progress would jump to 30s.
+        offset = song_position(raw, anchor, speed, offset);
+        anchor = raw;
+        speed = 2.0;
+        raw += Duration::from_secs(5);
+        let pos = song_position(raw, anchor, speed, offset);
+        assert!(
+            (secs(pos) - 20.0).abs() < 1e-6,
+            "position jumped on speed change: {pos:?}"
+        );
+    }
+
+    #[test]
+    fn rodio_reports_wall_clock_position_under_speed() {
+        // Pins down the rodio behaviour `song_position` compensates for:
+        // 2s of stereo 44.1kHz pulled at 2x reports half the song position.
+        let data = vec![0.0f32; 44_100 * 2 * 2];
+        let buf = SamplesBuffer::new(
+            NonZero::new(2).unwrap(),
+            NonZero::new(44_100).unwrap(),
+            data,
+        );
+        let mut src = buf.speed(2.0).track_position();
+        // Consume one second of the original recording.
+        for _ in 0..44_100 * 2 {
+            assert!(src.next().is_some());
+        }
+        let reported = src.get_pos();
+        assert!(
+            (secs(reported) - 0.5).abs() < 0.01,
+            "rodio get_pos semantics changed: {reported:?}"
+        );
+        let pos = song_position(reported, Duration::ZERO, 2.0, Duration::ZERO);
+        assert!((secs(pos) - 1.0).abs() < 0.02, "expected ~1s, got {pos:?}");
+    }
 }
