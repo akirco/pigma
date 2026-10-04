@@ -57,13 +57,18 @@ impl Playerbar for ModernLayout {
         let bottom_cols = Layout::horizontal([
             Constraint::Length(15),
             Constraint::Length(20),
-            Constraint::Length(6),
+            Constraint::Length(10),
         ])
         .flex(Flex::SpaceBetween)
         .split(right_rows[2]);
 
-        let vol_mode_cols = Layout::horizontal([Constraint::Length(3), Constraint::Length(3)])
-            .split(bottom_cols[2]);
+        // Right end: volume | mode | speed badge
+        let vol_mode_cols = Layout::horizontal([
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(4),
+        ])
+        .split(bottom_cols[2]);
 
         LayoutArea {
             cover: cover_area,
@@ -76,6 +81,7 @@ impl Playerbar for ModernLayout {
             controls: bottom_cols[1],
             volume: vol_mode_cols[0],
             mode_icon: vol_mode_cols[1],
+            speed: vol_mode_cols[2],
             ..Default::default()
         }
     }
@@ -110,5 +116,6 @@ impl Playerbar for ModernLayout {
         if config.visible.mode_icon {
             widgets::draw_mode_icon(f, player, colors, layout.mode_icon);
         }
+        widgets::draw_speed(f, player, colors, layout.speed);
     }
 }

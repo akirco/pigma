@@ -13,6 +13,7 @@ mod source;
 mod state;
 mod storage;
 mod stream_client;
+mod stretch;
 
 pub use cover::CoverState;
 pub use engine::{NCM_SEARCH_QUEUE_KEY, PlaybackEngine, THIRD_PARTY_QUEUE_KEY};

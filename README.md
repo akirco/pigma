@@ -76,7 +76,7 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 - [x] 重写playerbar(支持歌曲封面)
 - [x] 云盘上传（缓存文件，本地文件）
 - [x] 音量控制
-- [x] 变速播放（`[` / `]` 每档 0.1，0.5–2.0x，进度与歌词自动跟随）
+- [x] 变速播放（`[` / `]` 每档 0.1，0.5–2.0x，WSOLA 时域拉伸**保持音调**，进度与歌词自动跟随）
 - [x] 更多layout支持
 - [x] 支持系统包管理器安装(yay,paru,scoop)
 - [x] 支持搜索多源
@@ -180,7 +180,7 @@ cargo build --release
 | /             |                  搜索/过滤                   |
 | b             |                   样式切换                   |
 | left /right   |                   seek 15s                   |
-| `[` / `]`     |        播放速度 -0.1 / +0.1（默认 1.0x）        |
+| `[` / `]`     | 播放速度 -0.1 / +0.1（默认 1.0x，保持音调） |
 | p /n          |                上一首/下一首                 |
 | ctrl+p        |                command panel                 |
 | L             |               登录网易云                     |
@@ -227,7 +227,7 @@ Add-Content $PROFILE '. "$HOME/.config/powershell/pigma.ps1"'
 | `pigma msg switch-list <endpoint>` | 动态切换守护进程的队列到指定端点（如 `recommend_songs`、`toplist`），歌单端点可用 `--playlist N` 选第 N 个 |
 | `pigma msg volume 75` | 绝对音量（0-100） |
 | `pigma msg volume +5` / `-10` | 相对 ±%（与 TUI 的 `+` / `-` 一致，支持负数） |
-| `pigma msg speed 1.5` | 绝对播放速度（0.5–2.0，超范围自动夹紧） |
+| `pigma msg speed 1.5` | 绝对播放速度（0.5–2.0，超范围自动夹紧，保持音调） |
 | `pigma msg speed +0.1` / `-0.1` | 相对步长 ±0.1（与 TUI 的 `[` / `]` 一致） |
 
 `pigma status` 的 `--template` 支持占位符：`{name}` `{artist}` `{album}` `{current}`/`{position}`

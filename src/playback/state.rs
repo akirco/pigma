@@ -15,7 +15,11 @@ pub const SPEED_STEP: f64 = 0.1;
 pub struct PlaybackState {
     pub progress: f64,
     pub volume: f64,
-    /// Playback speed factor (1.0 = normal), adjustable with `[` / `]`.
+    /// Playback speed factor (1.0 = normal), adjustable with `[` / `]`. The
+    /// audio is time-stretched (WSOLA, see the `stretch` module) so the pitch
+    /// stays put. The
+    /// audio is time-stretched (WSOLA, see the `stretch` module) so the pitch
+    /// stays put.
     pub speed: f64,
     pub paused: bool,
     pub playing: bool,

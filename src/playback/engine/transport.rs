@@ -40,7 +40,9 @@ impl PlaybackEngine {
 
     /// Set the playback speed factor (1.0 = normal). The state clamps it to the
     /// supported range and snaps it to the nearest 0.1; the audio thread is only
-    /// signalled when the value actually changed.
+    /// signalled when the value actually changed. Speed is applied by
+    /// pitch-preserving time stretching, not resampling. Speed is applied by
+    /// pitch-preserving time stretching, not resampling.
     pub fn set_speed(&mut self, speed: f64) {
         let before = self.state.speed;
         self.state.set_speed(speed);

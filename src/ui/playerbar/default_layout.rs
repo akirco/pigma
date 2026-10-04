@@ -42,6 +42,7 @@ impl Playerbar for DefaultLayout {
             gauge: mid[2],
             spinner: cols[2],
             mode_icon: right[0],
+            speed: right[1],
             volume: right[2],
             ..Default::default()
         }
@@ -67,6 +68,7 @@ impl Playerbar for DefaultLayout {
         if config.visible.volume && layout.volume.width > 0 {
             widgets::draw_volume(f, player, colors, layout.volume);
         }
+        widgets::draw_speed(f, player, colors, layout.speed);
 
         if player.seeking && config.visible.spinner {
             widgets::draw_spinner(f, _tick, colors, layout.spinner);

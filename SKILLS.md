@@ -137,7 +137,7 @@ pigma msg toggle_play
 pigma msg next
 pigma msg volume 75
 pigma msg volume +5
-pigma msg speed 1.5           # 绝对变速（0.5-2.0）
+pigma msg speed 1.5           # 绝对变速（0.5-2.0，WSOLA 保持音调）
 pigma msg speed +0.1          # 相对变速步长（对应 TUI 的 `]`）
 pigma msg switch-list toplist --playlist 2
 pigma msg toggle_like
