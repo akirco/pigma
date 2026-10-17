@@ -19,6 +19,8 @@ pub struct StatusSnapshot {
     pub volume: f64,
     /// Playback speed factor (1.0 = normal).
     pub speed: f64,
+    /// Whether the speed change keeps the pitch (WSOLA stretch, badge `*`).
+    pub pitch_locked: bool,
     pub playing: bool,
     pub paused: bool,
     /// Stable play-mode key: `sequential` / `repeat_one` / `repeat_all` /
@@ -40,6 +42,7 @@ impl Default for StatusSnapshot {
             position_ms: 0,
             volume: 0.0,
             speed: 1.0,
+            pitch_locked: true,
             playing: false,
             paused: false,
             mode: String::new(),
@@ -64,6 +67,7 @@ impl StatusSnapshot {
             position_ms,
             volume: state.volume,
             speed: state.speed,
+            pitch_locked: state.pitch_locked,
             playing: state.playing,
             paused: state.paused,
             mode: mode_key(&state.mode).to_string(),
@@ -83,6 +87,7 @@ impl StatusSnapshot {
             || self.duration_ms != other.duration_ms
             || self.volume != other.volume
             || self.speed != other.speed
+            || self.pitch_locked != other.pitch_locked
             || self.playing != other.playing
             || self.paused != other.paused
             || self.mode != other.mode

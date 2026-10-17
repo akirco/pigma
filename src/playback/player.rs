@@ -13,7 +13,7 @@ use rodio::{
 };
 use tokio::sync::mpsc;
 
-use super::stretch::{SpeedHandle, Stretch};
+use super::stretch::{SpeedHandle, SpeedMode, Stretch};
 
 use crate::event::{Event, PlaybackEvent};
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
@@ -90,6 +90,8 @@ pub enum ControlCmd {
     Stop,
     SetVolume(f32),
     SetSpeed(f32),
+    /// Keep the pitch (WSOLA stretch) or shift it (resampling).
+    SetSpeedMode(SpeedMode),
 }
 
 /// Run the audio player as a persistent blocking task. The task is spawned once
@@ -104,6 +106,7 @@ pub(super) fn run(
     initial_seek_time: Option<Duration>,
     initial_volume: f32,
     initial_speed: f32,
+    initial_speed_mode: SpeedMode,
     event_tx: mpsc::UnboundedSender<Event>,
     control_rx: std::sync::mpsc::Receiver<ControlCmd>,
 ) {
@@ -123,6 +126,7 @@ pub(super) fn run(
         // reports how far into the *recording* the output has got, which is
         // what the progress events and the rebuild/resume logic below need.
         let speed = SpeedHandle::new(initial_speed);
+        speed.set_mode(initial_speed_mode);
         // Owned by this task; recreated whenever the output device is lost.
         let mut sink: Option<rodio::MixerDeviceSink> = None;
         let health = Arc::new(DeviceHealth {
@@ -304,10 +308,12 @@ pub(super) fn run(
                         }
                     }
                     ControlCmd::SetSpeed(v) => {
-                        // The running source picks the new factor up at its
-                        // next block boundary (~46ms); no decoder restart, and
-                        // the pitch is untouched.
+                        // The running source picks the new factor up at its next
+                        // block boundary (~46ms); no decoder restart.
                         speed.set(v);
+                    }
+                    ControlCmd::SetSpeedMode(mode) => {
+                        speed.set_mode(mode);
                     }
                 },
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}

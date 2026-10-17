@@ -3,6 +3,7 @@ use std::{sync::mpsc, time::Duration};
 use tokio::sync::mpsc as tokio_mpsc;
 
 use super::player::{self, AudioInput, ControlCmd};
+use super::stretch::SpeedMode;
 use crate::event::Event;
 
 #[derive(Clone)]
@@ -21,6 +22,7 @@ enum PlayerCmd {
     Stop,
     SetVolume(f32),
     SetSpeed(f32),
+    SetSpeedMode(SpeedMode),
 }
 
 impl PlaybackHandle {
@@ -31,6 +33,7 @@ impl PlaybackHandle {
             let mut control_tx: Option<mpsc::Sender<ControlCmd>> = None;
             let mut last_volume: f32 = 1.0;
             let mut last_speed: f32 = 1.0;
+            let mut last_speed_mode: SpeedMode = SpeedMode::default();
 
             while let Some(cmd) = cmd_rx.recv().await {
                 match cmd {
@@ -46,7 +49,15 @@ impl PlaybackHandle {
                             let (ctrl_tx, ctrl_rx) = mpsc::channel();
                             control_tx = Some(ctrl_tx);
                             let tx = event_tx.clone();
-                            player::run(input, seek_time, last_volume, last_speed, tx, ctrl_rx);
+                            player::run(
+                                input,
+                                seek_time,
+                                last_volume,
+                                last_speed,
+                                last_speed_mode,
+                                tx,
+                                ctrl_rx,
+                            );
                         }
                     }
                     PlayerCmd::SeekTo(seek_time) => {
@@ -82,6 +93,12 @@ impl PlaybackHandle {
                         last_speed = v;
                         if let Some(ref ctrl) = control_tx {
                             let _ = ctrl.send(ControlCmd::SetSpeed(v));
+                        }
+                    }
+                    PlayerCmd::SetSpeedMode(mode) => {
+                        last_speed_mode = mode;
+                        if let Some(ref ctrl) = control_tx {
+                            let _ = ctrl.send(ControlCmd::SetSpeedMode(mode));
                         }
                     }
                 }
@@ -134,6 +151,12 @@ impl PlaybackHandle {
     pub(super) fn set_speed(&self, speed: f32) {
         if self.cmd_tx.send(PlayerCmd::SetSpeed(speed)).is_err() {
             log::error!("PlaybackHandle: failed to send SetSpeed command (channel closed)");
+        }
+    }
+
+    pub(super) fn set_speed_mode(&self, mode: SpeedMode) {
+        if self.cmd_tx.send(PlayerCmd::SetSpeedMode(mode)).is_err() {
+            log::error!("PlaybackHandle: failed to send SetSpeedMode command (channel closed)");
         }
     }
 }

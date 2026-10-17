@@ -244,8 +244,26 @@ impl App {
     /// Adjust the playback speed by `delta` (steps of 0.1), clamped to the
     /// supported range and surfaced as a toast. Keyboard `[`/`]`.
     pub fn adjust_speed(&mut self, delta: f64) {
-        let new = self.playback.adjust_speed(delta);
-        self.toast(format!("⚡ 速度 {new:.1}x"));
+        self.playback.adjust_speed(delta);
+        self.speed_toast();
+    }
+
+    /// Report the current speed the way the player bar shows it: `*1.2x` when
+    /// the pitch is kept, `1.2x` when the speed change shifts it.
+    pub fn speed_toast(&mut self) {
+        let badge = self
+            .playback
+            .state
+            .speed_badge()
+            .unwrap_or_else(|| "1.0x".into());
+        self.toast(format!("⚡ 速度 {badge}"));
+    }
+
+    /// Flip between pitch-keeping (WSOLA stretch) and pitch-shifting
+    /// (resampling) speed. Keyboard `t`.
+    pub fn toggle_pitch_locked(&mut self) {
+        self.playback.toggle_pitch_locked();
+        self.speed_toast();
     }
 
     /* -------------------------------------------------------------------------- */

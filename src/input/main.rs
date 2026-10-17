@@ -247,6 +247,9 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
         KeyCode::Char(']') => {
             app.adjust_speed(crate::playback::SPEED_STEP);
         }
+        KeyCode::Char('t' | 'T') => {
+            app.toggle_pitch_locked();
+        }
         KeyCode::Char('z' | 'Z') => {
             app.cycle_nav_position();
         }

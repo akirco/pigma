@@ -57,7 +57,7 @@ impl Playerbar for ModernLayout {
         let bottom_cols = Layout::horizontal([
             Constraint::Length(15),
             Constraint::Length(20),
-            Constraint::Length(10),
+            Constraint::Length(11),
         ])
         .flex(Flex::SpaceBetween)
         .split(right_rows[2]);
@@ -66,7 +66,7 @@ impl Playerbar for ModernLayout {
         let vol_mode_cols = Layout::horizontal([
             Constraint::Length(3),
             Constraint::Length(3),
-            Constraint::Length(4),
+            Constraint::Length(5),
         ])
         .split(bottom_cols[2]);
 

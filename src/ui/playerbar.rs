@@ -106,7 +106,7 @@ mod tests {
     const W: u16 = 90;
     const H: u16 = 6;
 
-    fn state(speed: f64) -> PlaybackState {
+    fn state(speed: f64, pitch_locked: bool) -> PlaybackState {
         let song = Arc::new(SongInfo {
             id: 1,
             name: "Test Song".into(),
@@ -120,15 +120,17 @@ mod tests {
         });
         PlaybackState {
             speed,
+            pitch_locked,
             playing: true,
             current_song: Some(song),
             ..PlaybackState::default()
         }
     }
 
-    /// Render one layout and return the column of every `1.5x`-style speed
-    /// badge drawn on the bar (the only place a digit is followed by `x`).
-    fn badge_columns(layout: LayoutType, speed: f64) -> Vec<u16> {
+    /// Render one layout and return `(column, text)` for every speed badge
+    /// drawn on the bar — the only place a digit is followed by `x`. The column
+    /// is that of the badge's first cell.
+    fn badges(layout: LayoutType, speed: f64, pitch_locked: bool) -> Vec<(u16, String)> {
         let colors = Theme::default();
         let border = BorderConfig::default();
         let bs = BlockStyle {
@@ -140,7 +142,7 @@ mod tests {
             layout,
             ..PlayerbarConfig::default()
         };
-        let state = state(speed);
+        let state = state(speed, pitch_locked);
 
         let mut term = Terminal::new(TestBackend::new(W, H)).unwrap();
         term.draw(|f| draw(f, &state, 0, &bs, &config, Rect::new(0, 0, W, H), false))
@@ -149,42 +151,74 @@ mod tests {
         let buf = term.backend().buffer().clone();
         let mut found = Vec::new();
         for y in 0..buf.area().height {
-            let row: Vec<&str> = (0..buf.area().width)
-                .map(|x| buf[(x, y)].symbol())
+            let row: Vec<String> = (0..buf.area().width)
+                .map(|x| buf[(x, y)].symbol().to_string())
                 .collect();
-            for (i, sym) in row.iter().enumerate().skip(1) {
-                if *sym == "x"
-                    && row[i - 1]
+            let cells: Vec<&str> = row.iter().map(|s| s.as_str()).collect();
+            for (i, sym) in cells.iter().enumerate().skip(1) {
+                if *sym != "x"
+                    || !cells[i - 1]
                         .chars()
                         .next()
                         .is_some_and(|c| c.is_ascii_digit())
                 {
-                    found.push(i as u16);
+                    continue;
                 }
+                // Walk back over the digits, the decimal point and the star.
+                let mut start = i - 1;
+                while start > 0
+                    && cells[start - 1]
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_ascii_digit() || c == '.' || c == '*')
+                {
+                    start -= 1;
+                }
+                found.push((start as u16, cells[start..=i].concat()));
             }
         }
         found
     }
 
+    const LAYOUTS: [LayoutType; 3] = [LayoutType::Default, LayoutType::Modern, LayoutType::Minimal];
+
     #[test]
     fn speed_badge_is_hidden_at_normal_speed() {
-        for layout in [LayoutType::Default, LayoutType::Modern, LayoutType::Minimal] {
-            assert!(
-                badge_columns(layout.clone(), 1.0).is_empty(),
-                "{layout:?} shows a speed badge at 1.0x"
-            );
+        for layout in LAYOUTS {
+            for locked in [true, false] {
+                assert!(
+                    badges(layout.clone(), 1.0, locked).is_empty(),
+                    "{layout:?} (pitch_locked {locked}) shows a badge at 1.0x"
+                );
+            }
         }
     }
 
     #[test]
     fn speed_badge_sits_at_the_right_end() {
-        for layout in [LayoutType::Default, LayoutType::Modern, LayoutType::Minimal] {
-            let cols = badge_columns(layout.clone(), 1.5);
-            assert_eq!(cols.len(), 1, "{layout:?}: expected exactly one badge");
+        for layout in LAYOUTS {
+            let found = badges(layout.clone(), 1.5, true);
+            assert_eq!(found.len(), 1, "{layout:?}: expected exactly one badge");
+            let (col, _) = &found[0];
             assert!(
-                cols[0] > W * 3 / 4,
-                "{layout:?}: badge ends at column {}, expected past the right quarter of a {W}-column bar",
-                cols[0]
+                *col > W * 3 / 4,
+                "{layout:?}: badge starts at column {col}, expected past the right quarter of a {W}-column bar"
+            );
+        }
+    }
+
+    #[test]
+    fn badge_marks_pitch_lock_with_a_star() {
+        for layout in LAYOUTS {
+            let locked = badges(layout.clone(), 1.5, true);
+            assert_eq!(
+                locked[0].1, "*1.5x",
+                "{layout:?}: pitch-keeping speed must be marked"
+            );
+            let shifted = badges(layout.clone(), 1.5, false);
+            assert_eq!(
+                shifted[0].1, "1.5x",
+                "{layout:?}: resampled speed must carry no star"
             );
         }
     }

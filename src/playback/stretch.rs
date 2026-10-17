@@ -56,11 +56,25 @@ pub const MIN_FACTOR: f32 = 0.25;
 pub const MAX_FACTOR: f32 = 4.0;
 const NANOS_PER_SEC: u64 = 1_000_000_000;
 
+/// How a speed change is applied.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SpeedMode {
+    /// WSOLA time stretching: the tempo changes while the pitch stays put, and
+    /// the badge gains a `*`. The reported sample rate never moves.
+    #[default]
+    PreservePitch,
+    /// Resampling: the reported sample rate is scaled by the factor, so pitch
+    /// and tempo move together. Cheaper, and what rodio's `speed()` does.
+    ShiftPitch,
+}
+
 /// Control/p read-out side of a [`Stretch`] source, shared with the player loop.
 #[derive(Debug, Clone)]
 pub struct SpeedHandle {
     factor: Arc<AtomicU32>,
     pos_ns: Arc<AtomicU64>,
+    /// 0 = [`SpeedMode::PreservePitch`], 1 = [`SpeedMode::ShiftPitch`].
+    mode: Arc<AtomicU32>,
 }
 
 impl SpeedHandle {
@@ -68,6 +82,20 @@ impl SpeedHandle {
         Self {
             factor: Arc::new(AtomicU32::new(clamp_factor(factor).to_bits())),
             pos_ns: Arc::new(AtomicU64::new(0)),
+            mode: Arc::new(AtomicU32::new(0)),
+        }
+    }
+
+    /// Switch between stretching and resampling. Takes effect at the next block
+    /// boundary; the buffered audio is flushed rather than dropped.
+    pub fn set_mode(&self, mode: SpeedMode) {
+        self.mode.store(mode as u32, Ordering::Relaxed);
+    }
+
+    pub fn mode(&self) -> SpeedMode {
+        match self.mode.load(Ordering::Relaxed) {
+            1 => SpeedMode::ShiftPitch,
+            _ => SpeedMode::PreservePitch,
         }
     }
 
@@ -397,10 +425,28 @@ impl<I: Source + Send> Stretch<I> {
             self.actual = 0;
         }
 
+        if self.primed && self.handle.mode() == SpeedMode::ShiftPitch {
+            // Switched to resampling mid-song: hand over everything still
+            // unheard in the pipeline, then resume as a passthrough.
+            let end = self.buf_end();
+            let at = self.prev_start + self.hop as u64;
+            if end > at {
+                self.push_raw(at, (end - at) as usize);
+            }
+            let tail_end = self.buf_end();
+            self.buf
+                .drain(..(tail_end - self.buf_start) as usize * self.ch());
+            self.buf_start = tail_end;
+            self.prev.clear();
+            self.primed = false;
+            return !self.out.is_empty();
+        }
+
         if !self.primed {
-            // Normal speed with the stretcher never engaged: forward whole
-            // frames straight from the input, no buffering and no latency.
-            if factor == 1.0 {
+            // Normal speed, or resampling mode (which needs no processing at
+            // all — the rate metadata does the work): forward whole frames
+            // straight from the input, no buffering and no latency.
+            if factor == 1.0 || self.handle.mode() == SpeedMode::ShiftPitch {
                 let at = self.buf_end();
                 for _ in 0..ch {
                     match self.input.next() {
@@ -548,13 +594,14 @@ impl<I: Source + Send> Iterator for Stretch<I> {
 }
 
 impl<I: Source + Send> Source for Stretch<I> {
+    /// One block per span: the mixer re-reads `sample_rate()` at every span
+    /// boundary, which is how a mode/factor change reaches the resampler in
+    /// [`SpeedMode::ShiftPitch`].
     fn current_span_len(&self) -> Option<usize> {
         if self.finished && self.out.is_empty() {
             Some(0)
         } else {
-            // Unknown/infinite span: the stretcher consumes ahead of the output
-            // and its rate never changes within a stream.
-            None
+            Some(self.hop * self.ch())
         }
     }
 
@@ -563,9 +610,18 @@ impl<I: Source + Send> Source for Stretch<I> {
         self.input.channels()
     }
 
-    #[inline]
+    /// In [`SpeedMode::ShiftPitch`] the factor is expressed here: rodio's mixer
+    /// resamples to the device rate, so a raised rate plays the same samples
+    /// faster — and higher — which is exactly the behaviour the mode promises.
+    /// In [`SpeedMode::PreservePitch`] the rate stays untouched.
     fn sample_rate(&self) -> SampleRate {
-        // Deliberately unchanged — that is the entire point.
+        let rate = self.input.sample_rate().get();
+        if self.handle.mode() == SpeedMode::ShiftPitch {
+            let scaled = rate as f64 * self.handle.factor() as f64;
+            if let Some(r) = SampleRate::new(scaled.round().max(1.0) as u32) {
+                return r;
+            }
+        }
         self.input.sample_rate()
     }
 
@@ -575,11 +631,17 @@ impl<I: Source + Send> Source for Stretch<I> {
             .map(|d| d.mul_f64(1.0 / self.handle.factor() as f64))
     }
 
-    /// `pos` addresses the recording, mirroring [`rodio::Source::speed`]: the
-    /// factor is compensated for, then the stretch pipeline is dropped.
+    /// `pos` addresses the recording. Under [`SpeedMode::PreservePitch`] the
+    /// stretcher consumes `factor` input frames per output frame, so the seek
+    /// target has to be scaled; under [`SpeedMode::ShiftPitch`] frames are
+    /// handed over 1:1 and the factor is carried by the sample rate instead.
+    /// The stretch pipeline is dropped either way.
     fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
-        self.input
-            .try_seek(pos.mul_f64(self.handle.factor() as f64))?;
+        let scaled = match self.handle.mode() {
+            SpeedMode::PreservePitch => pos.mul_f64(self.handle.factor() as f64),
+            SpeedMode::ShiftPitch => pos,
+        };
+        self.input.try_seek(scaled)?;
         self.out.clear();
         self.block = None;
         self.buf.clear();
@@ -990,6 +1052,79 @@ mod tests {
                 "factor {factor}x: position advanced {advanced:.2}s in 0.5s of output, want {want:.2}s"
             );
         }
+    }
+
+    #[test]
+    fn total_duration_shrinks_with_the_factor_in_both_modes() {
+        for mode in [SpeedMode::PreservePitch, SpeedMode::ShiftPitch] {
+            let h = SpeedHandle::new(2.0);
+            h.set_mode(mode);
+            let s = Stretch::new(sine(2.0, 220.0), h);
+            let secs = s.total_duration().unwrap().as_secs_f64();
+            assert!(
+                (secs - 1.0).abs() < 0.01,
+                "{mode:?}: 2s of audio at 2.0x should report {secs:.2}s"
+            );
+        }
+    }
+
+    #[test]
+    fn shift_mode_resamples_and_moves_the_pitch() {
+        // 不修复音调: the source's reported sample rate carries the factor, so
+        // the samples play faster and the pitch rises with them.
+        let h = SpeedHandle::new(2.0);
+        h.set_mode(SpeedMode::ShiftPitch);
+        let s = Stretch::new(sine(2.0, 220.0), h.clone());
+        assert_eq!(s.sample_rate().get(), SR * 2, "rate must scale with factor");
+        let out: Vec<f32> = s.collect();
+        // The samples are handed over untouched; only the rate (and thus the
+        // pitch as heard) moves.
+        let src: Vec<f32> = sine(2.0, 220.0).collect();
+        assert_eq!(out.len(), src.len(), "shift mode must not drop samples");
+        assert_eq!(out, src, "shift mode must not alter the samples");
+    }
+
+    #[test]
+    fn shift_mode_position_still_tracks_the_recording() {
+        // The frame cursor advances once per sample in both modes, so the
+        // reported recording position stays honest when resampling.
+        let h = SpeedHandle::new(2.0);
+        h.set_mode(SpeedMode::ShiftPitch);
+        let out: Vec<f32> = Stretch::new(sine(2.0, 220.0), h.clone()).collect();
+        assert!(!out.is_empty());
+        assert!(
+            (h.position().as_secs_f64() - 2.0).abs() < 0.1,
+            "shift-mode position {:?} should cover the 2s recording",
+            h.position()
+        );
+    }
+
+    #[test]
+    fn toggling_mode_mid_stream_keeps_audio_flowing() {
+        let h = SpeedHandle::new(1.6);
+        let mut s = Stretch::new(sine(8.0, 220.0), h.clone());
+        let mut out: Vec<f32> = (&mut s).take(SR as usize).collect();
+        h.set_mode(SpeedMode::ShiftPitch);
+        out.extend((&mut s).take(SR as usize * 4));
+        assert!(out.iter().all(|v| v.is_finite()), "NaN/inf after toggle");
+        assert!(
+            out.len() > SR as usize * 4,
+            "stream stalled after the mode toggle: {} samples",
+            out.len()
+        );
+        // No long gap where the pipeline handed over.
+        let quiet = out[out.len() - SR as usize..out.len() - SR as usize / 4]
+            .chunks(SR as usize / 100)
+            .filter(|w| rms(w) < 0.05)
+            .count();
+        assert_eq!(quiet, 0, "the mode hand-over dropped audio");
+
+        // ... and back to stretching
+        h.set_mode(SpeedMode::PreservePitch);
+        let mut out2: Vec<f32> = (&mut s).take(SR as usize * 2).collect();
+        out2.extend((&mut s).collect::<Vec<f32>>());
+        assert!(out2.iter().all(|v| v.is_finite()));
+        assert!(!out2.is_empty(), "no audio after switching back");
     }
 
     #[test]

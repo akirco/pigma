@@ -3,10 +3,9 @@
 
 use std::time::Duration;
 
-use super::{
-    PlaybackEngine,
-    mode::{self, PlayMode},
-};
+use super::PlaybackEngine;
+use super::mode::{self, PlayMode};
+use crate::playback::stretch::SpeedMode;
 
 impl PlaybackEngine {
     pub fn seek_relative(&mut self, delta_secs: f64) {
@@ -41,7 +40,6 @@ impl PlaybackEngine {
     /// Set the playback speed factor (1.0 = normal). The state clamps it to the
     /// supported range and snaps it to the nearest 0.1; the audio thread is only
     /// signalled when the value actually changed. Speed is applied by
-    /// pitch-preserving time stretching, not resampling. Speed is applied by
     /// pitch-preserving time stretching, not resampling.
     pub fn set_speed(&mut self, speed: f64) {
         let before = self.state.speed;
@@ -49,6 +47,25 @@ impl PlaybackEngine {
         if self.state.speed != before {
             self.controller.set_speed(self.state.speed as f32);
         }
+    }
+
+    /// Choose how the speed is applied: `locked` keeps the pitch (WSOLA
+    /// stretch), otherwise tempo and pitch move together (resampling). Always
+    /// forwarded, even when unchanged, so a fresh audio thread inherits it.
+    pub fn set_pitch_locked(&mut self, locked: bool) {
+        self.state.pitch_locked = locked;
+        self.controller.set_speed_mode(if locked {
+            SpeedMode::PreservePitch
+        } else {
+            SpeedMode::ShiftPitch
+        });
+    }
+
+    /// Flip between pitch-keeping and pitch-shifting speed. Returns the new
+    /// `pitch_locked` flag.
+    pub fn toggle_pitch_locked(&mut self) -> bool {
+        self.set_pitch_locked(!self.state.pitch_locked);
+        self.state.pitch_locked
     }
 
     /// Nudge the playback speed by `delta` (e.g. `±0.1`). Returns the new factor.

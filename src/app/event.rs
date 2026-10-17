@@ -91,9 +91,17 @@ impl App {
                     self.adjust_speed(delta);
                 } else if let Some(speed) = absolute {
                     self.playback.set_speed(speed);
-                    let speed = self.playback.state.speed;
-                    self.toast(format!("⚡ 速度 {speed:.1}x"));
+                    self.speed_toast();
                 }
+            }
+            IpcEvent::Pitch { locked } => {
+                match locked {
+                    Some(locked) => self.playback.set_pitch_locked(locked),
+                    None => {
+                        self.playback.toggle_pitch_locked();
+                    }
+                }
+                self.speed_toast();
             }
             IpcEvent::Mode => {
                 let mode = self.playback.cycle_mode();

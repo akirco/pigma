@@ -51,12 +51,20 @@ pub struct SavedQueue {
     /// support, where the default is normal (1.0x).
     #[serde(default = "default_speed")]
     pub speed: f64,
+    /// Whether the speed keeps the pitch (WSOLA). Absent in files written
+    /// before the mode existed, where pitch keeping is the default.
+    #[serde(default = "default_true")]
+    pub pitch_locked: bool,
     #[serde(default)]
     pub progress: f64,
 }
 
 fn default_speed() -> f64 {
     1.0
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// Deserialize the on-disk `history` field, which may be either the new
@@ -103,6 +111,7 @@ struct SavedQueueRef<'a> {
     mode: &'a PlayMode,
     volume: f64,
     speed: f64,
+    pitch_locked: bool,
     progress: f64,
 }
 
@@ -112,7 +121,7 @@ impl Serialize for SavedQueueRef<'_> {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("SavedQueueRef", 7)?;
+        let mut s = serializer.serialize_struct("SavedQueueRef", 8)?;
         let queue: Vec<&SongInfo> = self.queue.iter().map(|s| s.as_ref()).collect();
         s.serialize_field("queue", &queue)?;
         s.serialize_field("history", &self.history)?;
@@ -120,6 +129,7 @@ impl Serialize for SavedQueueRef<'_> {
         s.serialize_field("mode", self.mode)?;
         s.serialize_field("volume", &self.volume)?;
         s.serialize_field("speed", &self.speed)?;
+        s.serialize_field("pitch_locked", &self.pitch_locked)?;
         s.serialize_field("progress", &self.progress)?;
         s.end()
     }
@@ -271,6 +281,7 @@ impl PlaylistStorage {
         mode: &PlayMode,
         volume: f64,
         speed: f64,
+        pitch_locked: bool,
         progress: f64,
     ) {
         if id.is_empty() {
@@ -292,6 +303,7 @@ impl PlaylistStorage {
                 mode: &mode,
                 volume,
                 speed,
+                pitch_locked,
                 progress,
             };
             if let Ok(json) = serde_json::to_string(&saved) {
@@ -315,6 +327,7 @@ impl PlaylistStorage {
         mode: &PlayMode,
         volume: f64,
         speed: f64,
+        pitch_locked: bool,
         progress: f64,
     ) {
         if id.is_empty() {
@@ -327,6 +340,7 @@ impl PlaylistStorage {
             mode,
             volume,
             speed,
+            pitch_locked,
             progress,
         };
         if let Ok(json) = serde_json::to_string(&saved) {
@@ -396,8 +410,10 @@ mod tests {
         }"#;
         let saved: SavedQueue = serde_json::from_str(json).unwrap();
         assert_eq!(saved.history, vec![1, 2, 3]);
-        // Legacy files carry no `speed`; the default must be normal playback.
+        // Legacy files carry no `speed`/`pitch_locked`; both defaults must keep
+        // the previous behaviour (normal speed, pitch-keeping stretch).
         assert_eq!(saved.speed, 1.0);
+        assert!(saved.pitch_locked);
     }
 
     #[test]

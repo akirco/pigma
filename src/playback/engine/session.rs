@@ -67,6 +67,7 @@ impl PlaybackEngine {
             &self.state.mode,
             self.state.volume,
             self.state.speed,
+            self.state.pitch_locked,
             self.state.progress,
         );
     }
@@ -86,6 +87,7 @@ impl PlaybackEngine {
             &self.state.mode,
             self.state.volume,
             self.state.speed,
+            self.state.pitch_locked,
             self.state.progress,
         );
     }
@@ -200,11 +202,17 @@ impl PlaybackEngine {
                 ));
                 self.state.volume = saved.volume;
                 self.state.set_speed(saved.speed);
+                self.state.pitch_locked = saved.pitch_locked;
                 self.strategy =
                     mode::create_strategy(&saved.mode, self.queue.len(), self.queue.current_index);
                 self.state.mode = saved.mode;
                 self.controller.set_volume(saved.volume as f32);
                 self.controller.set_speed(self.state.speed as f32);
+                self.controller.set_speed_mode(if self.state.pitch_locked {
+                    crate::playback::stretch::SpeedMode::PreservePitch
+                } else {
+                    crate::playback::stretch::SpeedMode::ShiftPitch
+                });
 
                 if saved.current_index.is_some() {
                     self.state.current_song = self.queue.current_song().cloned();

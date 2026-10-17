@@ -15,12 +15,12 @@ pub const SPEED_STEP: f64 = 0.1;
 pub struct PlaybackState {
     pub progress: f64,
     pub volume: f64,
-    /// Playback speed factor (1.0 = normal), adjustable with `[` / `]`. The
-    /// audio is time-stretched (WSOLA, see the `stretch` module) so the pitch
-    /// stays put. The
-    /// audio is time-stretched (WSOLA, see the `stretch` module) so the pitch
-    /// stays put.
+    /// Playback speed factor (1.0 = normal), adjustable with `[` / `]`.
     pub speed: f64,
+    /// Whether a speed change keeps the pitch (WSOLA stretch; the badge gains a
+    /// leading `*`) or shifts it along with the tempo (resampling; no `*`).
+    /// Toggled with `t`.
+    pub pitch_locked: bool,
     pub paused: bool,
     pub playing: bool,
     pub seeking: bool,
@@ -40,6 +40,7 @@ impl Default for PlaybackState {
             progress: 0.0,
             volume: 0.65,
             speed: 1.0,
+            pitch_locked: true,
             paused: false,
             playing: false,
             seeking: false,
@@ -64,6 +65,17 @@ pub fn clamp_speed(speed: f64) -> f64 {
 }
 
 impl PlaybackState {
+    /// The speed as shown on the player bar: `*1.2x` when the pitch is kept,
+    /// `1.2x` when the speed change also shifts the pitch, and `None` at normal
+    /// speed so nothing is drawn.
+    pub fn speed_badge(&self) -> Option<String> {
+        if (self.speed - 1.0).abs() < f64::EPSILON {
+            return None;
+        }
+        let star = if self.pitch_locked { "*" } else { "" };
+        Some(format!("{star}{:.1}x", self.speed))
+    }
+
     /// Round `speed` into the supported range, snapping to the nearest
     /// tenth of [`SPEED_STEP`] so repeated `[`/`]` presses never drift off 0.1.
     pub fn set_speed(&mut self, speed: f64) {

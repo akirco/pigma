@@ -53,6 +53,12 @@ pub enum MsgAction {
         delta: Option<f64>,
         absolute: Option<f64>,
     },
+    /// How the speed is applied, mirrors the TUI's `t`: `Some(true)` keeps the
+    /// pitch (WSOLA stretch, badge `*`), `Some(false)` resamples (pitch moves
+    /// with the tempo), `None` toggles.
+    Pitch {
+        locked: Option<bool>,
+    },
     Mode,
     Like,
     Dislike,
@@ -84,6 +90,9 @@ pub enum IpcEvent {
         delta: Option<f64>,
         absolute: Option<f64>,
     },
+    Pitch {
+        locked: Option<bool>,
+    },
     Mode,
     Like,
     Dislike,
@@ -104,6 +113,7 @@ impl From<MsgAction> for IpcEvent {
             MsgAction::TogglePlay => IpcEvent::TogglePlay,
             MsgAction::Volume { delta, absolute } => IpcEvent::Volume { delta, absolute },
             MsgAction::Speed { delta, absolute } => IpcEvent::Speed { delta, absolute },
+            MsgAction::Pitch { locked } => IpcEvent::Pitch { locked },
             MsgAction::Mode => IpcEvent::Mode,
             MsgAction::Like => IpcEvent::Like,
             MsgAction::Dislike => IpcEvent::Dislike,

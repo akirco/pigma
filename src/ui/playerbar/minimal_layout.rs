@@ -24,7 +24,7 @@ impl Playerbar for MinimalLayout {
             Constraint::Length(6),
             Constraint::Min(0),
             Constraint::Length(6),
-            Constraint::Length(4),
+            Constraint::Length(5),
             Constraint::Length(3),
         ])
         .spacing(2)
