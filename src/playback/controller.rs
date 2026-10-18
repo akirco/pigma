@@ -2,8 +2,10 @@ use std::{sync::mpsc, time::Duration};
 
 use tokio::sync::mpsc as tokio_mpsc;
 
-use super::player::{self, AudioInput, ControlCmd};
-use super::stretch::SpeedMode;
+use super::{
+    player::{self, AudioInput, ControlCmd},
+    stretch::SpeedMode,
+};
 use crate::event::Event;
 
 #[derive(Clone)]

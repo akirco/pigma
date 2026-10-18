@@ -3,8 +3,10 @@
 
 use std::time::Duration;
 
-use super::PlaybackEngine;
-use super::mode::{self, PlayMode};
+use super::{
+    PlaybackEngine,
+    mode::{self, PlayMode},
+};
 use crate::playback::stretch::SpeedMode;
 
 impl PlaybackEngine {

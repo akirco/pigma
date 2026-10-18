@@ -1150,8 +1150,7 @@ mod tests {
     #[test]
     #[ignore]
     fn real_recording_probe() {
-        use std::f64::consts::PI;
-        use std::io::BufReader;
+        use std::{f64::consts::PI, io::BufReader};
 
         const N: usize = 4_096;
 
