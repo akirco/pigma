@@ -137,6 +137,11 @@ pigma msg toggle_play
 pigma msg next
 pigma msg volume 75
 pigma msg volume +5
+pigma msg speed 1.5           # 绝对变速（0.5-2.0）
+pigma msg speed +0.1          # 相对变速步长（对应 TUI 的 `]`）
+pigma msg pitch on            # 变速保持音调（WSOLA，播放条显示 *1.5x）
+pigma msg pitch off           # 变速重采样（音调随之变化，显示 1.5x）
+pigma msg pitch               # 翻转（对应 TUI 的 `t`）
 pigma msg switch-list toplist --playlist 2
 pigma msg toggle_like
 ```
@@ -164,6 +169,12 @@ printf '{"cmd":"msg","action":{"action":"play"}}\n' | socat - "$HOME/.cache/pigm
 # 音量：绝对（0.0-1.0）或相对增量
 printf '{"cmd":"msg","action":{"action":"volume","absolute":0.75}}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
 printf '{"cmd":"msg","action":{"action":"volume","delta":0.05}}\n'    | socat - "$HOME/.cache/pigma/pigma.sock"
+# 变速：绝对因子（如 1.5）或相对步长（如 0.1），服务端夹紧到 0.5-2.0
+printf '{"cmd":"msg","action":{"action":"speed","absolute":1.5}}\n'  | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":{"action":"speed","delta":-0.1}}\n'    | socat - "$HOME/.cache/pigma/pigma.sock"
+# 变速方式：locked=true 保持音调（*），false 重采样；省略 locked 则翻转
+printf '{"cmd":"msg","action":{"action":"pitch","locked":true}}\n'   | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":{"action":"pitch"}}\n'                 | socat - "$HOME/.cache/pigma/pigma.sock"
 # 切换队列（歌单端点可用 "playlist" 选第 N 个，1 起始）
 printf '{"cmd":"msg","action":{"action":"switch_list","endpoint":"toplist","playlist":2}}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
 ```

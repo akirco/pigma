@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::playback::PlayMode;
 
 /// Live playback state snapshot served to `pigma status`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatusSnapshot {
     pub id: u64,
     pub name: String,
@@ -17,12 +17,38 @@ pub struct StatusSnapshot {
     pub position_ms: u64,
     /// Volume as a fraction of 0..=1.
     pub volume: f64,
+    /// Playback speed factor (1.0 = normal).
+    pub speed: f64,
+    /// Whether the speed change keeps the pitch (WSOLA stretch, badge `*`).
+    pub pitch_locked: bool,
     pub playing: bool,
     pub paused: bool,
     /// Stable play-mode key: `sequential` / `repeat_one` / `repeat_all` /
     /// `shuffle` / `heartbeat`.
     pub mode: String,
     pub liked: bool,
+}
+
+/// A brand-new snapshot has no track loaded, but the speed must still read as
+/// normal (1.0) instead of the derived default 0.0.
+impl Default for StatusSnapshot {
+    fn default() -> Self {
+        Self {
+            id: 0,
+            name: String::new(),
+            artist: String::new(),
+            album: String::new(),
+            duration_ms: 0,
+            position_ms: 0,
+            volume: 0.0,
+            speed: 1.0,
+            pitch_locked: true,
+            playing: false,
+            paused: false,
+            mode: String::new(),
+            liked: false,
+        }
+    }
 }
 
 impl StatusSnapshot {
@@ -40,6 +66,8 @@ impl StatusSnapshot {
             duration_ms,
             position_ms,
             volume: state.volume,
+            speed: state.speed,
+            pitch_locked: state.pitch_locked,
             playing: state.playing,
             paused: state.paused,
             mode: mode_key(&state.mode).to_string(),
@@ -58,6 +86,8 @@ impl StatusSnapshot {
             || self.album != other.album
             || self.duration_ms != other.duration_ms
             || self.volume != other.volume
+            || self.speed != other.speed
+            || self.pitch_locked != other.pitch_locked
             || self.playing != other.playing
             || self.paused != other.paused
             || self.mode != other.mode

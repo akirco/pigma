@@ -4,10 +4,23 @@ use ncm_api::SongInfo;
 
 use super::{cover::CoverState, lyrics::LyricLine, mode::PlayMode};
 
+/// Lower bound of the playback speed factor (keyboard `[`).
+pub const MIN_SPEED: f64 = 0.5;
+/// Upper bound of the playback speed factor (keyboard `]`).
+pub const MAX_SPEED: f64 = 2.0;
+/// Speed step applied by the `[` / `]` keys.
+pub const SPEED_STEP: f64 = 0.1;
+
 #[derive(Debug, Clone)]
 pub struct PlaybackState {
     pub progress: f64,
     pub volume: f64,
+    /// Playback speed factor (1.0 = normal), adjustable with `[` / `]`.
+    pub speed: f64,
+    /// Whether a speed change keeps the pitch (WSOLA stretch; the badge gains a
+    /// leading `*`) or shifts it along with the tempo (resampling; no `*`).
+    /// Toggled with `t`.
+    pub pitch_locked: bool,
     pub paused: bool,
     pub playing: bool,
     pub seeking: bool,
@@ -26,6 +39,8 @@ impl Default for PlaybackState {
         Self {
             progress: 0.0,
             volume: 0.65,
+            speed: 1.0,
+            pitch_locked: true,
             paused: false,
             playing: false,
             seeking: false,
@@ -41,7 +56,32 @@ impl Default for PlaybackState {
     }
 }
 
+/// Clamp a playback speed factor into [`MIN_SPEED`]..=[`MAX_SPEED`].
+pub fn clamp_speed(speed: f64) -> f64 {
+    if !speed.is_finite() {
+        return 1.0;
+    }
+    speed.clamp(MIN_SPEED, MAX_SPEED)
+}
+
 impl PlaybackState {
+    /// The speed as shown on the player bar: `*1.2x` when the pitch is kept,
+    /// `1.2x` when the speed change also shifts the pitch, and `None` at normal
+    /// speed so nothing is drawn.
+    pub fn speed_badge(&self) -> Option<String> {
+        if (self.speed - 1.0).abs() < f64::EPSILON {
+            return None;
+        }
+        let star = if self.pitch_locked { "*" } else { "" };
+        Some(format!("{star}{:.1}x", self.speed))
+    }
+
+    /// Round `speed` into the supported range, snapping to the nearest
+    /// tenth of [`SPEED_STEP`] so repeated `[`/`]` presses never drift off 0.1.
+    pub fn set_speed(&mut self, speed: f64) {
+        self.speed = (clamp_speed(speed) * 10.0).round() / 10.0;
+    }
+
     pub(super) fn on_started(&mut self) {
         self.error = None;
         self.paused = false;
@@ -101,5 +141,40 @@ impl PlaybackState {
             self.lyrics = Some(lyrics);
             self.translated_lyrics = Some(translated_lyrics);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_speed_is_normal() {
+        assert_eq!(PlaybackState::default().speed, 1.0);
+    }
+
+    #[test]
+    fn set_speed_snaps_to_tenths_without_drift() {
+        let mut s = PlaybackState::default();
+        // 11 presses of `]` must land exactly on the upper bound, not 2.099999.
+        for _ in 0..11 {
+            s.set_speed(s.speed + SPEED_STEP);
+        }
+        assert_eq!(s.speed, MAX_SPEED);
+        for _ in 0..25 {
+            s.set_speed(s.speed - SPEED_STEP);
+        }
+        assert_eq!(s.speed, MIN_SPEED);
+    }
+
+    #[test]
+    fn set_speed_clamps_invalid_input() {
+        let mut s = PlaybackState::default();
+        s.set_speed(9.9);
+        assert_eq!(s.speed, MAX_SPEED);
+        s.set_speed(0.0);
+        assert_eq!(s.speed, MIN_SPEED);
+        s.set_speed(f64::NAN);
+        assert_eq!(s.speed, 1.0);
     }
 }

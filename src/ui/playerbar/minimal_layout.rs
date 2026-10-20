@@ -24,6 +24,7 @@ impl Playerbar for MinimalLayout {
             Constraint::Length(6),
             Constraint::Min(0),
             Constraint::Length(6),
+            Constraint::Length(5),
             Constraint::Length(3),
         ])
         .spacing(2)
@@ -35,7 +36,8 @@ impl Playerbar for MinimalLayout {
             progress_time_left: cols[2],
             gauge: cols[3],
             progress_time_right: cols[4],
-            mode_icon: cols[5],
+            speed: cols[5],
+            mode_icon: cols[6],
             ..Default::default()
         }
     }
@@ -55,6 +57,7 @@ impl Playerbar for MinimalLayout {
         widgets::draw_current_time(f, player, colors, layout.progress_time_left);
         widgets::draw_total_time(f, player, colors, layout.progress_time_right);
 
+        widgets::draw_speed(f, player, colors, layout.speed);
         if config.visible.mode_icon {
             widgets::draw_mode_icon(f, player, colors, layout.mode_icon);
         }

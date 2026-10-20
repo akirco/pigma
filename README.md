@@ -76,6 +76,7 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 - [x] 重写playerbar(支持歌曲封面)
 - [x] 云盘上传（缓存文件，本地文件）
 - [x] 音量控制
+- [x] 变速播放（`[` / `]` 每档 0.1，0.5–2.0x；`t` 切换两种变速方式：WSOLA 时域拉伸保持音调（播放条显示 `*1.2x`）与重采样保持原声质感（显示 `1.2x`），进度与歌词自动跟随）
 - [x] 更多layout支持
 - [x] 支持系统包管理器安装(yay,paru,scoop)
 - [x] 支持搜索多源
@@ -179,6 +180,8 @@ cargo build --release
 | /             |                  搜索/过滤                   |
 | b             |                   样式切换                   |
 | left /right   |                   seek 15s                   |
+| `[` / `]`     | 播放速度 -0.1 / +0.1（默认 1.0x） |
+| `t`           | 切换变速方式：保持音调 `*1.2x` ↔ 重采样 `1.2x` |
 | p /n          |                上一首/下一首                 |
 | ctrl+p        |                command panel                 |
 | L             |               登录网易云                     |
@@ -225,9 +228,14 @@ Add-Content $PROFILE '. "$HOME/.config/powershell/pigma.ps1"'
 | `pigma msg switch-list <endpoint>` | 动态切换守护进程的队列到指定端点（如 `recommend_songs`、`toplist`），歌单端点可用 `--playlist N` 选第 N 个 |
 | `pigma msg volume 75` | 绝对音量（0-100） |
 | `pigma msg volume +5` / `-10` | 相对 ±%（与 TUI 的 `+` / `-` 一致，支持负数） |
+| `pigma msg speed 1.5` | 绝对播放速度（0.5–2.0，超范围自动夹紧） |
+| `pigma msg speed +0.1` / `-0.1` | 相对步长 ±0.1（与 TUI 的 `[` / `]` 一致） |
+| `pigma msg pitch on` / `off` | 变速是否保持音调（`on` = WSOLA 拉伸，播放条显示 `*1.2x`；`off` = 重采样） |
+| `pigma msg pitch` / `toggle` | 翻转该开关（与 TUI 的 `t` 一致） |
 
 `pigma status` 的 `--template` 支持占位符：`{name}` `{artist}` `{album}` `{current}`/`{position}`
-`{duration}` `{volume}` `{status}` `{mode}` `{id}` `{liked}`。
+`{duration}` `{volume}` `{speed}` `{speed_badge}` `{status}` `{mode}` `{id}` `{liked}`
+（`{speed_badge}` 与播放条一致：保持音调时带 `*` 前缀，如 `*1.2x`）。
 未指定时默认模板来自配置项 `cli_status_template`；`--json` 优先于配置项
 `cli_status_format`（见 [config.example.toml](./config.example.toml)）。
 
@@ -258,6 +266,10 @@ printf '{"cmd":"msg","action":{"action":"toggle_like"}}\n'   | socat - "$HOME/.c
 # 音量：绝对（0.0-1.0）或相对增量
 printf '{"cmd":"msg","action":{"action":"volume","absolute":0.75}}\n' | socat - "$HOME/.cache/pigma/pigma.sock"
 printf '{"cmd":"msg","action":{"action":"volume","delta":0.05}}\n'    | socat - "$HOME/.cache/pigma/pigma.sock"
+
+# 播放速度：绝对（如 1.5）或相对步长（如 0.1）
+printf '{"cmd":"msg","action":{"action":"speed","absolute":1.5}}\n'  | socat - "$HOME/.cache/pigma/pigma.sock"
+printf '{"cmd":"msg","action":{"action":"speed","delta":-0.1}}\n'    | socat - "$HOME/.cache/pigma/pigma.sock"
 
 # 切换队列到指定端点（歌单端点可用 "playlist" 选第 N 个，1 起始）
 printf '{"cmd":"msg","action":{"action":"switch_list","endpoint":"toplist","playlist":2}}\n' | socat - "$HOME/.cache/pigma/pigma.sock"

@@ -13,10 +13,11 @@ mod source;
 mod state;
 mod storage;
 mod stream_client;
+mod stretch;
 
 pub use cover::CoverState;
 pub use engine::{NCM_SEARCH_QUEUE_KEY, PlaybackEngine, THIRD_PARTY_QUEUE_KEY};
 pub use lyrics::{LyricLine, parse_lyric_lines};
 pub use mode::{PlayMode, mode_icon};
 pub use scan::scan_local_music;
-pub use state::PlaybackState;
+pub use state::{MAX_SPEED, MIN_SPEED, PlaybackState, SPEED_STEP};

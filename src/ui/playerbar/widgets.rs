@@ -104,6 +104,24 @@ pub(super) fn draw_spinner(f: &mut Frame, tick: u64, colors: &Theme, area: Rect)
     );
 }
 
+/// Playback-speed badge, e.g. `1.2x`, drawn at the right end of the player bar.
+/// Hidden at normal (1.0x) speed so the bar only shows it once `[`/`]` moved it.
+pub(super) fn draw_speed(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
+    let Some(badge) = player.speed_badge() else {
+        return;
+    };
+    f.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            badge,
+            Style::default()
+                .fg(colors.accent)
+                .add_modifier(Modifier::BOLD),
+        )))
+        .alignment(Alignment::Right),
+        area,
+    );
+}
+
 pub(super) fn draw_current_time(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     if let Some(song) = &player.current_song {
         let cur_ms = (player.progress * song.duration as f64) as u64;

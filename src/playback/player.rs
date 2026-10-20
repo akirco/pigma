@@ -13,6 +13,8 @@ use rodio::{
 };
 use tokio::sync::mpsc;
 
+use super::stretch::{SpeedHandle, SpeedMode, Stretch};
+
 use crate::event::{Event, PlaybackEvent};
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
 use crate::utils::process::mem_rss_kb;
@@ -87,6 +89,9 @@ pub enum ControlCmd {
     Resume,
     Stop,
     SetVolume(f32),
+    SetSpeed(f32),
+    /// Keep the pitch (WSOLA stretch) or shift it (resampling).
+    SetSpeedMode(SpeedMode),
 }
 
 /// Run the audio player as a persistent blocking task. The task is spawned once
@@ -100,6 +105,8 @@ pub(super) fn run(
     initial_reader: SharedReader,
     initial_seek_time: Option<Duration>,
     initial_volume: f32,
+    initial_speed: f32,
+    initial_speed_mode: SpeedMode,
     event_tx: mpsc::UnboundedSender<Event>,
     control_rx: std::sync::mpsc::Receiver<ControlCmd>,
 ) {
@@ -109,6 +116,17 @@ pub(super) fn run(
         let mut total_duration: Option<Duration> = None;
         let mut seek_offset: Duration = Duration::default();
         let mut volume = initial_volume;
+        // Playback speed. rodio's `Player::set_speed` resamples (raising the
+        // source's sample rate), which shifts the pitch by the same factor —
+        // unusable for music. The speed therefore lives in a pitch-preserving
+        // WSOLA stretcher (`Stretch`) wrapped around every source we append:
+        // the sample rate stays put, only the tempo changes.
+        //
+        // The handle is shared with each source it creates; `position()`
+        // reports how far into the *recording* the output has got, which is
+        // what the progress events and the rebuild/resume logic below need.
+        let speed = SpeedHandle::new(initial_speed);
+        speed.set_mode(initial_speed_mode);
         // Owned by this task; recreated whenever the output device is lost.
         let mut sink: Option<rodio::MixerDeviceSink> = None;
         let health = Arc::new(DeviceHealth {
@@ -138,6 +156,14 @@ pub(super) fn run(
             }};
         }
 
+        // Position within the recording: where the stretcher has read to, plus
+        // the offset the current source was seeked to.
+        macro_rules! song_pos {
+            () => {
+                seek_offset + speed.position()
+            };
+        }
+
         macro_rules! start_playback {
             ($seek_time:expr) => {{
                 let input = reader.clone();
@@ -145,7 +171,7 @@ pub(super) fn run(
                     Ok(d) => {
                         total_duration = d.total_duration();
                         let seek_time = $seek_time;
-                        let (source, offset): (Box<dyn Source<Item = f32> + Send>, Duration) =
+                        let (stretched, offset): (Box<dyn Source<Item = f32> + Send>, Duration) =
                             if let Some(t) = seek_time {
                                 let mut d = d;
                                 if d.try_seek(t).is_err() {
@@ -157,6 +183,10 @@ pub(super) fn run(
                             } else {
                                 (Box::new(d), Duration::default())
                             };
+                        // Pitch-preserving speed control lives here rather than
+                        // on the Player, whose `set_speed` would resample.
+                        let source: Box<dyn Source<Item = f32> + Send> =
+                            Box::new(Stretch::new(stretched, speed.clone()));
                         seek_offset = offset;
                         let p = rodio::Player::connect_new(
                             &sink.as_ref().expect("sink ensured").mixer().clone(),
@@ -277,6 +307,14 @@ pub(super) fn run(
                             p.set_volume(v);
                         }
                     }
+                    ControlCmd::SetSpeed(v) => {
+                        // The running source picks the new factor up at its next
+                        // block boundary (~46ms); no decoder restart.
+                        speed.set(v);
+                    }
+                    ControlCmd::SetSpeedMode(mode) => {
+                        speed.set_mode(mode);
+                    }
                 },
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
@@ -285,7 +323,7 @@ pub(super) fn run(
             // Fatal stream error (device removed etc.) — rebuild and resume at
             // the last known position.
             if health.device_lost.load(Ordering::Relaxed) {
-                let resume_at = player.as_ref().map(|p| p.get_pos() + seek_offset);
+                let resume_at = player.as_ref().map(|_| song_pos!());
                 let was_paused = player.as_ref().is_some_and(|p| p.is_paused());
                 rebuild_sink!(resume_at, was_paused);
                 continue;
@@ -313,7 +351,7 @@ pub(super) fn run(
                             sink_dev_id.as_deref().unwrap_or("?")
                         );
                         follow_diff = 0;
-                        let resume_at = player.as_ref().map(|p| p.get_pos() + seek_offset);
+                        let resume_at = player.as_ref().map(|_| song_pos!());
                         let was_paused = player.as_ref().is_some_and(|p| p.is_paused());
                         rebuild_sink!(resume_at, was_paused);
                         continue;
@@ -339,7 +377,7 @@ pub(super) fn run(
                 }
 
                 if !p.is_paused() {
-                    let pos = p.get_pos() + seek_offset;
+                    let pos = song_pos!();
                     let _ = event_tx.send(
                         PlaybackEvent::Progress {
                             position: pos,

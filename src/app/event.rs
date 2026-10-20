@@ -86,6 +86,23 @@ impl App {
                     self.toast(format!("   {:.0}%", volume * 100.0));
                 }
             }
+            IpcEvent::Speed { delta, absolute } => {
+                if let Some(delta) = delta {
+                    self.adjust_speed(delta);
+                } else if let Some(speed) = absolute {
+                    self.playback.set_speed(speed);
+                    self.speed_toast();
+                }
+            }
+            IpcEvent::Pitch { locked } => {
+                match locked {
+                    Some(locked) => self.playback.set_pitch_locked(locked),
+                    None => {
+                        self.playback.toggle_pitch_locked();
+                    }
+                }
+                self.speed_toast();
+            }
             IpcEvent::Mode => {
                 let mode = self.playback.cycle_mode();
                 let (_, label) = crate::playback::mode_icon(&mode);
