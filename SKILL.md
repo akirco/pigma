@@ -215,7 +215,7 @@ Windows 命名管道协议相同，socket 路径可用 `--socket <pipe-name>` �
 配置文件默认 `~/.config/pigma/config.toml`（Linux）。与 CLI 相关的项：
 - `cli_status_template`：`pigma status` 默认 plain 模板。
 - `cli_status_format`：`plain` 或 `json`；命令行 `--json` 优先。
-- 其他项见 `config.example.toml`。
+- 其他项见 `assets/config.example.toml`。
 
 ---
 
@@ -226,9 +226,9 @@ Windows 命名管道协议相同，socket 路径可用 `--socket <pipe-name>` �
 pigma -d
 pigma msg play
 
-# 2. Waybar 状态模块（bash 脚本，每秒轮询；参考 waybar/pigma）
-waybar/pigma                              # 主状态：song – artist | vol% · mode
-waybar/pigma --icon like                  # 按钮图标：like | play | prev | next
+# 2. Waybar 状态模块（bash 脚本，每秒轮询；参考 assets/waybar/pigma）
+assets/waybar/pigma                       # 主状态：song – artist | vol% · mode
+assets/waybar/pigma --icon like                  # 按钮图标：like | play | prev | next
 pigma status --json                       # 原始 JSON 输出（脚本内部调用）
 pigma status --template "{artist} – {name} [{status}]"
 
