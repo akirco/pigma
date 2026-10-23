@@ -81,7 +81,7 @@ impl App {
         config: &Config,
         search_proxy: &str,
         youtube_proxy: &str,
-    ) -> color_eyre::Result<Arc<SonarFinder>> {
+    ) -> eyre::Result<Arc<SonarFinder>> {
         let mut sources: Vec<sonar::SonarSource> = Vec::new();
         for name in &config.source_fallback.providers {
             let source = match name.as_str() {
@@ -100,7 +100,7 @@ impl App {
             .with_timeout(config.source_fallback.timeout_ms)
             .with_search_proxy(search_proxy.to_string())
             .with_youtube_proxy(youtube_proxy.to_string());
-        let finder = sonar::SonarFinder::new(search_config).map_err(color_eyre::Report::msg)?;
+        let finder = sonar::SonarFinder::new(search_config).map_err(eyre::Report::msg)?;
         Ok(Arc::new(finder))
     }
 
@@ -126,11 +126,11 @@ impl App {
     }
 
     /// Build a blocking HTTP client for the given proxy address; an empty address connects directly.
-    pub(super) fn build_http_client(proxy: &str) -> color_eyre::Result<Client> {
+    pub(super) fn build_http_client(proxy: &str) -> eyre::Result<Client> {
         let mut builder = Client::builder();
         if !proxy.is_empty() {
-            builder = builder.proxy(reqwest::Proxy::all(proxy).map_err(color_eyre::Report::msg)?);
+            builder = builder.proxy(reqwest::Proxy::all(proxy).map_err(eyre::Report::msg)?);
         }
-        builder.build().map_err(color_eyre::Report::msg)
+        builder.build().map_err(eyre::Report::msg)
     }
 }

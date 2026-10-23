@@ -11,7 +11,10 @@ use crossterm::{
     execute,
     style::ResetColor,
 };
-use pigma::cli::{Cli, run_cli};
+use pigma::{
+    cli::{Cli, run_cli},
+    logger::flush_logger,
+};
 
 struct TerminalGuard;
 
@@ -29,16 +32,21 @@ impl Drop for TerminalGuard {
         }
         let _ = write!(output, "\r\n");
         let _ = output.flush();
+        // The file logger is buffered; flush here so lines written just before a
+        // panic still reach disk on the unwind path. This `Drop` does not run at
+        // all in release builds (`panic = "abort"`); there only the immediate
+        // flush of warn/error records survives a crash.
+        flush_logger();
     }
 }
 
 #[tokio::main]
-async fn main() -> color_eyre::Result<()> {
+async fn main() -> eyre::Result<()> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let cli = Cli::parse();
 
     // CLI subcommands (`status`/`msg`/`completions`) are one-shot queries; when
-    // they fail, print a single clean line instead of the color_eyre trace.
+    // they fail, print a single clean line instead of the eyre report.
     let app = match run_cli(cli).await {
         Ok(app) => app,
         Err(err) => {
@@ -51,16 +59,28 @@ async fn main() -> color_eyre::Result<()> {
                 .print()
                 .expect("failed to write error");
             eprintln!();
+            // `process::exit` skips destructors, and the logger is buffered, so
+            // flush explicitly or the context lines leading up to the failure
+            // are lost.
+            flush_logger();
             std::process::exit(1);
         }
     };
-    let Some(app) = app else {
-        return Ok(());
+    let result = match app {
+        Some(app) => {
+            let terminal = ratatui::init();
+            let _terminal_guard = TerminalGuard;
+            execute!(stdout(), EnableMouseCapture)?;
+            app.run(terminal).await
+        }
+        // Headless daemon already ran `run_cli`; nothing left to drive here.
+        None => Ok(()),
     };
-
-    color_eyre::install()?;
-    let terminal = ratatui::init();
-    let _terminal_guard = TerminalGuard;
-    execute!(stdout(), EnableMouseCapture)?;
-    app.run(terminal).await
+    // The file logger is buffered. The panic/unwind path is covered by
+    // `TerminalGuard`'s drop; this flush covers clean returns, including the
+    // headless `None` branch that never builds a `TerminalGuard`. The logger is
+    // only installed once `run_cli` gets past the one-shot
+    // `status`/`msg`/`completions` branches.
+    flush_logger();
+    result
 }

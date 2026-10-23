@@ -150,7 +150,7 @@ pub enum MsgActionArg {
 /* -------------------------------------------------------------------------- */
 
 /// `pigma status` handler.
-pub async fn status(template: &str, json: bool, list: bool) -> color_eyre::Result<()> {
+pub async fn status(template: &str, json: bool, list: bool) -> eyre::Result<()> {
     let config = Config::load();
     if list {
         let queue = ipc::fetch_queue().await?;
@@ -204,13 +204,11 @@ pub async fn msg(
     action: MsgActionArg,
     value: Option<&str>,
     playlist: Option<usize>,
-) -> color_eyre::Result<()> {
+) -> eyre::Result<()> {
     match action {
         MsgActionArg::Search => {
             let keyword = value.ok_or_else(|| {
-                color_eyre::eyre::eyre!(
-                    "search requires a keyword (e.g. `pigma msg search 周杰伦`)"
-                )
+                eyre::eyre!("search requires a keyword (e.g. `pigma msg search 周杰伦`)")
             })?;
             let results = ipc::search_songs(keyword).await?;
             if results.is_empty() {
@@ -237,7 +235,7 @@ fn parse_msg_action(
     action: MsgActionArg,
     value: Option<&str>,
     playlist: Option<usize>,
-) -> color_eyre::Result<MsgAction> {
+) -> eyre::Result<MsgAction> {
     match action {
         MsgActionArg::Previous => Ok(MsgAction::Previous),
         MsgActionArg::Next => Ok(MsgAction::Next),
@@ -246,9 +244,7 @@ fn parse_msg_action(
             let song_id = match value {
                 None => None,
                 Some(v) => Some(v.parse().map_err(|_| {
-                    color_eyre::eyre::eyre!(
-                        "invalid song id `{v}` (expected a number, or omit to play/resume)"
-                    )
+                    eyre::eyre!("invalid song id `{v}` (expected a number, or omit to play/resume)")
                 })?),
             };
             Ok(MsgAction::Play { song_id })
@@ -256,7 +252,7 @@ fn parse_msg_action(
         MsgActionArg::TogglePlay => Ok(MsgAction::TogglePlay),
         MsgActionArg::SwitchList => {
             let endpoint = value.ok_or_else(|| {
-                color_eyre::eyre::eyre!(
+                eyre::eyre!(
                     "switch-list requires an endpoint (e.g. `pigma msg switch-list toplist`)"
                 )
             })?;
@@ -266,14 +262,13 @@ fn parse_msg_action(
             })
         }
         MsgActionArg::Volume => {
-            let value = value.ok_or_else(|| {
-                color_eyre::eyre::eyre!("volume requires a value like `75`, `+5` or `-5`")
-            })?;
+            let value = value
+                .ok_or_else(|| eyre::eyre!("volume requires a value like `75`, `+5` or `-5`"))?;
             parse_volume(value)
         }
         MsgActionArg::Speed => {
             let value = value.ok_or_else(|| {
-                color_eyre::eyre::eyre!("speed requires a value like `1.5`, `+0.1` or `-0.1`")
+                eyre::eyre!("speed requires a value like `1.5`, `+0.1` or `-0.1`")
             })?;
             parse_speed(value)
         }
@@ -292,8 +287,8 @@ fn parse_msg_action(
 /// Parse a volume value. A leading `+`/`-` is a delta (percent) applied via
 /// `adjust_volume`, matching the TUI's `+`/`-` keys; a bare number is an
 /// absolute volume percent.
-fn parse_volume(value: &str) -> color_eyre::Result<MsgAction> {
-    let err = || color_eyre::eyre::eyre!("invalid volume `{value}`");
+fn parse_volume(value: &str) -> eyre::Result<MsgAction> {
+    let err = || eyre::eyre!("invalid volume `{value}`");
     if let Some(delta) = value.strip_prefix('+').or_else(|| value.strip_prefix('-')) {
         let number: f64 = delta.parse().map_err(|_| err())?;
         let signed = if value.starts_with('-') {
@@ -321,8 +316,8 @@ fn parse_volume(value: &str) -> color_eyre::Result<MsgAction> {
 /// `adjust_speed` (matching the TUI's `[`/`]` keys, e.g. `+0.1`); a bare number
 /// is an absolute factor (e.g. `1.5`). The daemon clamps both into the
 /// supported range.
-fn parse_speed(value: &str) -> color_eyre::Result<MsgAction> {
-    let err = || color_eyre::eyre::eyre!("invalid speed `{value}` (expected e.g. `1.5`, `+0.1`)");
+fn parse_speed(value: &str) -> eyre::Result<MsgAction> {
+    let err = || eyre::eyre!("invalid speed `{value}` (expected e.g. `1.5`, `+0.1`)");
     if let Some(delta) = value.strip_prefix('+').or_else(|| value.strip_prefix('-')) {
         let number: f64 = delta.parse().map_err(|_| err())?;
         let signed = if value.starts_with('-') {
@@ -349,12 +344,12 @@ fn parse_speed(value: &str) -> color_eyre::Result<MsgAction> {
 /// Parse the `pitch` value: `on`/`true`/`1` locks the pitch (WSOLA stretch, the
 /// badge gains `*`), `off`/`false`/`0` resamples; `toggle` or no value asks the
 /// daemon to flip it (`None`).
-fn parse_pitch(value: Option<&str>) -> color_eyre::Result<Option<bool>> {
+fn parse_pitch(value: Option<&str>) -> eyre::Result<Option<bool>> {
     match value.unwrap_or("toggle") {
         "on" | "true" | "1" | "lock" => Ok(Some(true)),
         "off" | "false" | "0" | "unlock" => Ok(Some(false)),
         "toggle" | "flip" => Ok(None),
-        other => Err(color_eyre::eyre::eyre!(
+        other => Err(eyre::eyre!(
             "invalid pitch `{other}` (expected `on`, `off` or `toggle`)"
         )),
     }
@@ -400,7 +395,7 @@ fn format_status(template: &str, s: &StatusSnapshot) -> String {
 
 /// `pigma completions <shell>` handler: print a shell completion script for the
 /// `pigma` CLI to stdout.
-fn completions(shell: &str) -> color_eyre::Result<()> {
+fn completions(shell: &str) -> eyre::Result<()> {
     let mut cmd = <Cli as clap::CommandFactory>::command();
     let mut out = std::io::stdout();
     match shell {
@@ -417,9 +412,7 @@ fn completions(shell: &str) -> color_eyre::Result<()> {
             &mut out,
         ),
         other => {
-            color_eyre::eyre::bail!(
-                "unsupported shell `{other}` (expected bash/zsh/fish/elvish/powershell)"
-            )
+            eyre::bail!("unsupported shell `{other}` (expected bash/zsh/fish/elvish/powershell)")
         }
     }
     Ok(())
@@ -431,7 +424,7 @@ fn completions(shell: &str) -> color_eyre::Result<()> {
 fn parse_daemon_endpoint(
     value: &str,
     playlist: Option<usize>,
-) -> color_eyre::Result<(String, Option<usize>)> {
+) -> eyre::Result<(String, Option<usize>)> {
     if let Some((ep, idx)) = value.rsplit_once(':')
         && !ep.is_empty()
         && let Ok(n) = idx.parse::<usize>()
@@ -444,14 +437,12 @@ fn parse_daemon_endpoint(
     }
     // A trailing `:N` that failed to parse is a user error, not an endpoint.
     if value.contains(':') {
-        color_eyre::eyre::bail!(
-            "invalid playlist index in `{value}` (expected `ENDPOINT:N` with N > 0)"
-        );
+        eyre::bail!("invalid playlist index in `{value}` (expected `ENDPOINT:N` with N > 0)");
     }
     Ok((value.to_string(), None))
 }
 
-pub async fn run_cli(mut cli: Cli) -> color_eyre::Result<Option<App>> {
+pub async fn run_cli(mut cli: Cli) -> eyre::Result<Option<App>> {
     let socket = match &cli.command {
         Some(Command::Status {
             socket: cmd_socket, ..

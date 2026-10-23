@@ -22,19 +22,16 @@ mod title;
 mod toast;
 mod topbar;
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use ratatui::Frame;
 
 use crate::{
     app::App,
-    config::NavPosition,
+    config::{Config, NavPosition},
     layout,
-    state::Page,
-    ui::{
-        block::{BlockStyle, CornerBlock},
-        title::render_title,
-    },
+    state::{NavigationState, Page},
+    ui::block::{BlockStyle, CornerBlock},
 };
 
 pub fn draw(f: &mut Frame, app: &mut App) {
@@ -91,93 +88,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             );
 
             match page {
-                Page::Main => {
-                    match app.config.navigation_position {
-                        NavPosition::Left | NavPosition::Right => {
-                            if lay.sidebar.width > 0 {
-                                navigation::draw(
-                                    f,
-                                    &mut app.state.navigation.nav,
-                                    &bs,
-                                    &app.config.titles.sidebar,
-                                    lay.sidebar,
-                                );
-                            }
-
-                            breadcrumb::render_breadcrumb(
-                                f,
-                                &app.state.navigation.nav,
-                                &bs,
-                                lay.breadcrumb,
-                            );
-                        }
-                        NavPosition::Top | NavPosition::Bottom => {
-                            navigation::draw_top(f, &mut app.state.navigation.nav, &bs, lay.nav);
-                        }
-                    }
-
-                    let nav = &app.state.navigation.nav;
-                    let current_item = nav.selected_item();
-
-                    let title = {
-                        let nst = &app.state.navigation;
-                        let focus = nst.nav.focus_section;
-                        let selected = nst.nav.selected_index();
-                        let generation = nst.generation;
-                        let count = nst.content.len();
-                        let cached = nst.title_cache.borrow();
-                        if let Some((ref title, f, s, g, c)) = *cached
-                            && f == focus
-                            && s == selected
-                            && g == generation
-                            && c == count
-                        {
-                            Arc::clone(title)
-                        } else {
-                            drop(cached);
-                            let name = current_item
-                                .map(|item| item.name.as_str())
-                                .unwrap_or("SONGS");
-                            let total = nst
-                                .pagination
-                                .as_ref()
-                                .map(|p| p.total as usize)
-                                .unwrap_or(count);
-                            // When content is paged (total known), show `count/total` like the
-                            // music cloud drive; non-paged content shows only the loaded count.
-                            // Each nav item can also override this via `title_template`.
-                            let show_total = nst.pagination.as_ref().is_some_and(|p| p.total > 0);
-                            let template = current_item
-                                .and_then(|item| item.title_template.as_deref())
-                                .unwrap_or(if show_total {
-                                    "\u{25BA} {name} ({count}/{total}) \u{25C4}"
-                                } else {
-                                    "\u{25BA} {name} ({count}) \u{25C4}"
-                                });
-                            let title = Arc::new(render_title(template, name, count, total));
-                            *nst.title_cache.borrow_mut() =
-                                Some((Arc::clone(&title), focus, selected, generation, count));
-                            title
-                        }
-                    };
-                    let block = CornerBlock::from_color(&bs, bs.colors.bg).title(&title, bs.colors);
-                    let inner = block.inner(lay.content);
-                    f.render_widget(block, lay.content);
-
-                    let api = nav.selected_api();
-
-                    content::render_content(
-                        f,
-                        &app.state.navigation.content,
-                        &app.config.columns,
-                        api,
-                        &bs,
-                        &mut app.state.navigation.table_state,
-                        app.state.navigation.content_selected,
-                        app.state.navigation.table_mode,
-                        inner,
-                    );
-                }
+                Page::Main => draw_main(f, &mut app.state.navigation, &app.config, &bs, &lay),
                 Page::Lyrics => {
                     lyrics::draw(
                         f,
@@ -217,4 +128,44 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
 
     toast::draw_toast(f, app, colors);
+}
+
+/// Main content page: navigation sidebar/topbar, content title block and table.
+fn draw_main(
+    f: &mut Frame,
+    nav: &mut NavigationState,
+    config: &Config,
+    bs: &BlockStyle<'_>,
+    lay: &layout::LayoutAreas,
+) {
+    match config.navigation_position {
+        NavPosition::Left | NavPosition::Right => {
+            if lay.sidebar.width > 0 {
+                navigation::draw(f, &mut nav.nav, bs, &config.titles.sidebar, lay.sidebar);
+            }
+
+            breadcrumb::render_breadcrumb(f, &nav.nav, bs, lay.breadcrumb);
+        }
+        NavPosition::Top | NavPosition::Bottom => {
+            navigation::draw_top(f, &mut nav.nav, bs, lay.nav);
+        }
+    }
+
+    let title = title::content_title(nav);
+    let block = CornerBlock::from_color(bs, bs.colors.bg).title(&title, bs.colors);
+    let inner = block.inner(lay.content);
+    f.render_widget(block, lay.content);
+
+    let api = nav.nav.selected_api();
+    content::render_content(
+        f,
+        &nav.content,
+        &config.columns,
+        api,
+        bs,
+        &mut nav.table_state,
+        nav.content_selected,
+        nav.table_mode,
+        inner,
+    );
 }

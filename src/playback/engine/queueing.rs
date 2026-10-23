@@ -9,7 +9,10 @@ use super::{
     PlaybackEngine,
     mode::{self, PlayMode},
 };
-use crate::playback::{queue::PlaylistQueue, storage::PlaylistStorage};
+use crate::{
+    playback::{queue::PlaylistQueue, storage::PlaylistStorage},
+    utils::lock_recover,
+};
 
 impl PlaybackEngine {
     pub fn song_at(&self, index: usize) -> Option<&Arc<SongInfo>> {
@@ -259,9 +262,7 @@ impl PlaybackEngine {
         if playing_from_this_queue {
             self.stop();
         }
-        if let Ok(mut registry) = self.source.sonar_songs.lock() {
-            registry.clear();
-        }
+        lock_recover(&self.source.sonar_songs).clear();
         if !self.active_queue_id.is_empty() {
             self.storage
                 .delete_queue(&self.active_queue_id, &self.active_queue_key);

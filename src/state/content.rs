@@ -64,8 +64,14 @@ impl ContentState {
         let ContentState::Songs(songs) = self else {
             return 0;
         };
-        let mut ids: std::collections::HashSet<u64> = songs.iter().map(|song| song.id).collect();
+        if new_songs.is_empty() {
+            return 0;
+        }
+        let mut ids: std::collections::HashSet<u64> =
+            std::collections::HashSet::with_capacity(songs.len() + new_songs.len());
+        ids.extend(songs.iter().map(|song| song.id));
         let previous_len = songs.len();
+        songs.reserve(new_songs.len());
         songs.extend(new_songs.into_iter().filter(|song| ids.insert(song.id)));
         songs.len() - previous_len
     }

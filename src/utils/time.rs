@@ -36,14 +36,14 @@ pub fn format_duration(ms: u64) -> String {
     s
 }
 
-/// Write a `MM:SS` (or `H:MM:SS`) duration into `out`, reusing its allocation.
-/// Avoids a per-call `String` allocation on hot render paths.
+/// Append a `MM:SS` (or `H:MM:SS`) duration to `out`, reusing its allocation.
+/// Avoids a per-call `String` allocation on hot render paths. Appends rather
+/// than replacing so a caller can build `cur / total` in one buffer.
 pub fn format_duration_into(ms: u64, out: &mut String) {
     let total_secs = ms / 1000;
     let hours = total_secs / 3600;
     let mins = (total_secs % 3600) / 60;
     let secs = total_secs % 60;
-    out.clear();
     if hours > 0 {
         use std::fmt::Write;
         let _ = write!(out, "{}:{:02}:{:02}", hours, mins, secs);
@@ -51,6 +51,14 @@ pub fn format_duration_into(ms: u64, out: &mut String) {
         use std::fmt::Write;
         let _ = write!(out, "{:02}:{:02}", mins, secs);
     }
+}
+
+/// Unix timestamp in whole seconds (`0` if the clock is before the epoch).
+pub fn unix_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// Parse a `MM:SS` / `HH:MM:SS` duration string into total seconds.
@@ -93,5 +101,14 @@ mod tests {
     fn parse_mmss() {
         assert_eq!(parse_duration_secs("3:30"), Some(210));
         assert_eq!(parse_duration_secs("1:03:30"), Some(3810));
+    }
+
+    #[test]
+    fn duration_into_appends_so_callers_can_join() {
+        let mut s = String::new();
+        format_duration_into(90_000, &mut s);
+        s.push_str(" / ");
+        format_duration_into(3_660_000, &mut s);
+        assert_eq!(s, "01:30 / 1:01:00");
     }
 }

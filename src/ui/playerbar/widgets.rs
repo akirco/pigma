@@ -11,7 +11,7 @@ use crate::{
     config::{PlayerbarConfig, Theme},
     playback::{PlaybackState, mode_icon},
     ui::{gradient_line_gauge::GradientLineGauge, spinner::Spinner},
-    utils::{format_duration_into, time::format_duration},
+    utils::{format_duration_into, lock_recover},
 };
 
 pub(super) fn draw_song_info(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
@@ -105,11 +105,9 @@ pub(super) fn draw_spinner(f: &mut Frame, tick: u64, colors: &Theme, area: Rect)
 }
 
 /// Playback-speed badge, e.g. `1.2x`, drawn at the right end of the player bar.
-/// Hidden at normal (1.0x) speed so the bar only shows it once `[`/`]` moved it.
+/// Always visible, including the default `1.0x`, so the slot never stays blank.
 pub(super) fn draw_speed(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
-    let Some(badge) = player.speed_badge() else {
-        return;
-    };
+    let badge = player.speed_badge();
     f.render_widget(
         Paragraph::new(Line::from(Span::styled(
             badge,
@@ -182,7 +180,7 @@ pub(super) fn draw_gauge_with_label(
         let mut buf = String::with_capacity(16);
         format_duration_into(cur_ms, &mut buf);
         buf.push_str(" / ");
-        buf.push_str(&format_duration(song.duration));
+        format_duration_into(song.duration, &mut buf);
         buf
     } else {
         "00:00 / 00:00".into()
@@ -279,12 +277,13 @@ pub(super) fn draw_volume(f: &mut Frame, player: &PlaybackState, colors: &Theme,
 pub(super) fn draw_cover(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     if player.current_song.is_some() {
         // Try to render real cover image if available
-        if let Ok(mut borrow) = player.cover.protocol.lock()
-            && let Some(protocol) = borrow.as_mut()
         {
-            let image = StatefulImage::new().resize(Resize::Fit(None));
-            f.render_stateful_widget(image, area, protocol);
-            return;
+            let mut guard = lock_recover(&player.cover.protocol);
+            if let Some(protocol) = guard.as_mut() {
+                let image = StatefulImage::new().resize(Resize::Fit(None));
+                f.render_stateful_widget(image, area, protocol);
+                return;
+            }
         }
 
         // Fallback to placeholder (no border)

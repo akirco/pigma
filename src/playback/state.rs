@@ -66,14 +66,12 @@ pub fn clamp_speed(speed: f64) -> f64 {
 
 impl PlaybackState {
     /// The speed as shown on the player bar: `*1.2x` when the pitch is kept,
-    /// `1.2x` when the speed change also shifts the pitch, and `None` at normal
-    /// speed so nothing is drawn.
-    pub fn speed_badge(&self) -> Option<String> {
-        if (self.speed - 1.0).abs() < f64::EPSILON {
-            return None;
-        }
+    /// `1.2x` when the speed change also shifts the pitch. Always rendered,
+    /// including the default `1.0x`, so the player bar does not leave a blank
+    /// slot.
+    pub fn speed_badge(&self) -> String {
         let star = if self.pitch_locked { "*" } else { "" };
-        Some(format!("{star}{:.1}x", self.speed))
+        format!("{star}{:.1}x", self.speed)
     }
 
     /// Round `speed` into the supported range, snapping to the nearest

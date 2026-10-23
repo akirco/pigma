@@ -24,10 +24,10 @@ impl NcmClient {
         let bytes = self.http.get(&image_url).send().await?.bytes().await?;
         let parent = path.parent().map(|p| p.to_path_buf());
         tokio::task::spawn_blocking(move || {
-            if let Some(parent) = parent {
-                if let Err(e) = std::fs::create_dir_all(&parent) {
-                    log::warn!("failed to create image dir {:?}: {}", parent, e);
-                }
+            if let Some(parent) = parent
+                && let Err(e) = std::fs::create_dir_all(&parent)
+            {
+                log::warn!("failed to create image dir {:?}: {}", parent, e);
             }
             std::fs::write(&path, &bytes)
         })
@@ -48,10 +48,10 @@ impl NcmClient {
         let bytes = self.http.get(url).send().await?.bytes().await?;
         let parent = path.parent().map(|p| p.to_path_buf());
         tokio::task::spawn_blocking(move || {
-            if let Some(parent) = parent {
-                if let Err(e) = std::fs::create_dir_all(&parent) {
-                    log::warn!("failed to create song dir {:?}: {}", parent, e);
-                }
+            if let Some(parent) = parent
+                && let Err(e) = std::fs::create_dir_all(&parent)
+            {
+                log::warn!("failed to create song dir {:?}: {}", parent, e);
             }
             std::fs::write(&path, &bytes)
         })

@@ -73,7 +73,7 @@ pub struct App {
 impl App {
     /// `with_terminal` selects the interactive TUI event source (crossterm);
     /// pass `false` for headless daemon mode.
-    pub fn new(config: Config, with_terminal: bool) -> color_eyre::Result<Self> {
+    pub fn new(config: Config, with_terminal: bool) -> eyre::Result<Self> {
         let border = config.border.clone();
 
         let events = EventHandler::new(with_terminal);
@@ -225,6 +225,9 @@ impl App {
     pub fn quit(&mut self) {
         self.playback.save_session();
         self.service.client().flush_cookies();
+        // Persist any coalesced content-cache write that has not drained yet;
+        // the detached blocking writer may not run before the runtime exits.
+        self.service.cache().flush_content_cache();
         self.state.running = false;
     }
 
@@ -251,19 +254,27 @@ impl App {
     /// Report the current speed the way the player bar shows it: `*1.2x` when
     /// the pitch is kept, `1.2x` when the speed change shifts it.
     pub fn speed_toast(&mut self) {
-        let badge = self
-            .playback
-            .state
-            .speed_badge()
-            .unwrap_or_else(|| "1.0x".into());
+        let badge = self.playback.state.speed_badge();
         self.toast(format!("⚡ 速度 {badge}"));
+    }
+
+    /// Report the current speed/pitch mode: keeping the pitch (WSOLA stretch)
+    /// vs. letting the speed shift it (resampling). A bare `*1.0x` badge does
+    /// not tell the two apart at normal speed, so spell the mode out.
+    pub fn pitch_toast(&mut self) {
+        let mode = if self.playback.state.pitch_locked {
+            "⚡ 变速不变调（保持音高）"
+        } else {
+            "⚡ 变速也变调（音高跟随速度）"
+        };
+        self.toast(mode.into());
     }
 
     /// Flip between pitch-keeping (WSOLA stretch) and pitch-shifting
     /// (resampling) speed. Keyboard `t`.
     pub fn toggle_pitch_locked(&mut self) {
         self.playback.toggle_pitch_locked();
-        self.speed_toast();
+        self.pitch_toast();
     }
 
     /* -------------------------------------------------------------------------- */
@@ -282,7 +293,7 @@ impl App {
 
     /// Interactive terminal entry point (`pigma` without subcommands). Draws
     /// the UI, serves the IPC socket, and pumps the event loop until quit.
-    pub async fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
+    pub async fn run(mut self, mut terminal: DefaultTerminal) -> eyre::Result<()> {
         self.start_splash_boot();
         let _ipc_guard = crate::ipc::start_server(
             Arc::clone(&self.ipc.status),

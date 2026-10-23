@@ -75,8 +75,6 @@ pub(super) fn draw(
         ));
     }
 
-    // right_line.push(Span::styled("v0.1.0", Style::default().fg(colors.muted)));
-
     let right_line = right_line.alignment(Alignment::Right);
     f.render_widget(Paragraph::new(right_line), chunks[2]);
 }

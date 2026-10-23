@@ -1,6 +1,6 @@
 [package]
 name = "pigma"
-version = "0.2.15"
+version = "0.2.16"
 edition = "2024"
 description = "A netease cloud music client"
 repository = "https://github.com/akirco/pigma.git"
@@ -8,39 +8,37 @@ license = "Apache-2.0"
 # authors = ["akirco <earlfx@163.com>"]
 
 [dependencies]
-clap = { version = "4.6.6", features = ["derive"] }
+clap = { version = "4.6.7", features = ["derive"] }
 clap_complete = "4.6.11"
-color-eyre = "0.6.5"
 crossterm = { version = "0.29.0", features = ["event-stream"] }
 dirs = "7.0.0"
-futures = { version = "0.3.33", default-features = false, features = ["async-await", "std"] }
+eyre = "0.6.14"
+futures = { version = "0.3.33", default-features = false, features = ["std"] }
 image = { version = "0.25.10", default-features = false, features = ["jpeg"] }
 log = { version = "0.4.34", features = ["serde", "std"] }
 ncm-api = { path = "crates/ncm-api" }
-qrcode = "0.14.1"
+qrcode = { version = "0.14.1", default-features = false }
 rand = "0.10.3"
 ratatui = { version = "0.30.2", default-features = false, features = ["crossterm_0_29", "layout-cache", "serde"] }
 ratatui-image = { version = "11.1.0", default-features = false, features = ["crossterm"] }
 reqwest = { version = "0.13.4", default-features = false, features = ["rustls-no-provider"] }
-# rodio = { version = "0.22.2", default-features = false, features = ["flac", "mp3", "mp4", "playback", "vorbis", "wav"] }
 rodio = { version = "0.22.2", default-features = false, features = ["playback", "symphonia-aac", "symphonia-flac", "symphonia-isomp4", "symphonia-mp3", "symphonia-vorbis", "symphonia-wav"] }
-rustls = { version = "0.23.43", default-features = false, features = ["ring", "std"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std"] }
 serde = { version = "1.0.229", features = ["derive", "rc"] }
-serde_json = "1.0.151"
+serde_json = "1.0.154"
 sonar = { path = "crates/sonar" }
 stream-download = { version = "0.24.4", default-features = false, features = ["async-read", "reqwest", "temp-storage"] }
 time = { version = "0.3.55", features = ["formatting", "local-offset", "macros"] }
-tokio = { version = "1.53.1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
-toml_edit = { version = "0.25.15", features = ["serde"] }
+tokio = { version = "1.54.1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+toml_edit = { version = "0.25.17", features = ["serde"] }
 unicode-width = "0.2.2"
 url = "2.5.8"
-# dhat = "0.3.3"
 
 [dev-dependencies]
-rustls = { version = "0.23.43", default-features = false, features = ["ring", "std"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-libc = "0.2.189"
+libc = "0.2.191"
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
 [profile.release]
@@ -50,7 +48,3 @@ strip = true
 lto = true
 panic = "abort"
 codegen-units = 1
-
-# [features]
-# default = ["vorbis"]
-# vorbis = ["rodio/vorbis"]

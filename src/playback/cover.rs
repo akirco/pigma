@@ -2,6 +2,8 @@ use std::sync::{Arc, Mutex};
 
 use ratatui_image::protocol::StatefulProtocol;
 
+use crate::utils::lock_recover;
+
 /// Cover image state shared with async loaders. `protocol` holds the decoded
 /// image; `song_id` records which song the cover belongs to so a slow loader
 /// from a previously played song can't overwrite the current cover.
@@ -13,10 +15,7 @@ pub struct CoverState {
 impl std::fmt::Debug for CoverState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CoverState")
-            .field(
-                "has_cover",
-                &self.protocol.lock().map(|g| g.is_some()).unwrap_or(false),
-            )
+            .field("has_cover", &lock_recover(&self.protocol).is_some())
             .finish()
     }
 }

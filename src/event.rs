@@ -4,8 +4,8 @@
 
 use std::{sync::Arc, time::Duration};
 
-use color_eyre::eyre::OptionExt;
 use crossterm::event::Event as CrosstermEvent;
+use eyre::OptionExt;
 use futures::{FutureExt, StreamExt};
 use ncm_api::{LoginInfo, SongInfo};
 use tokio::sync::mpsc;
@@ -182,7 +182,7 @@ impl EventHandler {
         Self { sender, receiver }
     }
 
-    pub async fn next(&mut self) -> color_eyre::Result<Event> {
+    pub async fn next(&mut self) -> eyre::Result<Event> {
         self.receiver
             .recv()
             .await
@@ -209,7 +209,7 @@ impl EventTask {
         Self { sender }
     }
 
-    async fn run(self) -> color_eyre::Result<()> {
+    async fn run(self) -> eyre::Result<()> {
         let mut reader = crossterm::event::EventStream::new();
         loop {
             let crossterm_event = reader.next().fuse();

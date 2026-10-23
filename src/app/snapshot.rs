@@ -7,7 +7,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::ipc::{QueueSnapshot, StatusSnapshot};
+use crate::{
+    ipc::{QueueSnapshot, StatusSnapshot},
+    utils::lock_recover,
+};
 
 use super::App;
 
@@ -53,14 +56,23 @@ impl App {
     /// the event-loop rate.
     pub(super) fn update_status_snapshot(&mut self) {
         let snapshot = StatusSnapshot::from_playback(&self.playback.state);
-        let mut changed = false;
-        if let Ok(mut stored) = self.ipc.status.lock() {
-            changed = stored.meaningfully_differs(&snapshot);
-            *stored = snapshot.clone();
-        }
         let elapsed = self.ipc.last_broadcast.elapsed();
         let position_stale =
             snapshot.playing && !snapshot.paused && elapsed >= Duration::from_secs(1);
+
+        let mut changed = false;
+        {
+            let mut stored = lock_recover(&self.ipc.status);
+            if stored.meaningfully_differs(&snapshot) {
+                changed = true;
+                *stored = snapshot.clone();
+            } else {
+                // Same song/mode/etc — only the position advanced. Refresh it in
+                // place instead of rebuilding + replacing the whole (string-
+                // bearing) snapshot every loop iteration.
+                stored.position_ms = snapshot.position_ms;
+            }
+        }
         if changed || position_stale {
             self.ipc.last_broadcast = Instant::now();
             let _ = self.ipc.status_tx.send(snapshot);
@@ -68,18 +80,16 @@ impl App {
         let version = self.playback.queue_version();
         if version != self.ipc.last_queue_version {
             self.ipc.last_queue_version = version;
-            if let Ok(mut queue) = self.ipc.queue.lock() {
-                *queue = QueueSnapshot {
-                    key: self.playback.queue_key().to_string(),
-                    current_index: self.playback.queue_current_index(),
-                    songs: self
-                        .playback
-                        .queue_songs()
-                        .iter()
-                        .map(|s| crate::ipc::QueueEntry::from_song(s))
-                        .collect(),
-                };
-            }
+            *lock_recover(&self.ipc.queue) = QueueSnapshot {
+                key: self.playback.queue_key().to_string(),
+                current_index: self.playback.queue_current_index(),
+                songs: self
+                    .playback
+                    .queue_songs()
+                    .iter()
+                    .map(|s| crate::ipc::QueueEntry::from_song(s))
+                    .collect(),
+            };
         }
     }
 }

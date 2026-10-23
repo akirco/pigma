@@ -19,6 +19,7 @@ use crate::{
     ipc::SearchEntry,
     service::ApiService,
     state::{ContentState, SearchProvider},
+    utils::lock_recover,
 };
 
 /// Registry of recently searched songs keyed by song id, shared with `App` so
@@ -158,12 +159,8 @@ pub async fn search_sonar(
                 let source = SearchProvider::from_sonar(song.source)
                     .display_name()
                     .to_string();
-                if let Ok(mut map) = sonar_songs.lock() {
-                    map.insert(info.id, Arc::new(song.clone()));
-                }
-                if let Ok(mut map) = search_results.lock() {
-                    map.insert(info.id, Arc::new(info.clone()));
-                }
+                lock_recover(sonar_songs).insert(info.id, Arc::new(song.clone()));
+                lock_recover(search_results).insert(info.id, Arc::new(info.clone()));
                 SearchHit { info, source }
             })
             .collect()),
@@ -191,9 +188,8 @@ pub fn to_song_info(song: &Song) -> SongInfo {
 /// Register a batch of search hits by id so `pigma msg play <id>` can later
 /// enqueue and play them even though they are not part of the active queue.
 pub fn register_search_results(search_results: &SearchResults, songs: &[Arc<SongInfo>]) {
-    if let Ok(mut map) = search_results.lock() {
-        for song in songs {
-            map.insert(song.id, Arc::clone(song));
-        }
+    let mut map = lock_recover(search_results);
+    for song in songs {
+        map.insert(song.id, Arc::clone(song));
     }
 }

@@ -1,3 +1,26 @@
+## [0.2.16] - 2026-10-23
+
+### 🚀 Features
+
+- Change music playing speed (@lorlike)
+
+### 🐛 Bug Fixes
+
+- Maintain music tone (@lorlike)
+- *(ui)* Pair lyric translations by timestamp (@BugJumpawa)
+
+### 🚜 Refactor
+
+- Add pitch toggle (@lorlike)
+- Harden caches, split service/player modules, fix playerbar and cover memory (@akirco)
+
+### 📚 Documentation
+
+- Move assets under assets/ and refresh README (@akirco)
+
+### 🎨 Styling
+
+- Apply cargo +nightly fmt import grouping (@lorlike)
 ## [0.2.15] - 2026-09-28
 
 ### 🚀 Features

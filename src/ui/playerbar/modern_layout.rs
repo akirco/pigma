@@ -62,12 +62,15 @@ impl Playerbar for ModernLayout {
         .flex(Flex::SpaceBetween)
         .split(right_rows[2]);
 
-        // Right end: volume | mode | speed badge
+        // Right end: volume | mode | speed badge, one blank column between each
+        // so a full `*1.5x` badge cannot butt against the mode icon. Widths sum
+        // to 9 + two 1-column gaps = the 11 columns reserved above.
         let vol_mode_cols = Layout::horizontal([
-            Constraint::Length(3),
-            Constraint::Length(3),
+            Constraint::Length(2),
+            Constraint::Length(2),
             Constraint::Length(5),
         ])
+        .spacing(1)
         .split(bottom_cols[2]);
 
         LayoutArea {

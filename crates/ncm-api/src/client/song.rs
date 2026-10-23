@@ -62,8 +62,10 @@ impl NcmClient {
         let result = self
             .request_eapi("/api/song/enhance/player/url/v1", &params)
             .await?;
-        let preview_300 = result.chars().take(500).collect::<String>();
-        log::debug!("songs_url_v1 raw response (first 500): {:?}", preview_300);
+        if log::log_enabled!(log::Level::Debug) {
+            let preview_300: String = result.chars().take(500).collect();
+            log::debug!("songs_url_v1 raw response (first 500): {preview_300:?}");
+        }
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
         parse_song_url(&value).map_err(|e| NcmError::parse(e, &value))

@@ -17,7 +17,7 @@ use crate::{
     text_input::TextInput,
 };
 
-pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre::Result<()> {
+pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Result<()> {
     match key_event.code {
         KeyCode::Esc => {
             app.state.events.send(NavigationEvent::ContentRestore);
@@ -181,14 +181,8 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> color_eyre:
             }
         }
         KeyCode::Char('a' | 'A') => {
-            let song =/* if app.state.navigation.page == Page::Playlist {
-                app.playback
-                    .song_at(app.state.navigation.playlist_selected)
-                    .cloned()
-            } else */ if let ContentState::Songs(songs) = app.state.navigation.content.as_ref() {
-                songs
-                    .get(app.state.navigation.content_selected)
-                    .cloned()
+            let song = if let ContentState::Songs(songs) = app.state.navigation.content.as_ref() {
+                songs.get(app.state.navigation.content_selected).cloned()
             } else {
                 None
             };

@@ -3,7 +3,6 @@ use std::{
     io,
     path::PathBuf,
     sync::{Arc, atomic::Ordering},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use ncm_api::SongInfo;
@@ -13,7 +12,7 @@ use super::{
     CacheManager,
     index::{CacheEntry, CacheIndex},
 };
-use crate::utils::sanitize_filename;
+use crate::utils::{sanitize_filename, unix_secs};
 
 impl CacheManager {
     fn resolve_filename(&self, song: &SongInfo, ext: &str) -> String {
@@ -88,10 +87,7 @@ impl CacheManager {
 
     pub fn open_cached(&self, id: u64, ext: &str) -> io::Result<File> {
         let file = File::open(self.cache_path(id, ext))?;
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
+        let now = unix_secs();
         if let Ok(mut index) = self.index.write()
             && let Some(entry) = index.get_mut(&id)
         {
@@ -116,10 +112,7 @@ impl CacheManager {
     /// downloads. Persists the index so a completed download survives an
     /// immediate quit.
     pub fn mark_cached(&self, song: &SongInfo, ext: &str, thirdparty: Option<sonar::Song>) {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
+        let now = unix_secs();
         let filename = self.resolve_filename(song, ext);
         let path = self.downloads_dir.join(&filename);
         let file_bytes = fs::metadata(&path).ok().map(|m| m.len()).unwrap_or(0);
