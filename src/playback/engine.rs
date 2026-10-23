@@ -8,9 +8,6 @@ mod queueing;
 mod session;
 mod transport;
 
-#[cfg(all(target_os = "linux", target_env = "gnu"))]
-use crate::utils::process::mem_rss_kb;
-
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -33,6 +30,7 @@ use crate::{
     cache::CacheManager,
     event::{Event, PlaybackEvent},
     service::ApiService,
+    utils::{lock_recover, process::trim_heap},
 };
 
 /// Fixed queue key (display name) shared by every third-party (sonar) search
@@ -150,12 +148,7 @@ impl PlaybackEngine {
             .state
             .current_song
             .as_ref()
-            .map(|s| {
-                self.liked_ids
-                    .lock()
-                    .map(|g| g.contains(&s.id))
-                    .unwrap_or(false)
-            })
+            .map(|s| lock_recover(&self.liked_ids).contains(&s.id))
             .unwrap_or(false);
     }
 
@@ -283,47 +276,21 @@ impl PlaybackEngine {
             log::error!("Failed to send PlaybackStarted: receiver dropped");
         }
 
-        #[cfg(all(target_os = "linux", target_env = "gnu"))]
-        let song_id = song.id;
         self.current_resolve = Some(tokio::spawn(async move {
-            #[cfg(all(target_os = "linux", target_env = "gnu"))]
-            log::info!(
-                "[HEAP] before resolve {} (id={}): {} kB",
-                song.name,
-                song_id,
-                mem_rss_kb()
-            );
             let input = match source.resolve(&song).await {
                 Ok(input) => input,
                 Err(e) => {
-                    #[cfg(all(target_os = "linux", target_env = "gnu"))]
-                    log::info!(
-                        "[HEAP] after resolve FAIL {} (id={}): {} kB",
-                        song.name,
-                        song_id,
-                        mem_rss_kb()
-                    );
-                    #[cfg(all(target_os = "linux", target_env = "gnu"))]
-                    unsafe {
-                        libc::malloc_trim(0);
-                    }
+                    // Return the resolve's scratch allocations to the OS instead
+                    // of letting them sit in the allocator's free lists (RSS would
+                    // otherwise ratchet upward across songs in a long-lived TUI).
+                    trim_heap();
                     if event_tx.send(PlaybackEvent::Error(e).into()).is_err() {
                         log::error!("Failed to send PlaybackError: receiver dropped");
                     }
                     return;
                 }
             };
-            #[cfg(all(target_os = "linux", target_env = "gnu"))]
-            log::info!(
-                "[HEAP] after resolve OK {} (id={}): {} kB",
-                song.name,
-                song_id,
-                mem_rss_kb()
-            );
-            #[cfg(all(target_os = "linux", target_env = "gnu"))]
-            unsafe {
-                libc::malloc_trim(0);
-            }
+            trim_heap();
             controller.request(input, seek_time);
         }));
     }

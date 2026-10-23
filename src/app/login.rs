@@ -6,6 +6,7 @@ use super::{App, event::send_event};
 use crate::{
     event::{AuthEvent, NavigationEvent, PlaybackEvent},
     state::Page,
+    utils::lock_recover,
 };
 
 impl App {
@@ -56,9 +57,7 @@ impl App {
         tokio::spawn(async move {
             match service.load_liked_song_ids(uid).await {
                 Ok(ids) => {
-                    if let Ok(mut guard) = liked_ids.lock() {
-                        *guard = ids;
-                    }
+                    *lock_recover(&liked_ids) = ids;
                     send_event(&sender, PlaybackEvent::LikedUpdated.into());
                 }
                 Err(e) => log::warn!("Failed to load liked song ids: {e}"),

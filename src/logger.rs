@@ -1,6 +1,11 @@
-//! Logging setup and the in-app log buffer/sink surfaced in the splash view.
+//! Logging setup: a buffered append-only file sink (`debug.log`).
 
-use std::{fs::OpenOptions, io::Write, sync::Mutex};
+use std::{
+    fs::OpenOptions,
+    io::{BufWriter, Write},
+    path::PathBuf,
+    sync::Mutex,
+};
 
 use log::{Level, Log, Metadata, Record};
 use serde::{Deserialize, Serialize};
@@ -14,8 +19,6 @@ use crate::{
 pub struct Logger {
     pub log_level: Level,
 }
-
-use std::path::PathBuf;
 
 fn log_file() -> PathBuf {
     if cfg!(debug_assertions) {
@@ -34,7 +37,7 @@ impl Default for Logger {
 }
 
 struct FileLogger {
-    file: Mutex<std::fs::File>,
+    file: Mutex<BufWriter<std::fs::File>>,
 }
 
 impl Log for FileLogger {
@@ -56,6 +59,11 @@ impl Log for FileLogger {
             record.module_path().unwrap_or_default(),
             record.args()
         );
+        // Errors/warnings flush immediately so an imminent crash cannot lose
+        // them; high-volume debug/info lines rely on the BufWriter filling up.
+        if record.level() <= Level::Warn {
+            let _ = file.flush();
+        }
     }
 
     fn flush(&self) {
@@ -63,14 +71,20 @@ impl Log for FileLogger {
     }
 }
 
-pub fn init_logger(config: &Config) -> color_eyre::Result<()> {
+pub fn init_logger(config: &Config) -> eyre::Result<()> {
     let log_file = OpenOptions::new()
         .append(true)
         .create(true)
         .open(log_file())?;
     log::set_boxed_logger(Box::new(FileLogger {
-        file: Mutex::new(log_file),
+        file: Mutex::new(BufWriter::new(log_file)),
     }))?;
     log::set_max_level(config.logger.log_level.to_level_filter());
     Ok(())
+}
+
+/// Flush any buffered log output to disk. Call on shutdown so the final lines
+/// (written through the buffered sink) are not lost.
+pub fn flush_logger() {
+    log::logger().flush();
 }

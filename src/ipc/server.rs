@@ -116,15 +116,17 @@ async fn handle_connection<S>(
     match request {
         IpcRequest::Status => {
             let reply = {
-                let guard = lock_recover(&snapshot);
-                serde_json::to_string(&*guard).unwrap_or_default()
+                // Clone under the lock, serialize outside it so a slow client
+                // never blocks the app loop's `update_status_snapshot`.
+                let snapshot = lock_recover(&snapshot).clone();
+                serde_json::to_string(&snapshot).unwrap_or_default()
             };
             let _ = write_reply(&mut stream, &reply).await;
         }
         IpcRequest::List => {
             let reply = {
-                let guard = lock_recover(&queue);
-                serde_json::to_string(&*guard).unwrap_or_default()
+                let queue = lock_recover(&queue).clone();
+                serde_json::to_string(&queue).unwrap_or_default()
             };
             let _ = write_reply(&mut stream, &reply).await;
         }
@@ -150,9 +152,8 @@ async fn write_reply<S>(mut stream: S, reply: &str) -> std::io::Result<()>
 where
     S: tokio::io::AsyncWrite + Unpin,
 {
-    let mut framed = reply.to_string();
-    framed.push('\n');
-    stream.write_all(framed.as_bytes()).await
+    stream.write_all(reply.as_bytes()).await?;
+    stream.write_all(b"\n").await
 }
 
 /// `subscribe` mode: send the current snapshot immediately, then stream every

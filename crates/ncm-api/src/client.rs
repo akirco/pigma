@@ -226,13 +226,18 @@ impl NcmClient {
         }
 
         let text = resp.text().await?;
-        let preview_200 = text.chars().take(200).collect::<String>();
-        log::debug!(
-            "send_request status={}, body(len={}): {:?}",
-            status,
-            text.len(),
-            preview_200
-        );
+        // Only build the truncated preview when debug logging is actually on:
+        // `log::debug!` arguments are evaluated eagerly otherwise, allocating a
+        // body preview for every response.
+        if log::log_enabled!(log::Level::Debug) {
+            let preview_200: String = text.chars().take(200).collect();
+            log::debug!(
+                "send_request status={}, body(len={}): {:?}",
+                status,
+                text.len(),
+                preview_200
+            );
+        }
         if !status.is_success() {
             let preview_500 = text.chars().take(500).collect::<String>();
             log::warn!(
@@ -357,11 +362,13 @@ impl NcmClient {
 
         let status = resp.status();
         let text = resp.text().await?;
-        let preview = text.chars().take(200).collect::<String>();
-        log::debug!(
-            "send_eapi path={path} status={status} body(len={}): {preview:?}",
-            text.len(),
-        );
+        if log::log_enabled!(log::Level::Debug) {
+            let preview: String = text.chars().take(200).collect();
+            log::debug!(
+                "send_eapi path={path} status={status} body(len={}): {preview:?}",
+                text.len(),
+            );
+        }
         Ok(text)
     }
 

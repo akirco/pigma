@@ -90,7 +90,7 @@ impl NcmClient {
         let value: Value = serde_json::from_str(&result)?;
         Self::check_api_code(&value)?;
         let unikey = parse_unikey(&value).map_err(|e| NcmError::parse(e, &value))?;
-        let qr_url = format!("https://music.163.com/login?codekey={}", &unikey);
+        let qr_url = format!("https://music.163.com/login?codekey={unikey}");
         Ok((qr_url, unikey))
     }
 

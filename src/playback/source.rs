@@ -12,18 +12,17 @@ use sonar::{PlayUrlResult, Quality, SearchQuery, SonarFinder, Song};
 use stream_download::{
     Settings, StreamDownload, StreamPhase, http::HttpStream, storage::temp::TempStorageProvider,
 };
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 use super::{
     player::{AudioInput, AudioReader, SharedReader},
     stream_client::HeadersClient,
 };
-#[cfg(all(target_os = "linux", target_env = "gnu"))]
-use crate::utils::process::mem_rss_kb;
 use crate::{
     cache::CacheManager,
     event::{Event, PlaybackEvent},
     service::ApiService,
+    utils::lock_recover,
 };
 
 /// Minimum bytes to pre-buffer before starting playback. Roughly ~12s of audio at 320kbps and
@@ -43,6 +42,9 @@ struct StreamProgress {
     buffered: Arc<AtomicU64>,
     /// Whether the whole stream has finished downloading.
     completed: Arc<AtomicBool>,
+    /// Progress notifications: bumped when the download reaches the prebuffer
+    /// target or finishes, so the waiter can be woken instead of polling.
+    updates: watch::Receiver<u64>,
 }
 
 /// Resolves audio inputs for songs via local files, NCM streaming, or sonar fallback.
@@ -118,16 +120,29 @@ impl AudioSource {
         let cache = self.cache.clone();
         let sent = Arc::new(AtomicBool::new(false));
         let song = song.clone();
+        let (updates_tx, updates_rx) = watch::channel(0u64);
         let progress = StreamProgress {
             buffered: Arc::new(AtomicU64::new(0)),
             completed: Arc::new(AtomicBool::new(false)),
+            updates: updates_rx,
         };
         let buffered = progress.buffered.clone();
         let completed = progress.completed.clone();
+        let notified = AtomicBool::new(false);
         let settings = Settings::default().on_progress(move |_, state, _| {
-            buffered.store(state.current_position, Ordering::SeqCst);
-            if state.phase == StreamPhase::Complete {
+            let position = state.current_position;
+            buffered.store(position, Ordering::SeqCst);
+            let complete = state.phase == StreamPhase::Complete;
+            if complete {
                 completed.store(true, Ordering::SeqCst);
+            }
+            // Signal the prebuffer waiter exactly once, when the exit condition
+            // becomes reachable: the download reached the prebuffer target or
+            // finished. `watch` keeps the value, so a signal sent before the
+            // waiter starts is not lost; after that the waiter is gone and
+            // further notifications would be wasted wakes.
+            if (complete || position >= PREBUFFER_BYTES) && !notified.swap(true, Ordering::SeqCst) {
+                updates_tx.send_replace(position);
             }
             if mark_cache
                 && !sent.swap(true, Ordering::SeqCst)
@@ -145,24 +160,37 @@ impl AudioSource {
     /// doesn't underrun at the start. If [`PREBUFFER_TIMEOUT`] is exceeded without reaching the
     /// target (slow network or a broken stream), also return as usual — better to start playing
     /// with occasional stutter than to block playback indefinitely.
+    ///
+    /// The wait is driven by the download progress callback (which signals once
+    /// the target is reached), not by a poll timer — polling would add up to a
+    /// full poll interval of latency before playback could start.
     async fn wait_for_prebuffer(&self, progress: &StreamProgress) {
         let deadline = tokio::time::Instant::now() + PREBUFFER_TIMEOUT;
+        let mut updates = progress.updates.clone();
         loop {
             if progress.completed.load(Ordering::SeqCst)
                 || progress.buffered.load(Ordering::SeqCst) >= PREBUFFER_BYTES
             {
                 return;
             }
-            if tokio::time::Instant::now() >= deadline {
-                log::warn!(
-                    "预缓冲超时（{}），仅缓冲 {} 字节，开始播放",
-                    PREBUFFER_TIMEOUT.as_secs_f32(),
-                    progress.buffered.load(Ordering::SeqCst)
-                );
-                return;
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                break;
             }
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            // `watch` keeps the latest value, so a signal that arrives between
+            // the check above and this await is not lost.
+            match tokio::time::timeout(remaining, updates.changed()).await {
+                Ok(Ok(())) => continue,
+                // The download was dropped: nothing more will signal us.
+                Ok(Err(_)) => return,
+                Err(_) => break,
+            }
         }
+        log::warn!(
+            "预缓冲超时（{}），仅缓冲 {} 字节，开始播放",
+            PREBUFFER_TIMEOUT.as_secs_f32(),
+            progress.buffered.load(Ordering::SeqCst)
+        );
     }
 
     /// Stream `url` through the cache layer. When "边听边存" is enabled the file is
@@ -252,24 +280,12 @@ impl AudioSource {
             .await
             .map_err(|e| format!("sonar 兜底失败: {e}"))?;
 
-        #[cfg(all(target_os = "linux", target_env = "gnu"))]
-        log::info!(
-            "[HEAP] after sonar search (id={}): {} kB — {} ({})",
-            song.id,
-            mem_rss_kb(),
-            found.name,
-            found.source
-        );
-
         self.stream_play_url(song, Some(&found), play).await
     }
 
     /// Resolve a sonar search result directly via the provider that found it.
     async fn resolve_by_provider(&self, song: &SongInfo) -> Result<AudioInput, String> {
-        let msong = self
-            .sonar_songs
-            .lock()
-            .map_err(|_| "sonar 歌曲注册表损坏".to_string())?
+        let msong = lock_recover(&self.sonar_songs)
             .get(&song.id)
             .cloned()
             .or_else(|| self.cache.thirdparty_song(song.id))
@@ -280,15 +296,6 @@ impl AudioSource {
             .get_play_url_for_song(&msong, Some(Self::to_sonar_quality(self.quality)))
             .await
             .map_err(|e| format!("获取音源失败 ({}): {e}", msong.source))?;
-
-        #[cfg(all(target_os = "linux", target_env = "gnu"))]
-        log::info!(
-            "[HEAP] after get_play_url_for_song (id={}): {} kB — {} ({})",
-            song.id,
-            mem_rss_kb(),
-            msong.name,
-            msong.source
-        );
 
         self.stream_play_url(song, Some(&msong), play).await
     }
@@ -388,13 +395,6 @@ impl AudioSource {
                     );
                 }
                 Err(e) => {
-                    #[cfg(all(target_os = "linux", target_env = "gnu"))]
-                    log::info!(
-                        "[HEAP] after resolve_ncm FAIL (id={}): {} kB — {}",
-                        song.id,
-                        mem_rss_kb(),
-                        e
-                    );
                     if self.sonar_enabled {
                         log::info!(
                             "NCM解析失败，尝试sonar fallback: {} - {} ({})",
@@ -409,12 +409,6 @@ impl AudioSource {
             }
         }
 
-        #[cfg(all(target_os = "linux", target_env = "gnu"))]
-        log::info!(
-            "[HEAP] after resolve_ncm retries exhausted (id={}): {} kB",
-            song.id,
-            mem_rss_kb()
-        );
         log::warn!(
             "NCM网络错误，2次重试失败，fallback到sonar: {} - {}",
             song.name,

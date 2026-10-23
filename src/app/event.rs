@@ -16,6 +16,7 @@ use crate::{
     ipc::IpcEvent,
     playback::{NCM_SEARCH_QUEUE_KEY, THIRD_PARTY_QUEUE_KEY},
     state::{CommandAction, ContentState},
+    utils::lock_recover,
 };
 
 /// Send an app event on the event loop channel, logging a dropped-receiver
@@ -46,13 +47,9 @@ impl App {
                     // back to the shared search-result registry and enqueue the
                     // result (sonar songs keep their synthetic id, which the
                     // playback source resolves via `sonar_songs`).
+                    let fallback = lock_recover(&self.search.results).get(&id).cloned();
                     if !self.playback.play_song_by_id(id)
-                        && let Some(song) = self
-                            .search
-                            .results
-                            .lock()
-                            .ok()
-                            .and_then(|m| m.get(&id).cloned())
+                        && let Some(song) = fallback
                     {
                         let key = if sonar::is_sonar_song_id(id) {
                             THIRD_PARTY_QUEUE_KEY
@@ -101,7 +98,7 @@ impl App {
                         self.playback.toggle_pitch_locked();
                     }
                 }
-                self.speed_toast();
+                self.pitch_toast();
             }
             IpcEvent::Mode => {
                 let mode = self.playback.cycle_mode();
@@ -141,7 +138,7 @@ impl App {
         }
     }
 
-    pub(super) async fn handle_events(&mut self) -> color_eyre::Result<()> {
+    pub(super) async fn handle_events(&mut self) -> eyre::Result<()> {
         if self.playback.state.seeking {
             tokio::select! {
                 biased;
@@ -157,7 +154,7 @@ impl App {
         Ok(())
     }
 
-    async fn dispatch_event(&mut self, event: Event) -> color_eyre::Result<()> {
+    async fn dispatch_event(&mut self, event: Event) -> eyre::Result<()> {
         match event {
             Event::Crossterm(event) => match event {
                 CrosstermEvent::Key(key) if key.kind == crossterm::event::KeyEventKind::Press => {
@@ -232,11 +229,12 @@ impl App {
             }
             PlaybackEvent::LikeSong(id, like) => {
                 // Update the local set immediately and refresh the icon (regardless of the cloud result, consistent with existing behavior).
-                if let Ok(mut guard) = self.liked_ids.lock() {
+                {
+                    let mut liked = lock_recover(&self.liked_ids);
                     if like {
-                        guard.insert(id);
+                        liked.insert(id);
                     } else {
-                        guard.remove(&id);
+                        liked.remove(&id);
                     }
                 }
                 if self

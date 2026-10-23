@@ -1,10 +1,9 @@
-use std::sync::Arc;
-
 use super::{App, event::send_event};
 use crate::{
     event::{NavigationEvent, PlaybackEvent},
     playback::{NCM_SEARCH_QUEUE_KEY, THIRD_PARTY_QUEUE_KEY},
     state::{ContentState, PaginationInfo},
+    utils::lock_recover,
 };
 
 impl App {
@@ -72,10 +71,15 @@ impl App {
             let ttl = self.config.cache.content_cache_ttl;
             if ttl > 0 && !pg_for_save.api.is_empty() {
                 let cache = self.service.cache().clone();
-                let content_arc = Arc::clone(&self.state.navigation.content);
-                tokio::task::spawn_blocking(move || {
-                    cache.save_content_cache(&pg_for_save.api, &content_arc, Some(&pg_for_save));
-                });
+                // Hand the blocking writer a *clone* of the merged content. For
+                // `Songs` this is just a cheap `Vec<Arc<_>>` copy — no deep
+                // clone, and no shared `Arc` outlives this function, so the next
+                // `Arc::make_mut` is not forced into a deep clone. Serialization
+                // and the disk write then happen off-thread, and a burst of
+                // pages coalesces into one write of the final state
+                // (`queue_content_cache`).
+                let merged = self.state.navigation.content.as_ref().clone();
+                cache.queue_content_cache(&pg_for_save.api, merged, pg_for_save.clone());
             }
             return;
         }
@@ -262,9 +266,7 @@ impl App {
 
         // Clear the cover so a new song never shows the previous one's
         // cover while its own cover is loading (or missing).
-        if let Ok(mut guard) = self.playback.state.cover.protocol.lock() {
-            *guard = None;
-        }
+        *lock_recover(&self.playback.state.cover.protocol) = None;
         self.spawn_cover_load(song.id, song.pic_url.clone());
     }
 }

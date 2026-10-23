@@ -19,7 +19,7 @@ use crate::{
     state::Page,
 };
 
-pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> color_eyre::Result<()> {
+pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> eyre::Result<()> {
     if key_event.modifiers == KeyModifiers::CONTROL {
         match key_event.code {
             KeyCode::Char('c' | 'C') => {

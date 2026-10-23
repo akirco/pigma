@@ -12,11 +12,7 @@ impl App {
     ///
     /// With `force = true`, skip the content cache, refetch directly from the API,
     /// and write the result back to the cache (manual refresh).
-    pub(super) fn handle_nav_select(
-        &mut self,
-        api_str: String,
-        force: bool,
-    ) -> color_eyre::Result<()> {
+    pub(super) fn handle_nav_select(&mut self, api_str: String, force: bool) -> eyre::Result<()> {
         if api_str == "login" {
             self.state.navigation.page = Page::Login;
             return Ok(());
@@ -191,7 +187,7 @@ impl App {
         self.state.navigation.nav.subtitle = Some(name);
     }
 
-    pub(super) fn handle_cell_action(&mut self, row: usize, col: usize) -> color_eyre::Result<()> {
+    pub(super) fn handle_cell_action(&mut self, row: usize, col: usize) -> eyre::Result<()> {
         let columns = self
             .config
             .columns

@@ -183,14 +183,94 @@ mod tests {
     const LAYOUTS: [LayoutType; 3] = [LayoutType::Default, LayoutType::Modern, LayoutType::Minimal];
 
     #[test]
-    fn speed_badge_is_hidden_at_normal_speed() {
+    fn default_layout_widens_the_title_without_moving_controls() {
+        let config = PlayerbarConfig {
+            layout: LayoutType::Default,
+            ..PlayerbarConfig::default()
+        };
+        // A typical 90-column terminal leaves 86 columns inside the border and
+        // horizontal padding.
+        let layout = default_layout::DefaultLayout.layout(Rect::new(0, 0, 86, 3), &config, false);
+
+        // The controls stay where the old [20, Min, 3, 8] split put them:
+        // 20 + (55 - 9) / 2 = 43.
+        assert_eq!(layout.controls.x, 43);
+        assert_eq!(layout.controls.width, 9);
+
+        // The title now uses the empty left half of the middle row and stops
+        // one column before the controls.
+        assert!(
+            layout.song_info.width > 20,
+            "title area should grow past the old 20 columns, got {}",
+            layout.song_info.width
+        );
+        assert!(layout.song_info.x + layout.song_info.width < layout.controls.x);
+
+        // The gauge still spans the original middle region.
+        assert_eq!((layout.gauge.x, layout.gauge.width), (20, 55));
+    }
+
+    #[test]
+    fn default_layout_shows_long_titles_past_the_old_title_area() {
+        let colors = Theme::default();
+        let border = BorderConfig::default();
+        let bs = BlockStyle {
+            colors: &colors,
+            border: &border,
+            tick: 0,
+        };
+        let config = PlayerbarConfig {
+            layout: LayoutType::Default,
+            ..PlayerbarConfig::default()
+        };
+        let mut state = state(1.0, true);
+        let name = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        Arc::make_mut(state.current_song.as_mut().unwrap()).name = name.into();
+
+        let mut term = Terminal::new(TestBackend::new(W, H)).unwrap();
+        term.draw(|f| draw(f, &state, 0, &bs, &config, Rect::new(0, 0, W, H), false))
+            .unwrap();
+
+        let buf = term.backend().buffer().clone();
+        let row: String = (0..buf.area().width)
+            .map(|x| buf[(x, 1)].symbol().to_string())
+            .collect();
+        assert!(
+            row.contains(name),
+            "the full 36-column title should be visible, row was {row:?}"
+        );
+    }
+
+    #[test]
+    fn modern_layout_leaves_a_gap_before_the_speed_badge() {
+        let config = PlayerbarConfig {
+            layout: LayoutType::Modern,
+            ..PlayerbarConfig::default()
+        };
+        let layout = modern_layout::ModernLayout.layout(Rect::new(0, 0, 100, 5), &config, false);
+
+        // mode icon | gap | speed badge: a full `*1.5x` must not touch the icon.
+        assert!(
+            layout.speed.x > layout.mode_icon.x + layout.mode_icon.width,
+            "speed badge at x={} is too close to mode icon ending at x={}",
+            layout.speed.x,
+            layout.mode_icon.x + layout.mode_icon.width
+        );
+    }
+
+    #[test]
+    fn speed_badge_is_shown_at_normal_speed() {
         for layout in LAYOUTS {
-            for locked in [true, false] {
-                assert!(
-                    badges(layout.clone(), 1.0, locked).is_empty(),
-                    "{layout:?} (pitch_locked {locked}) shows a badge at 1.0x"
-                );
-            }
+            let locked = badges(layout.clone(), 1.0, true);
+            assert_eq!(
+                locked[0].1, "*1.0x",
+                "{layout:?}: default pitch-keeping speed must render"
+            );
+            let shifted = badges(layout.clone(), 1.0, false);
+            assert_eq!(
+                shifted[0].1, "1.0x",
+                "{layout:?}: default resampled speed must render"
+            );
         }
     }
 

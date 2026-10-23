@@ -15,9 +15,10 @@ use tokio::sync::mpsc;
 
 use super::stretch::{SpeedHandle, SpeedMode, Stretch};
 
-use crate::event::{Event, PlaybackEvent};
-#[cfg(all(target_os = "linux", target_env = "gnu"))]
-use crate::utils::process::mem_rss_kb;
+use crate::{
+    event::{Event, PlaybackEvent},
+    utils::lock_recover,
+};
 
 /// Progress ticks (~200ms each) the position may stay frozen while playing
 /// before we assume the audio stream is dead (e.g. Bluetooth device removed on
@@ -54,6 +55,17 @@ pub type AudioInput = SharedReader;
 /// A reader wrapper that can be shared between the player and the seek controller.
 /// On seek, the controller locks the shared reader, seeks to the new position,
 /// then creates a new decoder + player from the seeked position.
+///
+/// The lock is taken through [`lock_recover`], so a panic inside the guarded
+/// region cannot poison it: a poisoned `std::sync::Mutex` would make every
+/// later read fail with "audio reader lock poisoned" and the audio could never
+/// recover without restarting the process.
+///
+/// Note that the guard is held across the whole read, and a streaming read
+/// blocks until the network download reaches the requested byte offset
+/// (`stream-download` waits on a condvar). The lock is therefore held for
+/// seconds at a time while the network catches up — the seek path competes
+/// for it.
 #[derive(Clone)]
 pub struct SharedReader(pub Arc<Mutex<Box<dyn AudioReader + 'static>>>);
 
@@ -64,20 +76,18 @@ impl std::fmt::Debug for SharedReader {
 }
 
 impl Read for SharedReader {
+    #[inline]
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        self.0
-            .lock()
-            .map_err(|e| std::io::Error::other(format!("mutex poisoned: {e}")))?
-            .read(buf)
+        // `lock()` is a single atomic on the (uncontended) steady-state path and
+        // needs no allocation.
+        lock_recover(&self.0).read(buf)
     }
 }
 
 impl Seek for SharedReader {
+    #[inline]
     fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
-        self.0
-            .lock()
-            .map_err(|e| std::io::Error::other(format!("mutex poisoned: {e}")))?
-            .seek(pos)
+        lock_recover(&self.0).seek(pos)
     }
 }
 
@@ -94,10 +104,14 @@ pub enum ControlCmd {
     SetSpeedMode(SpeedMode),
 }
 
+/// Progress tick: how long `recv_timeout` waits before running the per-tick
+/// progress/watchdog/device-follow checks.
+const PROGRESS_INTERVAL: Duration = Duration::from_millis(200);
+
 /// Run the audio player as a persistent blocking task. The task is spawned once
-/// and stays alive across songs — new sources are fed via ControlCmd::Switch.
+/// and stays alive across songs — new sources are fed via `ControlCmd::Switch`.
 ///
-/// The audio device sink is owned by this task (created lazily on first
+/// The audio device sink is owned by the task (created lazily on first
 /// playback) so it can be rebuilt when the output device goes away: Bluetooth
 /// headsets being disconnected/reconnected invalidate the old stream, and the
 /// only fix is to re-enumerate devices and open the current default again.
@@ -111,221 +125,103 @@ pub(super) fn run(
     control_rx: std::sync::mpsc::Receiver<ControlCmd>,
 ) {
     tokio::task::spawn_blocking(move || {
-        let progress_interval = Duration::from_millis(200);
-        let mut reader = initial_reader;
-        let mut total_duration: Option<Duration> = None;
-        let mut seek_offset: Duration = Duration::default();
-        let mut volume = initial_volume;
+        let task = PlayerTask::new(
+            initial_reader,
+            initial_volume,
+            initial_speed,
+            initial_speed_mode,
+            event_tx,
+        );
+        task.run(control_rx, initial_seek_time);
+    });
+}
+
+/// Mutable state owned by the persistent player thread. Keeping it in one place
+/// lets the control/tick/device logic live in small methods instead of a single
+/// 300-line loop body.
+struct PlayerTask {
+    reader: SharedReader,
+    total_duration: Option<Duration>,
+    seek_offset: Duration,
+    volume: f32,
+    speed: SpeedHandle,
+    sink: Option<rodio::MixerDeviceSink>,
+    health: Arc<DeviceHealth>,
+    /// Watchdog state: position frozen while playing => dead stream.
+    last_pos: Duration,
+    stall_ticks: u32,
+    player: Option<rodio::Player>,
+    /// Default-device following state (see [`FOLLOW_POLL_TICKS`]).
+    sink_dev_id: Option<String>,
+    follow_poll: u32,
+    follow_diff: u32,
+    event_tx: mpsc::UnboundedSender<Event>,
+}
+
+impl PlayerTask {
+    fn new(
+        reader: SharedReader,
+        volume: f32,
+        initial_speed: f32,
+        initial_speed_mode: SpeedMode,
+        event_tx: mpsc::UnboundedSender<Event>,
+    ) -> Self {
         // Playback speed. rodio's `Player::set_speed` resamples (raising the
         // source's sample rate), which shifts the pitch by the same factor —
         // unusable for music. The speed therefore lives in a pitch-preserving
         // WSOLA stretcher (`Stretch`) wrapped around every source we append:
         // the sample rate stays put, only the tempo changes.
-        //
-        // The handle is shared with each source it creates; `position()`
-        // reports how far into the *recording* the output has got, which is
-        // what the progress events and the rebuild/resume logic below need.
         let speed = SpeedHandle::new(initial_speed);
         speed.set_mode(initial_speed_mode);
-        // Owned by this task; recreated whenever the output device is lost.
-        let mut sink: Option<rodio::MixerDeviceSink> = None;
-        let health = Arc::new(DeviceHealth {
-            device_lost: AtomicBool::new(false),
-            last_underrun_ms: AtomicU64::new(u64::MAX),
-            epoch: Instant::now(),
-        });
-        // Watchdog state: position frozen while playing => dead stream.
-        let mut last_pos = Duration::default();
-        let mut stall_ticks: u32 = 0;
-        let mut player: Option<rodio::Player> = None;
-        // Default-device following state (see FOLLOW_POLL_TICKS).
-        let mut sink_dev_id: Option<String> = None;
-        let mut follow_poll: u32 = 0;
-        let mut follow_diff: u32 = 0;
-
-        macro_rules! ensure_sink {
-            () => {{
-                if sink.is_none()
-                    && let Ok(mut s) = create_sink(health.clone())
-                {
-                    s.log_on_drop(false);
-                    sink = Some(s);
-                    sink_dev_id = current_default_id();
-                }
-                sink.is_some()
-            }};
+        Self {
+            reader,
+            total_duration: None,
+            seek_offset: Duration::default(),
+            volume,
+            speed,
+            sink: None,
+            health: Arc::new(DeviceHealth {
+                device_lost: AtomicBool::new(false),
+                last_underrun_ms: AtomicU64::new(u64::MAX),
+                epoch: Instant::now(),
+            }),
+            last_pos: Duration::default(),
+            stall_ticks: 0,
+            player: None,
+            sink_dev_id: None,
+            follow_poll: 0,
+            follow_diff: 0,
+            event_tx,
         }
+    }
 
-        // Position within the recording: where the stretcher has read to, plus
-        // the offset the current source was seeked to.
-        macro_rules! song_pos {
-            () => {
-                seek_offset + speed.position()
-            };
-        }
-
-        macro_rules! start_playback {
-            ($seek_time:expr) => {{
-                let input = reader.clone();
-                match rodio::Decoder::new(input) {
-                    Ok(d) => {
-                        total_duration = d.total_duration();
-                        let seek_time = $seek_time;
-                        let (stretched, offset): (Box<dyn Source<Item = f32> + Send>, Duration) =
-                            if let Some(t) = seek_time {
-                                let mut d = d;
-                                if d.try_seek(t).is_err() {
-                                    log::warn!("try_seek failed for {t:?}, starting from 0");
-                                    (Box::new(d), Duration::default())
-                                } else {
-                                    (Box::new(d), t)
-                                }
-                            } else {
-                                (Box::new(d), Duration::default())
-                            };
-                        // Pitch-preserving speed control lives here rather than
-                        // on the Player, whose `set_speed` would resample.
-                        let source: Box<dyn Source<Item = f32> + Send> =
-                            Box::new(Stretch::new(stretched, speed.clone()));
-                        seek_offset = offset;
-                        let p = rodio::Player::connect_new(
-                            &sink.as_ref().expect("sink ensured").mixer().clone(),
-                        );
-                        p.set_volume(volume);
-                        p.append(source);
-                        last_pos = Duration::default();
-                        stall_ticks = 0;
-                        Some(p)
-                    }
-                    Err(e) => {
-                        let _ = event_tx.send(PlaybackEvent::Error(format!("decode: {e}")).into());
-                        None
-                    }
-                }
-            }};
-        }
-
-        // Drop the current player/sink and reopen the (current default) audio
-        // device. If `resume_at`/`was_paused` are provided, playback continues
-        // from there on the fresh stream.
-        macro_rules! rebuild_sink {
-            ($resume_at:expr, $was_paused:expr) => {{
-                let resume_at: Option<Duration> = $resume_at;
-                let was_paused: bool = $was_paused;
-                drop(player.take());
-                drop(sink.take());
-                match create_sink(health.clone()) {
-                    Ok(mut s) => {
-                        s.log_on_drop(false);
-                        sink = Some(s);
-                        sink_dev_id = current_default_id();
-                        health.device_lost.store(false, Ordering::Relaxed);
-                        stall_ticks = 0;
-                        log::info!(
-                            "音频设备已重建{}",
-                            resume_at
-                                .map(|t| format!("，从 {t:?} 继续"))
-                                .unwrap_or_default()
-                        );
-                        if let Some(t) = resume_at {
-                            let _ = reader.0.lock().map(|mut r| r.seek(SeekFrom::Start(0)));
-                            player = start_playback!(Some(t));
-                        }
-                        if was_paused && let Some(ref p) = player {
-                            p.pause();
-                        }
-                    }
-                    Err(e) => {
-                        // Keep device_lost set so the loop retries next tick
-                        // (e.g. device still reconnecting).
-                        log::warn!("重建音频设备失败，稍后重试: {e}");
-                    }
-                }
-            }};
-        }
-
+    fn run(
+        mut self,
+        control_rx: std::sync::mpsc::Receiver<ControlCmd>,
+        initial_seek_time: Option<Duration>,
+    ) {
         // Lazy-init the audio sink before first playback.
-        if ensure_sink!() {
-            // Initial playback.
-            player = start_playback!(initial_seek_time);
+        if self.ensure_sink() {
+            self.player = self.start_playback(initial_seek_time);
         }
 
         loop {
-            match control_rx.recv_timeout(progress_interval) {
-                Ok(cmd) => match cmd {
-                    ControlCmd::Switch(input, seek_time) => {
-                        if let Some(ref p) = player {
-                            p.stop();
-                        }
-                        drop(player.take());
-                        reader = input;
-                        if ensure_sink!() {
-                            player = start_playback!(seek_time);
-                        } else {
-                            player = None;
-                        }
+            match control_rx.recv_timeout(PROGRESS_INTERVAL) {
+                Ok(cmd) => {
+                    if self.handle_control(cmd) {
+                        continue;
                     }
-                    ControlCmd::SeekTo(seek_time) => {
-                        if player.is_none() {
-                            continue;
-                        }
-                        if let Some(ref p) = player {
-                            p.stop();
-                        }
-                        drop(player.take());
-                        let _ = reader.0.lock().map(|mut r| r.seek(SeekFrom::Start(0)));
-                        if !ensure_sink!() {
-                            player = None;
-                            continue;
-                        }
-                        player = start_playback!(Some(seek_time));
-                    }
-                    ControlCmd::Stop => {
-                        if let Some(ref p) = player {
-                            p.stop();
-                        }
-                        drop(player.take());
-                        reader = SharedReader(Arc::new(Mutex::new(Box::new(std::io::empty()))));
-                        total_duration = None;
-                        seek_offset = Duration::default();
-                        #[cfg(all(target_os = "linux", target_env = "gnu"))]
-                        log::info!("[HEAP] after ControlCmd::Stop: {} kB", mem_rss_kb());
-                    }
-                    ControlCmd::Pause => {
-                        if let Some(ref p) = player {
-                            p.pause();
-                        }
-                    }
-                    ControlCmd::Resume => {
-                        if let Some(ref p) = player {
-                            p.play();
-                        }
-                    }
-                    ControlCmd::SetVolume(v) => {
-                        volume = v;
-                        if let Some(ref p) = player {
-                            p.set_volume(v);
-                        }
-                    }
-                    ControlCmd::SetSpeed(v) => {
-                        // The running source picks the new factor up at its next
-                        // block boundary (~46ms); no decoder restart.
-                        speed.set(v);
-                    }
-                    ControlCmd::SetSpeedMode(mode) => {
-                        speed.set_mode(mode);
-                    }
-                },
+                }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
             }
 
             // Fatal stream error (device removed etc.) — rebuild and resume at
             // the last known position.
-            if health.device_lost.load(Ordering::Relaxed) {
-                let resume_at = player.as_ref().map(|_| song_pos!());
-                let was_paused = player.as_ref().is_some_and(|p| p.is_paused());
-                rebuild_sink!(resume_at, was_paused);
+            if self.health.device_lost.load(Ordering::Relaxed) {
+                let resume_at = self.player.as_ref().map(|_| self.song_pos());
+                let was_paused = self.player.as_ref().is_some_and(|p| p.is_paused());
+                self.rebuild_sink(resume_at, was_paused);
                 continue;
             }
 
@@ -334,86 +230,268 @@ pub(super) fn run(
             // this the stream would keep playing on the fallback (speakers)
             // forever. Rebuild only when the change is stable, and keep
             // playing at the current position on the new device.
-            follow_poll += 1;
-            if follow_poll >= FOLLOW_POLL_TICKS {
-                follow_poll = 0;
-                if sink.is_some()
-                    && let Some(id) = current_default_id()
-                {
-                    if Some(&id) != sink_dev_id.as_ref() {
-                        follow_diff += 1;
-                    } else {
-                        follow_diff = 0;
-                    }
-                    if follow_diff >= FOLLOW_DIFF_THRESHOLD {
-                        log::info!(
-                            "默认输出设备变化（{} -> {id}），切换音频设备",
-                            sink_dev_id.as_deref().unwrap_or("?")
-                        );
-                        follow_diff = 0;
-                        let resume_at = player.as_ref().map(|_| song_pos!());
-                        let was_paused = player.as_ref().is_some_and(|p| p.is_paused());
-                        rebuild_sink!(resume_at, was_paused);
-                        continue;
-                    }
-                }
+            if self.follow_default_device() {
+                continue;
             }
 
-            if let Some(ref p) = player {
-                if p.empty() && !p.is_paused() {
-                    #[cfg(all(target_os = "linux", target_env = "gnu"))]
-                    log::info!(
-                        "[HEAP] song finished (playback complete): {} kB",
-                        mem_rss_kb()
-                    );
-                    let _ = event_tx.send(PlaybackEvent::Finished.into());
-                    p.stop();
-                    drop(player.take());
-                    total_duration = None;
-                    seek_offset = Duration::default();
-                    #[cfg(all(target_os = "linux", target_env = "gnu"))]
-                    log::info!("[HEAP] after player drop on finish: {} kB", mem_rss_kb());
-                    continue;
-                }
-
-                if !p.is_paused() {
-                    let pos = song_pos!();
-                    let _ = event_tx.send(
-                        PlaybackEvent::Progress {
-                            position: pos,
-                            total: total_duration,
-                        }
-                        .into(),
-                    );
-
-                    // Watchdog: position frozen for STALL_TICKS while playing
-                    // means the stream died silently (macOS sometimes removes
-                    // the output device without firing the error callback).
-                    // Skip when underruns were seen recently — that freeze is
-                    // just the network lagging behind.
-                    if !p.empty() {
-                        let raw_pos = p.get_pos();
-                        if raw_pos == last_pos {
-                            stall_ticks += 1;
-                        } else {
-                            stall_ticks = 0;
-                            last_pos = raw_pos;
-                        }
-                        let underrun_ms = health.last_underrun_ms.load(Ordering::Relaxed);
-                        let now_ms = underrun_now(&health.epoch);
-                        let recent_underrun =
-                            now_ms.saturating_sub(underrun_ms) < UNDERRUN_FRESH_MS;
-                        if stall_ticks >= STALL_TICKS && !recent_underrun {
-                            log::warn!(
-                                "播放位置持续冻结且无网络欠载，疑似输出设备失效，重建音频流"
-                            );
-                            rebuild_sink!(Some(pos), false);
-                        }
-                    }
-                }
+            if self.handle_playback_tick() {
+                continue;
             }
         }
-    });
+    }
+
+    /// Position within the recording: where the stretcher has read to, plus the
+    /// offset the current source was seeked to.
+    fn song_pos(&self) -> Duration {
+        self.seek_offset + self.speed.position()
+    }
+
+    fn ensure_sink(&mut self) -> bool {
+        if self.sink.is_none()
+            && let Ok(mut s) = create_sink(self.health.clone())
+        {
+            s.log_on_drop(false);
+            self.sink = Some(s);
+            self.sink_dev_id = current_default_id();
+        }
+        self.sink.is_some()
+    }
+
+    fn start_playback(&mut self, seek_time: Option<Duration>) -> Option<rodio::Player> {
+        match rodio::Decoder::new(self.reader.clone()) {
+            Ok(d) => {
+                self.total_duration = d.total_duration();
+                let (stretched, offset): (Box<dyn Source<Item = f32> + Send>, Duration) =
+                    if let Some(t) = seek_time {
+                        let mut d = d;
+                        if d.try_seek(t).is_err() {
+                            log::warn!("try_seek failed for {t:?}, starting from 0");
+                            (Box::new(d), Duration::default())
+                        } else {
+                            (Box::new(d), t)
+                        }
+                    } else {
+                        (Box::new(d), Duration::default())
+                    };
+                // Pitch-preserving speed control lives here rather than on the
+                // Player, whose `set_speed` would resample.
+                let source: Box<dyn Source<Item = f32> + Send> =
+                    Box::new(Stretch::new(stretched, self.speed.clone()));
+                self.seek_offset = offset;
+                let p = rodio::Player::connect_new(
+                    &self.sink.as_ref().expect("sink ensured").mixer().clone(),
+                );
+                p.set_volume(self.volume);
+                p.append(source);
+                self.last_pos = Duration::default();
+                self.stall_ticks = 0;
+                Some(p)
+            }
+            Err(e) => {
+                let _ = self
+                    .event_tx
+                    .send(PlaybackEvent::Error(format!("decode: {e}")).into());
+                None
+            }
+        }
+    }
+
+    /// Drop the current player/sink and reopen the (current default) audio
+    /// device. If `resume_at`/`was_paused` are provided, playback continues from
+    /// there on the fresh stream.
+    fn rebuild_sink(&mut self, resume_at: Option<Duration>, was_paused: bool) {
+        self.player = None;
+        self.sink = None;
+        match create_sink(self.health.clone()) {
+            Ok(mut s) => {
+                s.log_on_drop(false);
+                self.sink = Some(s);
+                self.sink_dev_id = current_default_id();
+                self.health.device_lost.store(false, Ordering::Relaxed);
+                self.stall_ticks = 0;
+                log::info!(
+                    "音频设备已重建{}",
+                    resume_at
+                        .map(|t| format!("，从 {t:?} 继续"))
+                        .unwrap_or_default()
+                );
+                if let Some(t) = resume_at {
+                    let _ = lock_recover(&self.reader.0).seek(SeekFrom::Start(0));
+                    self.player = self.start_playback(Some(t));
+                }
+                if was_paused && let Some(ref p) = self.player {
+                    p.pause();
+                }
+            }
+            Err(e) => {
+                // Keep device_lost set so the loop retries next tick
+                // (e.g. device still reconnecting).
+                log::warn!("重建音频设备失败，稍后重试: {e}");
+            }
+        }
+    }
+
+    /// Apply a control command. Returns `true` when the caller should skip the
+    /// rest of this tick (the seek command does when there is nothing playing).
+    fn handle_control(&mut self, cmd: ControlCmd) -> bool {
+        match cmd {
+            ControlCmd::Switch(input, seek_time) => {
+                if let Some(ref p) = self.player {
+                    p.stop();
+                }
+                self.player = None;
+                self.reader = input;
+                self.player = if self.ensure_sink() {
+                    self.start_playback(seek_time)
+                } else {
+                    None
+                };
+            }
+            ControlCmd::SeekTo(seek_time) => {
+                if self.player.is_none() {
+                    return true;
+                }
+                if let Some(ref p) = self.player {
+                    p.stop();
+                }
+                self.player = None;
+                let _ = lock_recover(&self.reader.0).seek(SeekFrom::Start(0));
+                self.player = if self.ensure_sink() {
+                    self.start_playback(Some(seek_time))
+                } else {
+                    None
+                };
+            }
+            ControlCmd::Stop => {
+                if let Some(ref p) = self.player {
+                    p.stop();
+                }
+                self.player = None;
+                self.reader = SharedReader(Arc::new(Mutex::new(Box::new(std::io::empty()))));
+                self.total_duration = None;
+                self.seek_offset = Duration::default();
+            }
+            ControlCmd::Pause => {
+                if let Some(ref p) = self.player {
+                    p.pause();
+                }
+            }
+            ControlCmd::Resume => {
+                if let Some(ref p) = self.player {
+                    p.play();
+                }
+            }
+            ControlCmd::SetVolume(v) => {
+                self.volume = v;
+                if let Some(ref p) = self.player {
+                    p.set_volume(v);
+                }
+            }
+            ControlCmd::SetSpeed(v) => {
+                // The running source picks the new factor up at its next block
+                // boundary (~46ms); no decoder restart.
+                self.speed.set(v);
+            }
+            ControlCmd::SetSpeedMode(mode) => self.speed.set_mode(mode),
+        }
+        false
+    }
+
+    /// Poll the system default output device and rebuild the sink once a change
+    /// has been stable for [`FOLLOW_DIFF_THRESHOLD`] polls. Returns `true` if a
+    /// rebuild happened.
+    fn follow_default_device(&mut self) -> bool {
+        self.follow_poll += 1;
+        if self.follow_poll < FOLLOW_POLL_TICKS {
+            return false;
+        }
+        self.follow_poll = 0;
+        if self.sink.is_none() {
+            return false;
+        }
+        let Some(id) = current_default_id() else {
+            return false;
+        };
+        if Some(&id) != self.sink_dev_id.as_ref() {
+            self.follow_diff += 1;
+        } else {
+            self.follow_diff = 0;
+        }
+        if self.follow_diff < FOLLOW_DIFF_THRESHOLD {
+            return false;
+        }
+        log::info!(
+            "默认输出设备变化（{} -> {id}），切换音频设备",
+            self.sink_dev_id.as_deref().unwrap_or("?")
+        );
+        self.follow_diff = 0;
+        let resume_at = self.player.as_ref().map(|_| self.song_pos());
+        let was_paused = self.player.as_ref().is_some_and(|p| p.is_paused());
+        self.rebuild_sink(resume_at, was_paused);
+        true
+    }
+
+    /// Emit progress and run the frozen-position watchdog. Returns `true` when
+    /// playback finished (the caller then starts the next iteration).
+    fn handle_playback_tick(&mut self) -> bool {
+        if self.player.is_none() {
+            return false;
+        }
+        let finished = self
+            .player
+            .as_ref()
+            .is_some_and(|p| p.empty() && !p.is_paused());
+        if finished {
+            let _ = self.event_tx.send(PlaybackEvent::Finished.into());
+            if let Some(p) = self.player.as_ref() {
+                p.stop();
+            }
+            self.player = None;
+            self.total_duration = None;
+            self.seek_offset = Duration::default();
+            return true;
+        }
+
+        if self.player.as_ref().is_some_and(|p| p.is_paused()) {
+            return false;
+        }
+
+        let pos = self.song_pos();
+        let _ = self.event_tx.send(
+            PlaybackEvent::Progress {
+                position: pos,
+                total: self.total_duration,
+            }
+            .into(),
+        );
+
+        // Watchdog: position frozen for STALL_TICKS while playing means the
+        // stream died silently (macOS sometimes removes the output device
+        // without firing the error callback). Skip when underruns were seen
+        // recently — that freeze is just the network lagging behind.
+        let (empty, raw_pos) = self
+            .player
+            .as_ref()
+            .map(|p| (p.empty(), p.get_pos()))
+            .unwrap_or((true, Duration::default()));
+        if empty {
+            return false;
+        }
+        if raw_pos == self.last_pos {
+            self.stall_ticks += 1;
+        } else {
+            self.stall_ticks = 0;
+            self.last_pos = raw_pos;
+        }
+        let underrun_ms = self.health.last_underrun_ms.load(Ordering::Relaxed);
+        let now_ms = underrun_now(&self.health.epoch);
+        let recent_underrun = now_ms.saturating_sub(underrun_ms) < UNDERRUN_FRESH_MS;
+        if self.stall_ticks >= STALL_TICKS && !recent_underrun {
+            log::warn!("播放位置持续冻结且无网络欠载，疑似输出设备失效，重建音频流");
+            self.rebuild_sink(Some(pos), false);
+        }
+        false
+    }
 }
 
 /// Milliseconds since `epoch`, matching how `DeviceHealth.last_underrun_ms`
@@ -568,4 +646,34 @@ fn open_sink_impl(
     rodio::DeviceSinkBuilder::from_default_device()
         .map(|b| b.with_error_callback(stream_error_callback(health)))
         .and_then(|b| b.open_sink_or_fallback())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    /// A panic while the reader lock is held must not permanently break the
+    /// reader: a poisoned `std::sync::Mutex` would make every later read fail
+    /// with "audio reader lock poisoned", and the audio could then never
+    /// recover without restarting the process.
+    #[test]
+    fn reader_survives_a_panicking_guard() {
+        let mut reader = SharedReader(Arc::new(Mutex::new(
+            Box::new(Cursor::new(b"hello".to_vec())) as Box<dyn AudioReader>,
+        )));
+
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = lock_recover(&reader.0);
+            panic!("panic while holding the reader lock");
+        }));
+        assert!(panicked.is_err(), "the guard was expected to panic");
+
+        // The lock is poisoned now, but the reader must still work.
+        let mut buf = [0u8; 5];
+        reader
+            .read_exact(&mut buf)
+            .expect("read after a poisoned lock");
+        assert_eq!(&buf, b"hello");
+    }
 }

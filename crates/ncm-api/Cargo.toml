@@ -32,6 +32,6 @@ log = "0.4.34"
 thiserror = "2.0.21"
 
 [dev-dependencies]
-qrcode = "0.14.1"
+qrcode = { version = "0.14.1", default-features = false }
 rustls = { version = "0.23.32", features = ["ring"] }
 tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }

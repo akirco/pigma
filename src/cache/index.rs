@@ -3,15 +3,15 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::{
-        Arc, RwLock,
+        Arc, Mutex, RwLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize, Serializer, ser::SerializeMap};
 
 use super::{CacheManager, DEFAULT_MAX_CACHE_BYTES};
+use crate::utils::unix_secs;
 
 /// Entry in the audio cache index, mapping song ID to filename and duration.
 #[derive(Clone, Deserialize)]
@@ -88,6 +88,9 @@ impl CacheManager {
             cached_total_bytes: Arc::new(AtomicU64::new(total)),
             index_dirty: Arc::new(AtomicBool::new(false)),
             index_write_pending: Arc::new(AtomicBool::new(false)),
+            content_pending: Arc::new(Mutex::new(HashMap::new())),
+            content_writer: Arc::new(AtomicBool::new(false)),
+            content_write_lock: Arc::new(Mutex::new(())),
         }
     }
 
@@ -164,17 +167,21 @@ impl CacheManager {
     }
 
     fn write_index(index: &RwLock<CacheIndex>, downloads_dir: &Path) {
-        if let Err(e) = fs::create_dir_all(downloads_dir) {
-            log::warn!("Failed to create downloads dir: {e}");
-            return;
-        }
         let snapshot = {
             let index = index.read().unwrap_or_else(|e| e.into_inner());
             let file = CacheIndexFileRef { songs: &index };
-            serde_json::to_string(&file).unwrap_or_default()
+            match serde_json::to_string(&file) {
+                Ok(snapshot) => snapshot,
+                Err(e) => {
+                    // Writing an empty file here would orphan every cached
+                    // download; keep the previous index instead.
+                    log::warn!("Failed to serialize cache index, keeping previous file: {e}");
+                    return;
+                }
+            }
         };
         let path = Self::index_path(downloads_dir);
-        if let Err(e) = fs::write(&path, snapshot) {
+        if let Err(e) = super::write_atomic(&path, snapshot.as_bytes()) {
             log::warn!("Failed to write cache index: {e}");
         }
     }
@@ -190,10 +197,7 @@ impl CacheManager {
     }
 
     pub fn mark_uploaded(&self, song_id: u64) {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
+        let now = unix_secs();
         if let Ok(mut index) = self.index.write()
             && let Some(entry) = index.get_mut(&song_id)
         {

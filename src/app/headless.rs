@@ -11,6 +11,7 @@ use super::App;
 use crate::{
     service::ApiEndpoint,
     state::{ContentState, Page},
+    utils::lock_recover,
 };
 
 impl App {
@@ -20,7 +21,7 @@ impl App {
         mut self,
         endpoint: &str,
         playlist_index: Option<usize>,
-    ) -> color_eyre::Result<()> {
+    ) -> eyre::Result<()> {
         self.state.navigation.page = Page::Main;
         let _ipc_guard = crate::ipc::start_server(
             Arc::clone(&self.ipc.status),
@@ -41,9 +42,7 @@ impl App {
                     // the waybar heart icon reflect reality in headless mode too.
                     match self.service.load_liked_song_ids(uid).await {
                         Ok(ids) => {
-                            if let Ok(mut guard) = self.liked_ids.lock() {
-                                *guard = ids;
-                            }
+                            *lock_recover(&self.liked_ids) = ids;
                         }
                         Err(e) => log::warn!("headless: failed to load liked song ids: {e}"),
                     }
