@@ -75,7 +75,7 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 - [x] 下载管理（重合边听边存）
 - [x] 重写playerbar(支持歌曲封面)
 - [x] 云盘上传（缓存文件，本地文件）
-- [x] 音量控制
+- [x] 音量控制 / 10 段均衡器（`e` 打开，横向调节 dB）
 - [x] 变速播放（`[` / `]` 每档 0.1，0.5–2.0x；`t` 切换两种变速方式：WSOLA 时域拉伸保持音调（播放条显示 `*1.2x`）与重采样保持原声质感（显示 `1.2x`），进度与歌词自动跟随）
 - [x] 更多layout支持
 - [x] 支持系统包管理器安装(yay,paru,scoop)
@@ -178,6 +178,7 @@ cargo build --release
 | space         |                      暂停                      |
 | f             |                    播放队列                    |
 | l             |                      歌词                      |
+| e             |                     均衡器                     |
 | /             |                   搜索/过滤                    |
 | b             |                    样式切换                    |
 | left /right   |                    seek 15s                    |

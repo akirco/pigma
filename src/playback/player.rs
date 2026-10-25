@@ -13,7 +13,10 @@ use rodio::{
 };
 use tokio::sync::mpsc;
 
-use super::stretch::{SpeedHandle, SpeedMode, Stretch};
+use super::{
+    equalizer::{EqHandle, EqSource},
+    stretch::{SpeedHandle, SpeedMode, Stretch},
+};
 
 use crate::{
     event::{Event, PlaybackEvent},
@@ -115,12 +118,14 @@ const PROGRESS_INTERVAL: Duration = Duration::from_millis(200);
 /// playback) so it can be rebuilt when the output device goes away: Bluetooth
 /// headsets being disconnected/reconnected invalidate the old stream, and the
 /// only fix is to re-enumerate devices and open the current default again.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn run(
     initial_reader: SharedReader,
     initial_seek_time: Option<Duration>,
     initial_volume: f32,
     initial_speed: f32,
     initial_speed_mode: SpeedMode,
+    eq: EqHandle,
     event_tx: mpsc::UnboundedSender<Event>,
     control_rx: std::sync::mpsc::Receiver<ControlCmd>,
 ) {
@@ -130,6 +135,7 @@ pub(super) fn run(
             initial_volume,
             initial_speed,
             initial_speed_mode,
+            eq,
             event_tx,
         );
         task.run(control_rx, initial_seek_time);
@@ -145,6 +151,7 @@ struct PlayerTask {
     seek_offset: Duration,
     volume: f32,
     speed: SpeedHandle,
+    eq: EqHandle,
     sink: Option<rodio::MixerDeviceSink>,
     health: Arc<DeviceHealth>,
     /// Watchdog state: position frozen while playing => dead stream.
@@ -164,6 +171,7 @@ impl PlayerTask {
         volume: f32,
         initial_speed: f32,
         initial_speed_mode: SpeedMode,
+        eq: EqHandle,
         event_tx: mpsc::UnboundedSender<Event>,
     ) -> Self {
         // Playback speed. rodio's `Player::set_speed` resamples (raising the
@@ -179,6 +187,7 @@ impl PlayerTask {
             seek_offset: Duration::default(),
             volume,
             speed,
+            eq,
             sink: None,
             health: Arc::new(DeviceHealth {
                 device_lost: AtomicBool::new(false),
@@ -275,8 +284,10 @@ impl PlayerTask {
                     };
                 // Pitch-preserving speed control lives here rather than on the
                 // Player, whose `set_speed` would resample.
-                let source: Box<dyn Source<Item = f32> + Send> =
-                    Box::new(Stretch::new(stretched, self.speed.clone()));
+                let source: Box<dyn Source<Item = f32> + Send> = Box::new(Stretch::new(
+                    EqSource::new(stretched, self.eq.clone()),
+                    self.speed.clone(),
+                ));
                 self.seek_offset = offset;
                 let p = rodio::Player::connect_new(
                     &self.sink.as_ref().expect("sink ensured").mixer().clone(),

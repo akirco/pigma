@@ -30,6 +30,7 @@ pub enum Page {
     Main,
     Lyrics,
     Playlist,
+    Equalizer,
     Login,
 }
 
@@ -38,6 +39,7 @@ pub struct State {
     pub events: EventHandler,
     pub border: BorderConfig,
     pub splash: SplashState,
+    pub eq_selected: usize,
     pub login: LoginState,
     pub navigation: NavigationState,
     pub command_panel: CommandPanel,

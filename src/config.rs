@@ -4,6 +4,7 @@
 mod border;
 mod cache;
 mod column;
+mod equalizer;
 mod format;
 mod navigation;
 mod playerbar;
@@ -15,6 +16,7 @@ use std::fs;
 pub use border::*;
 pub use cache::*;
 pub use column::*;
+pub use equalizer::*;
 pub use navigation::*;
 pub use playerbar::*;
 use serde::{Deserialize, Serialize};
@@ -41,6 +43,8 @@ pub struct Config {
     pub titles: TitlesConfig,
     #[serde(default)]
     pub columns: ColumnsConfig,
+    #[serde(default)]
+    pub equalizer: EqualizerConfig,
     /// Lyrics highlight gradient style: warm / cubehelix / rainbow / spectral / viridis / turbo.
     #[serde(default)]
     pub lyric_gradient: GradientPreset,
@@ -188,6 +192,7 @@ impl Default for Config {
             themes: Vec::new(),
             navigation: NavConfig::default(),
             columns: ColumnsConfig::default(),
+            equalizer: EqualizerConfig::default(),
             cli_status_template: default_cli_status_template(),
             cli_status_format: default_cli_status_format(),
         }

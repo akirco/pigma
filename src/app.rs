@@ -4,6 +4,7 @@
 mod builder;
 mod content;
 mod cover;
+mod equalizer;
 mod event;
 mod headless;
 mod login;
@@ -79,7 +80,7 @@ pub struct App {
 impl App {
     /// `with_terminal` selects the interactive TUI event source (crossterm);
     /// pass `false` for headless daemon mode.
-    pub fn new(config: Config, with_terminal: bool) -> eyre::Result<Self> {
+    pub fn new(mut config: Config, with_terminal: bool) -> eyre::Result<Self> {
         let border = config.border.clone();
 
         let events = EventHandler::new(with_terminal);
@@ -153,6 +154,7 @@ impl App {
             events,
             border,
             splash: SplashState::default(),
+            eq_selected: 0,
             login: LoginState::default(),
             navigation: NavigationState {
                 page: Page::Splash,
@@ -190,22 +192,25 @@ impl App {
             config.search_limit as usize,
             state.navigation.search.providers.clone(),
         ));
+        let mut playback = PlaybackEngine::new(
+            tx,
+            service.clone(),
+            cache,
+            base_dir,
+            quality,
+            save_on_play,
+            stream_client,
+            Arc::clone(&finder),
+            sonar_enabled,
+            Arc::clone(&sonar_songs),
+            Arc::clone(&liked_ids),
+        );
+        playback.set_equalizer(config.equalizer.sanitized());
+        config.equalizer = playback.equalizer();
         Ok(Self {
             config,
-            service: service.clone(),
-            playback: PlaybackEngine::new(
-                tx,
-                service,
-                cache,
-                base_dir,
-                quality,
-                save_on_play,
-                stream_client,
-                Arc::clone(&finder),
-                sonar_enabled,
-                Arc::clone(&sonar_songs),
-                Arc::clone(&liked_ids),
-            ),
+            service,
+            playback,
             state,
             theme_registry,
             picker,
@@ -251,6 +256,7 @@ impl App {
     }
 
     pub fn quit(&mut self) {
+        self.save_equalizer();
         self.playback.save_session();
         self.service.client().flush_cookies();
         // Persist any coalesced content-cache write that has not drained yet;
@@ -262,6 +268,26 @@ impl App {
     pub fn toast(&mut self, msg: String) {
         self.state.toast_msg = msg;
         self.state.toast_time = Some(Instant::now());
+    }
+
+    /// Toggle play/pause with the same toast shown by the main page.
+    pub(crate) fn toggle_playback(&mut self) {
+        let was_paused = self.playback.state.paused;
+        self.playback.toggle_pause();
+        if let Some(song) = self.playback.current_song() {
+            if was_paused {
+                self.toast(format!("\u{f03e4}  {}", song.name));
+            } else {
+                self.toast(format!("\u{f040a}  {}", song.name));
+            }
+        }
+    }
+
+    /// Cycle the playback mode and show the same toast as the main page.
+    pub(crate) fn cycle_play_mode(&mut self) {
+        let mode = self.playback.cycle_mode();
+        let (icon, label) = crate::playback::mode_icon(&mode);
+        self.toast(format!("{icon} 循环: {label}"));
     }
 
     /// Adjust playback volume by `delta` (fraction of 0..=1), clamped to bounds

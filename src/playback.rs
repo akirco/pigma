@@ -4,6 +4,7 @@
 mod controller;
 mod cover;
 mod engine;
+mod equalizer;
 mod lyrics;
 mod mode;
 mod player;

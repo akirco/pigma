@@ -3,6 +3,8 @@
 //! table}`); the per-view handlers here only decide which action to trigger.
 
 mod command;
+mod common;
+mod equalizer;
 mod help;
 mod login;
 mod main;
@@ -56,6 +58,11 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> eyre::Result<()>
 
     if app.state.navigation.page == Page::Login {
         login::handle_login_key(app, key_event);
+        return Ok(());
+    }
+
+    if app.state.navigation.page == Page::Equalizer {
+        equalizer::handle_equalizer_key(app, key_event);
         return Ok(());
     }
 

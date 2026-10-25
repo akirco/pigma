@@ -2,19 +2,22 @@ use crossterm::event::{KeyCode, KeyEvent, MouseEventKind};
 
 use crate::{
     app::App,
-    event::{AppEvent, CommandEvent, NavigationEvent, PlaybackEvent},
-    playback::mode_icon,
+    event::{CommandEvent, NavigationEvent, PlaybackEvent},
     service::ApiEndpoint,
     state::{ContentState, Page, TableMode},
     text_input::TextInput,
 };
 
 pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Result<()> {
+    if super::common::handle_playback_key(app, key_event)
+        || super::common::handle_page_key(app, key_event)
+    {
+        return Ok(());
+    }
     match key_event.code {
         KeyCode::Esc => {
             app.state.events.send(NavigationEvent::ContentRestore);
         }
-        KeyCode::Char('q') => app.state.events.send(AppEvent::Quit),
         KeyCode::Tab if app.state.navigation.page == Page::Playlist => {
             if let Some(key) = app.playback.switch_queue(true) {
                 app.state.navigation.playlist_selected =
@@ -88,38 +91,8 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Resul
                 app.playback.seek_relative(interval);
             }
         }
-        KeyCode::Char('l') => {
-            let next = match app.state.navigation.page {
-                Page::Main => Page::Lyrics,
-                Page::Lyrics => Page::Main,
-                Page::Playlist => Page::Main,
-                Page::Login => Page::Main,
-                Page::Splash => Page::Splash,
-            };
-            app.state.events.send(NavigationEvent::Navigate(next));
-        }
-        KeyCode::Char('p' | 'P') => {
-            app.playback.prev();
-        }
-        KeyCode::Char('n' | 'N') => {
-            app.playback.next();
-        }
         KeyCode::Char('c' | 'C') => {
             app.toggle_table_mode();
-        }
-        KeyCode::Char('f' | 'F') => {
-            let next = match app.state.navigation.page {
-                Page::Main => {
-                    app.state.navigation.playlist_selected =
-                        app.playback.queue_current_index().unwrap_or(0);
-                    Page::Playlist
-                }
-                Page::Playlist => Page::Main,
-                Page::Lyrics => Page::Main,
-                Page::Login => Page::Main,
-                Page::Splash => Page::Splash,
-            };
-            app.state.events.send(NavigationEvent::Navigate(next));
         }
         KeyCode::Char('/') => {
             if app.state.navigation.page == Page::Playlist {
@@ -136,22 +109,6 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Resul
         }
         KeyCode::Char('b' | 'B') => {
             app.state.events.send(CommandEvent::ToggleBordered);
-        }
-        KeyCode::Char(' ') => {
-            let was_paused = app.playback.state.paused;
-            app.playback.toggle_pause();
-            if let Some(song) = app.playback.current_song() {
-                if was_paused {
-                    app.toast(format!("\u{f03e4}  {}", song.name));
-                } else {
-                    app.toast(format!("\u{f040a}  {}", song.name));
-                }
-            }
-        }
-        KeyCode::Char('m') => {
-            let mode = app.playback.cycle_mode();
-            let (icon, label) = mode_icon(&mode);
-            app.toast(format!("{icon} 循环: {label}"));
         }
         KeyCode::Char('S') => {
             if let Some(song) = app.playback.current_song() {
@@ -225,21 +182,6 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Resul
             app.state
                 .events
                 .send(NavigationEvent::UploadCachedSong(sel));
-        }
-        KeyCode::Char('+' | '=') => {
-            app.adjust_volume(0.05);
-        }
-        KeyCode::Char('-' | '_') => {
-            app.adjust_volume(-0.05);
-        }
-        KeyCode::Char('[') => {
-            app.adjust_speed(-crate::playback::SPEED_STEP);
-        }
-        KeyCode::Char(']') => {
-            app.adjust_speed(crate::playback::SPEED_STEP);
-        }
-        KeyCode::Char('t' | 'T') => {
-            app.toggle_pitch_locked();
         }
         KeyCode::Char('z' | 'Z') => {
             app.cycle_nav_position();

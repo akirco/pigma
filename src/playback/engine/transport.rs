@@ -7,7 +7,7 @@ use super::{
     PlaybackEngine,
     mode::{self, PlayMode},
 };
-use crate::playback::stretch::SpeedMode;
+use crate::{config::EqualizerConfig, playback::stretch::SpeedMode};
 
 impl PlaybackEngine {
     pub fn seek_relative(&mut self, delta_secs: f64) {
@@ -32,6 +32,18 @@ impl PlaybackEngine {
         self.state.progress = new_secs / total_secs;
         self.state.seeking = true;
         self.controller.seek_to(Duration::from_secs_f64(new_secs));
+    }
+
+    /// Replace the equalizer settings; the audio thread retunes its running
+    /// filters without restarting the decoder.
+    pub fn set_equalizer(&mut self, equalizer: EqualizerConfig) {
+        let equalizer = equalizer.sanitized();
+        self.state.equalizer = equalizer;
+        self.controller.set_equalizer(equalizer);
+    }
+
+    pub fn equalizer(&self) -> EqualizerConfig {
+        self.state.equalizer
     }
 
     pub fn set_volume(&mut self, volume: f64) {

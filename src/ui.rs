@@ -5,6 +5,7 @@ mod block;
 mod breadcrumb;
 mod command_panel;
 mod content;
+mod equalizer;
 mod gradient_line_gauge;
 mod help;
 mod layout;
@@ -108,6 +109,15 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         &bs,
                         &app.config.titles.playlist,
                         &mut app.state.navigation.queue_tab_scroll_x,
+                        lay.content,
+                    );
+                }
+                Page::Equalizer => {
+                    equalizer::draw(
+                        f,
+                        &app.playback.state.equalizer,
+                        app.state.eq_selected,
+                        &bs,
                         lay.content,
                     );
                 }

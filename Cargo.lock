@@ -200,6 +200,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
+name = "biquad"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8dee8f423f64504139bdc53d7fbe6a1cd8eff4f354be3652e7cf26385c9f1cb4"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "bit-set"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2324,6 +2333,7 @@ dependencies = [
 name = "pigma"
 version = "0.2.16"
 dependencies = [
+ "biquad",
  "clap",
  "clap_complete",
  "crossterm 0.29.0",
