@@ -9,14 +9,15 @@ use tokio::{
 };
 
 use crate::{
-    event::{AppEvent, Event},
+    event::{AppEvent, Event, IpcEvent},
+    service::SearchEngine,
     utils::lock_recover,
 };
 
 use super::{
     path::resolve_socket_path,
-    protocol::{IpcEvent, IpcRequest},
-    snapshot::{QueueSnapshot, StatusSnapshot},
+    protocol::IpcRequest,
+    snapshot::{QueueSnapshot, SearchEntry, StatusSnapshot},
     transport::{self, Listener},
 };
 
@@ -32,7 +33,7 @@ pub fn start_server(
     queue_snapshot: Arc<Mutex<QueueSnapshot>>,
     status_tx: broadcast::Sender<StatusSnapshot>,
     event_tx: mpsc::UnboundedSender<Event>,
-    searcher: Arc<crate::app::SearchEngine>,
+    searcher: Arc<SearchEngine>,
 ) -> IpcServerGuard {
     let listener = match Listener::bind() {
         Some(l) => l,
@@ -96,7 +97,7 @@ async fn handle_connection<S>(
     queue: Arc<Mutex<QueueSnapshot>>,
     status_tx: broadcast::Sender<StatusSnapshot>,
     event_tx: mpsc::UnboundedSender<Event>,
-    searcher: Arc<crate::app::SearchEngine>,
+    searcher: Arc<SearchEngine>,
 ) where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
@@ -117,7 +118,7 @@ async fn handle_connection<S>(
         IpcRequest::Status => {
             let reply = {
                 // Clone under the lock, serialize outside it so a slow client
-                // never blocks the app loop's `update_status_snapshot`.
+                // never blocks the app loop's `IpcState::update`.
                 let snapshot = lock_recover(&snapshot).clone();
                 serde_json::to_string(&snapshot).unwrap_or_default()
             };
@@ -139,7 +140,12 @@ async fn handle_connection<S>(
             let _ = write_reply(&mut stream, r#"{"ok":true}"#).await;
         }
         IpcRequest::Search { keyword } => {
-            let results = searcher.search(&keyword).await;
+            let results: Vec<SearchEntry> = searcher
+                .search(&keyword)
+                .await
+                .into_iter()
+                .map(|hit| SearchEntry::from_song(&hit.info, &hit.source))
+                .collect();
             let reply = serde_json::to_string(&results).unwrap_or_default();
             let _ = write_reply(&mut stream, &reply).await;
         }

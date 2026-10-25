@@ -1,27 +1,23 @@
-//! IPC snapshot state: the live status/queue snapshots served to `pigma
-//! status` over the IPC socket, the broadcast fan-out for `subscribe`
-//! clients, and the rebuild/broadcast logic that keeps them current.
+//! Live IPC snapshot state: the status/queue snapshots served to `pigma
+//! status`, the broadcast fan-out for `subscribe` clients, and the rebuild
+//! logic that keeps them current from the playback engine.
 
 use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
-use crate::{
-    ipc::{QueueSnapshot, StatusSnapshot},
-    utils::lock_recover,
-};
+use super::snapshot::{QueueEntry, QueueSnapshot, StatusSnapshot};
+use crate::{playback::PlaybackEngine, utils::lock_recover};
 
-use super::App;
-
-pub(super) struct IpcState {
+pub(crate) struct IpcState {
     /// Live playback snapshot served to `pigma status` over the IPC socket.
-    pub status: Arc<Mutex<StatusSnapshot>>,
+    pub(crate) status: Arc<Mutex<StatusSnapshot>>,
     /// Live playback queue served to `pigma status -L` over the IPC socket.
-    pub queue: Arc<Mutex<QueueSnapshot>>,
+    pub(crate) queue: Arc<Mutex<QueueSnapshot>>,
     /// Fan-out channel for snapshot changes, consumed by the IPC `subscribe`
     /// handler so long-running clients get event push.
-    pub status_tx: tokio::sync::broadcast::Sender<StatusSnapshot>,
+    pub(crate) status_tx: tokio::sync::broadcast::Sender<StatusSnapshot>,
     /// When the last snapshot was broadcast; discrete changes fire immediately,
     /// position refresh (playing) is throttled to once per second.
     last_broadcast: Instant,
@@ -31,22 +27,20 @@ pub(super) struct IpcState {
 }
 
 impl IpcState {
-    pub(super) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let (status_tx, _status_rx) = tokio::sync::broadcast::channel(16);
         Self {
             status: Arc::new(Mutex::new(StatusSnapshot::default())),
             queue: Arc::new(Mutex::new(QueueSnapshot::default())),
             status_tx,
             last_broadcast: Instant::now(),
-            // Force the first `update_status_snapshot` to populate the queue,
-            // e.g. when a session is restored from disk during engine startup.
+            // Force the first `update` to populate the queue, e.g. when a
+            // session is restored from disk during engine startup.
             last_queue_version: u64::MAX,
         }
     }
-}
 
-impl App {
-    /// Refresh the IPC status snapshot from the live playback state. The status
+    /// Refresh the status snapshot from the live playback state. The status
     /// (current song + progress) is cheap and rebuilt each loop; the full queue
     /// listing is only rebuilt when the queue actually changed.
     ///
@@ -54,15 +48,15 @@ impl App {
     /// while a track is playing the position also advances, but that refresh is
     /// throttled to once per second so the daemon does not spam subscribers at
     /// the event-loop rate.
-    pub(super) fn update_status_snapshot(&mut self) {
-        let snapshot = StatusSnapshot::from_playback(&self.playback.state);
-        let elapsed = self.ipc.last_broadcast.elapsed();
+    pub(crate) fn update(&mut self, playback: &PlaybackEngine) {
+        let snapshot = StatusSnapshot::from_playback(&playback.state);
+        let elapsed = self.last_broadcast.elapsed();
         let position_stale =
             snapshot.playing && !snapshot.paused && elapsed >= Duration::from_secs(1);
 
         let mut changed = false;
         {
-            let mut stored = lock_recover(&self.ipc.status);
+            let mut stored = lock_recover(&self.status);
             if stored.meaningfully_differs(&snapshot) {
                 changed = true;
                 *stored = snapshot.clone();
@@ -74,20 +68,19 @@ impl App {
             }
         }
         if changed || position_stale {
-            self.ipc.last_broadcast = Instant::now();
-            let _ = self.ipc.status_tx.send(snapshot);
+            self.last_broadcast = Instant::now();
+            let _ = self.status_tx.send(snapshot);
         }
-        let version = self.playback.queue_version();
-        if version != self.ipc.last_queue_version {
-            self.ipc.last_queue_version = version;
-            *lock_recover(&self.ipc.queue) = QueueSnapshot {
-                key: self.playback.queue_key().to_string(),
-                current_index: self.playback.queue_current_index(),
-                songs: self
-                    .playback
+        let version = playback.queue_version();
+        if version != self.last_queue_version {
+            self.last_queue_version = version;
+            *lock_recover(&self.queue) = QueueSnapshot {
+                key: playback.queue_key().to_string(),
+                current_index: playback.queue_current_index(),
+                songs: playback
                     .queue_songs()
                     .iter()
-                    .map(|s| crate::ipc::QueueEntry::from_song(s))
+                    .map(|s| QueueEntry::from_song(s))
                     .collect(),
             };
         }

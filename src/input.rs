@@ -1,15 +1,13 @@
-//! Keyboard (and mouse) input handling: dispatches key events to the per-view
-//! handlers (navigation, content, search, login, help, command, splash, table).
+//! Keyboard (and mouse) input handling: maps events onto `App` actions. The
+//! state transitions themselves live on `App` (`app::{navigation, selection,
+//! table}`); the per-view handlers here only decide which action to trigger.
 
 mod command;
-mod content;
 mod help;
 mod login;
 mod main;
-mod navigation;
 mod search;
 mod splash;
-mod table;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
 
@@ -67,7 +65,7 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> eyre::Result<()>
 
     // Uppercase L: go to the login page (lowercase `l` toggles lyrics on the main page).
     // No-op when already logged in.
-    if key_event.code == KeyCode::Char('L') && !app.service.client().is_logged_in() {
+    if key_event.code == KeyCode::Char('L') && !app.is_logged_in() {
         app.state
             .events
             .send(NavigationEvent::Navigate(Page::Login));

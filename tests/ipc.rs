@@ -3,7 +3,10 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use pigma::ipc::{self, IpcEvent, QueueSnapshot, StatusSnapshot};
+use pigma::{
+    event::IpcEvent,
+    ipc::{self, QueueSnapshot, StatusSnapshot},
+};
 use tokio::io::AsyncBufReadExt;
 
 fn channel() -> (
@@ -15,7 +18,7 @@ fn channel() -> (
 
 /// A `SearchEngine` with no providers: the round trips exercise the IPC
 /// plumbing without hitting any network.
-fn stub_searcher() -> Arc<pigma::app::SearchEngine> {
+fn stub_searcher() -> Arc<pigma::service::SearchEngine> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let cache_dir =
         std::env::temp_dir().join(format!("pigma-ipc-test-cache-{}", std::process::id()));
@@ -31,8 +34,8 @@ fn stub_searcher() -> Arc<pigma::app::SearchEngine> {
     );
     let sonar_songs: Arc<Mutex<HashMap<u64, Arc<sonar::Song>>>> =
         Arc::new(Mutex::new(HashMap::new()));
-    let search_results: pigma::app::SearchResults = Arc::new(Mutex::new(HashMap::new()));
-    Arc::new(pigma::app::SearchEngine::new(
+    let search_results: pigma::service::SearchResults = Arc::new(Mutex::new(HashMap::new()));
+    Arc::new(pigma::service::SearchEngine::new(
         service,
         finder,
         sonar_songs,

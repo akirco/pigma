@@ -7,8 +7,8 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use super::{BlockStyle, block::CornerBlock, splash::LOGO};
-use crate::{config::Theme, layout::LoginLayout, state::LoginState};
+use super::{BlockStyle, block::CornerBlock, layout::LoginLayout, splash::LOGO};
+use crate::{config::Theme, state::LoginState};
 
 pub(super) fn draw(
     f: &mut Frame,

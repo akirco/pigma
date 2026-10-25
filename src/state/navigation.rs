@@ -3,11 +3,7 @@ use std::{cell::RefCell, sync::Arc};
 use ncm_api::{LoginInfo, SongInfo};
 use ratatui::widgets::{ListState, TableState};
 
-use super::{
-    Page, PaginationInfo,
-    content::{ContentState, TableMode},
-    search::SearchState,
-};
+use super::{ContentState, Page, PaginationInfo, content::TableMode, search::SearchState};
 use crate::config::NavConfig;
 pub use crate::config::{NavItemConfig, NavSectionConfig as NavSection};
 

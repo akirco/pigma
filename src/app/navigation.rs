@@ -47,7 +47,11 @@ impl App {
                 let state = if ttl > 0 {
                     let cache_clone = cache.clone();
                     tokio::task::spawn_blocking(move || {
-                        cache_clone.save_content_cache("local_music", &state, None);
+                        cache_clone.save_content_cache(
+                            ApiEndpoint::LocalMusic.as_str(),
+                            &state,
+                            None,
+                        );
                         state
                     })
                     .await
@@ -187,6 +191,11 @@ impl App {
         self.state.navigation.nav.subtitle = Some(name);
     }
 
+    /// Restore the previous breadcrumb level (Esc from the content page).
+    pub(super) fn handle_content_restore(&mut self) {
+        self.state.navigation.pop_breadcrumb();
+    }
+
     pub(super) fn handle_cell_action(&mut self, row: usize, col: usize) -> eyre::Result<()> {
         let columns = self
             .config
@@ -304,7 +313,7 @@ impl App {
                     log::info!("Uploaded {} (song_id={})", result.song_name, result.song_id);
                     send_event(
                         &sender,
-                        NavigationEvent::NavSelect("download".into()).into(),
+                        NavigationEvent::NavSelect(ApiEndpoint::Download.as_str().into()).into(),
                     );
                     send_event(
                         &sender,
@@ -321,16 +330,20 @@ impl App {
 
     /// Manually refresh the current navigation item: skip the cache, refetch, and write the result back to the cache.
     pub(crate) fn reload_current_nav(&mut self) {
-        let api = self.state.navigation.nav.selected_api().map(str::to_string);
+        let Some(api) = self.state.navigation.nav.selected_api().map(str::to_string) else {
+            self.toast("无可用内容刷新".into());
+            return;
+        };
 
-        match api.as_deref() {
-            Some("local_music") => self.toast("↻ 刷新本地音乐".into()),
-            Some("download") => self.toast("↻ 刷新下载".into()),
-            Some(api_str) => {
-                let _ = self.handle_nav_select(api_str.to_string(), true);
+        match ApiEndpoint::parse(&api) {
+            // Local/download content comes from disk, so a refetch is just a
+            // rescan; there is nothing to request from the API.
+            Some(ApiEndpoint::LocalMusic) => self.toast("↻ 刷新本地音乐".into()),
+            Some(ApiEndpoint::Download) => self.toast("↻ 刷新下载".into()),
+            _ => {
+                let _ = self.handle_nav_select(api, true);
                 self.toast("↻ 刷新当前内容".into());
             }
-            None => self.toast("无可用内容刷新".into()),
         }
     }
 
@@ -346,7 +359,7 @@ impl App {
         let sender = self.state.events.sender();
         send_event(
             &sender,
-            NavigationEvent::NavSelect("local_music".into()).into(),
+            NavigationEvent::NavSelect(ApiEndpoint::LocalMusic.as_str().into()).into(),
         );
         self.state.navigation.content_selected = 0;
     }
@@ -355,7 +368,12 @@ impl App {
         self.state.navigation.page = Page::Main;
 
         // Browsable without a logged-in session (public endpoints).
-        const PUBLIC_APIS: &[&str] = &["top_song_list", "toplist", "top_singers", "search"];
+        const PUBLIC_APIS: &[ApiEndpoint] = &[
+            ApiEndpoint::TopSongList,
+            ApiEndpoint::Toplist,
+            ApiEndpoint::TopSingers,
+            ApiEndpoint::Search,
+        ];
         let public_only = !self.service.client().is_logged_in();
 
         let api = self
@@ -367,7 +385,8 @@ impl App {
             .find_map(|s| {
                 s.items.iter().find_map(|i| {
                     let api = i.api.as_deref()?;
-                    if public_only && !PUBLIC_APIS.contains(&api) {
+                    let endpoint = ApiEndpoint::parse(api)?;
+                    if public_only && !PUBLIC_APIS.contains(&endpoint) {
                         None
                     } else {
                         Some(api.to_string())
@@ -388,6 +407,90 @@ impl App {
             self.state.navigation.nav.restore_focus_by_api(&api);
             let sender = self.state.events.sender();
             send_event(&sender, NavigationEvent::NavSelect(api).into());
+        }
+    }
+
+    /// The endpoint of the focused nav item, if it is a known API endpoint
+    /// (items that only navigate, e.g. `login`, yield `None`).
+    pub(crate) fn selected_endpoint(&self) -> Option<ApiEndpoint> {
+        self.state
+            .navigation
+            .nav
+            .selected_api()
+            .and_then(ApiEndpoint::parse)
+    }
+
+    /// Move the navigation focus to the previous item, wrapping across
+    /// sections.
+    pub(crate) fn nav_select_prev(&mut self) {
+        let nav = &mut self.state.navigation.nav;
+        if nav.sections.is_empty() {
+            return;
+        }
+        let focus = nav.focus_section;
+        let len = nav.sections[focus].items.len();
+        if len == 0 {
+            return;
+        }
+        let current = nav.section_states[focus].selected().unwrap_or(0);
+        if current > 0 {
+            nav.section_states[focus].select(Some(current - 1));
+        } else {
+            let section_count = nav.sections.len();
+            let prev_section = (focus + section_count - 1) % section_count;
+            if nav.sections[prev_section].items.is_empty() {
+                return;
+            }
+            nav.section_states[focus].select(Some(0));
+            nav.focus_section = prev_section;
+            let prev_len = nav.sections[prev_section].items.len();
+            nav.section_states[prev_section].select(Some(prev_len - 1));
+        }
+        self.emit_nav_select();
+    }
+
+    /// Move the navigation focus to the next item, wrapping across sections.
+    pub(crate) fn nav_select_next(&mut self) {
+        let nav = &mut self.state.navigation.nav;
+        if nav.sections.is_empty() {
+            return;
+        }
+        let focus = nav.focus_section;
+        let len = nav.sections[focus].items.len();
+        if len == 0 {
+            return;
+        }
+        let current = nav.section_states[focus].selected().unwrap_or(0);
+        if current + 1 < len {
+            nav.section_states[focus].select(Some(current + 1));
+        } else {
+            let next_section = (focus + 1) % nav.sections.len();
+            if nav.sections[next_section].items.is_empty() {
+                return;
+            }
+            nav.section_states[focus].select(Some(0));
+            nav.focus_section = next_section;
+            nav.section_states[next_section].select(Some(0));
+        }
+        self.emit_nav_select();
+    }
+
+    /// Ask the app to load the endpoint of the focused nav item.
+    fn emit_nav_select(&mut self) {
+        let nav = &self.state.navigation.nav;
+        if nav.sections.is_empty() {
+            return;
+        }
+        let focus = nav.focus_section;
+        if let Some(selected) = nav.section_states[focus].selected()
+            && let Some(api) = nav.sections[focus]
+                .items
+                .get(selected)
+                .and_then(|i| i.api.as_ref())
+        {
+            self.state
+                .events
+                .send(NavigationEvent::NavSelect(api.clone()));
         }
     }
 }

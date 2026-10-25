@@ -18,6 +18,7 @@ pub mod path;
 pub mod protocol;
 pub mod server;
 pub mod snapshot;
+mod state;
 
 mod transport;
 
@@ -26,3 +27,4 @@ pub use path::*;
 pub use protocol::*;
 pub use server::*;
 pub use snapshot::*;
+pub(crate) use state::IpcState;

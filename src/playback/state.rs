@@ -2,7 +2,9 @@ use std::{sync::Arc, time::Duration};
 
 use ncm_api::SongInfo;
 
-use super::{cover::CoverState, lyrics::LyricLine, mode::PlayMode};
+use super::{cover::CoverState, mode::PlayMode};
+
+use super::lyrics::LyricLine;
 
 /// Lower bound of the playback speed factor (keyboard `[`).
 pub const MIN_SPEED: f64 = 0.5;

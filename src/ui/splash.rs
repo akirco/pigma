@@ -6,10 +6,9 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use super::BlockStyle;
+use super::{BlockStyle, layout::SplashLayout};
 use crate::{
     config::Theme,
-    layout::SplashLayout,
     state::{LogLevel, SplashState},
 };
 

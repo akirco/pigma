@@ -1,5 +1,6 @@
-//! Shared application state: the active `Page` and the top-level `State` that
-//! bundles the navigation/search/login/help sub-state.
+//! Shared application state: the top-level `State` that bundles the
+//! navigation/search/login/help sub-state, plus the payload types those
+//! layers are built on (`content`, `page`, `search`, `splash`).
 
 pub mod command;
 pub mod content;

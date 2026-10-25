@@ -78,7 +78,7 @@ impl CacheManager {
             return None;
         }
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        Some(crate::utils::format::canonical_ext(ext))
+        Some(crate::utils::audio::canonical_ext(ext))
     }
 
     fn ensure_dir(&self) -> io::Result<()> {
