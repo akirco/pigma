@@ -4,19 +4,19 @@
 mod builder;
 mod content;
 mod cover;
+mod equalizer;
 mod event;
 mod headless;
 mod login;
 mod lyrics;
 mod navigation;
 mod search;
-mod snapshot;
+mod selection;
 mod splash;
+mod table;
 mod theme;
 
-pub use search::shared::{SearchEngine, SearchHost, SearchResults};
-
-use snapshot::IpcState;
+use search::SearchHost;
 
 use std::{
     cell::RefCell,
@@ -33,8 +33,9 @@ use crate::{
     cache::CacheManager,
     config::{Config, ThemeRegistry},
     event::{AuthEvent, EventHandler},
+    ipc::IpcState,
     playback::PlaybackEngine,
-    service::ApiService,
+    service::{ApiService, SearchEngine, SearchResults},
     state::{
         ContentState, HelpState, LoginState, NavState, NavigationState, Page, SearchProvider,
         SearchState, SplashState, State, TableMode,
@@ -44,26 +45,32 @@ use crate::{
 };
 
 /// Main application state and entry point for the pigma TUI.
+///
+/// Field visibility contract: only `config`, `state`, `playback` and
+/// `theme_registry` are `pub(crate)` (the input/UI layers read them heavily).
+/// Everything else is private to the `app` module — its submodules access the
+/// fields directly, while code outside `app` (e.g. `input`, `ui`) goes through
+/// the accessor methods (`is_logged_in`, `picker_protocol`, `playerbar_area`).
 pub struct App {
-    pub config: Config,
-    pub state: State,
-    pub playback: PlaybackEngine,
-    pub theme_registry: ThemeRegistry,
-    pub service: ApiService,
-    pub picker: Picker,
+    pub(crate) config: Config,
+    pub(crate) state: State,
+    pub(crate) playback: PlaybackEngine,
+    pub(crate) theme_registry: ThemeRegistry,
+    service: ApiService,
+    picker: Picker,
     /// Async HTTP client for cover downloads (honours the proxy config).
-    pub cover_http: Client,
+    cover_http: Client,
     /// Search subsystem: sonar finder/registry, IPC result registry and engine.
-    pub search: SearchHost,
+    search: SearchHost,
     /// Song ID set of the user's "我喜欢的音乐" playlist, sharing the same `Arc` as `PlaybackEngine`.
-    pub liked_ids: Arc<Mutex<HashSet<u64>>>,
+    liked_ids: Arc<Mutex<HashSet<u64>>>,
     /// Playlists whose full tracks have already been merged into the playback queue for lazy pagination, avoiding repeated Enter presses refetching/truncating the queue.
     queued_playlists: HashSet<u64>,
     /// IPC snapshot subsystem: status/queue snapshots, broadcast fan-out and
-    /// their freshness bookkeeping (see `snapshot.rs`).
+    /// their freshness bookkeeping (see `ipc::state`).
     ipc: IpcState,
     /// Playerbar hit-test rect of the last draw, used by mouse input handling.
-    pub playerbar_area: Rect,
+    playerbar_area: Rect,
     /// Guards the startup splash branch: `login_status` is requested exactly
     /// once, so later events (IPC, mouse...) cannot spawn duplicate requests
     /// that would double-toast and re-fetch liked IDs.
@@ -73,7 +80,7 @@ pub struct App {
 impl App {
     /// `with_terminal` selects the interactive TUI event source (crossterm);
     /// pass `false` for headless daemon mode.
-    pub fn new(config: Config, with_terminal: bool) -> eyre::Result<Self> {
+    pub fn new(mut config: Config, with_terminal: bool) -> eyre::Result<Self> {
         let border = config.border.clone();
 
         let events = EventHandler::new(with_terminal);
@@ -147,6 +154,7 @@ impl App {
             events,
             border,
             splash: SplashState::default(),
+            eq_selected: 0,
             login: LoginState::default(),
             navigation: NavigationState {
                 page: Page::Splash,
@@ -184,22 +192,25 @@ impl App {
             config.search_limit as usize,
             state.navigation.search.providers.clone(),
         ));
+        let mut playback = PlaybackEngine::new(
+            tx,
+            service.clone(),
+            cache,
+            base_dir,
+            quality,
+            save_on_play,
+            stream_client,
+            Arc::clone(&finder),
+            sonar_enabled,
+            Arc::clone(&sonar_songs),
+            Arc::clone(&liked_ids),
+        );
+        playback.set_equalizer(config.equalizer.sanitized());
+        config.equalizer = playback.equalizer();
         Ok(Self {
             config,
-            service: service.clone(),
-            playback: PlaybackEngine::new(
-                tx,
-                service,
-                cache,
-                base_dir,
-                quality,
-                save_on_play,
-                stream_client,
-                Arc::clone(&finder),
-                sonar_enabled,
-                Arc::clone(&sonar_songs),
-                Arc::clone(&liked_ids),
-            ),
+            service,
+            playback,
             state,
             theme_registry,
             picker,
@@ -222,7 +233,30 @@ impl App {
     /*                      shared helpers (TUI + headless)                        */
     /* -------------------------------------------------------------------------- */
 
+    /// Whether the NetEase client holds a valid login (session-cookie state;
+    /// gates the input layer's login-page shortcut).
+    pub fn is_logged_in(&self) -> bool {
+        self.service.client().is_logged_in()
+    }
+
+    /// Image protocol of the cover-rendering picker, so the UI layer can
+    /// degrade gracefully on terminals without Sixel.
+    pub fn picker_protocol(&self) -> ratatui_image::picker::ProtocolType {
+        self.picker.protocol_type()
+    }
+
+    /// Playerbar hit-test rect recorded by the last draw (`ui::draw`).
+    pub fn playerbar_area(&self) -> Rect {
+        self.playerbar_area
+    }
+
+    /// Record the playerbar hit-test rect for the frame just drawn.
+    pub(crate) fn set_playerbar_area(&mut self, area: Rect) {
+        self.playerbar_area = area;
+    }
+
     pub fn quit(&mut self) {
+        self.save_equalizer();
         self.playback.save_session();
         self.service.client().flush_cookies();
         // Persist any coalesced content-cache write that has not drained yet;
@@ -234,6 +268,26 @@ impl App {
     pub fn toast(&mut self, msg: String) {
         self.state.toast_msg = msg;
         self.state.toast_time = Some(Instant::now());
+    }
+
+    /// Toggle play/pause with the same toast shown by the main page.
+    pub(crate) fn toggle_playback(&mut self) {
+        let was_paused = self.playback.state.paused;
+        self.playback.toggle_pause();
+        if let Some(song) = self.playback.current_song() {
+            if was_paused {
+                self.toast(format!("\u{f03e4}  {}", song.name));
+            } else {
+                self.toast(format!("\u{f040a}  {}", song.name));
+            }
+        }
+    }
+
+    /// Cycle the playback mode and show the same toast as the main page.
+    pub(crate) fn cycle_play_mode(&mut self) {
+        let mode = self.playback.cycle_mode();
+        let (icon, label) = crate::playback::mode_icon(&mode);
+        self.toast(format!("{icon} 循环: {label}"));
     }
 
     /// Adjust playback volume by `delta` (fraction of 0..=1), clamped to bounds
@@ -303,7 +357,7 @@ impl App {
             Arc::clone(&self.search.engine),
         );
         while self.state.running {
-            self.update_status_snapshot();
+            self.ipc.update(&self.playback);
             terminal.draw(|frame| self.draw(frame))?;
             self.handle_events().await?;
 

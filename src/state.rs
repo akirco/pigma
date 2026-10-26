@@ -1,5 +1,6 @@
-//! Shared application state: the active `Page` and the top-level `State` that
-//! bundles the navigation/search/login/help sub-state.
+//! Shared application state: the top-level `State` that bundles the
+//! navigation/search/login/help sub-state, plus the payload types those
+//! layers are built on (`content`, `page`, `search`, `splash`).
 
 pub mod command;
 pub mod content;
@@ -29,6 +30,7 @@ pub enum Page {
     Main,
     Lyrics,
     Playlist,
+    Equalizer,
     Login,
 }
 
@@ -37,6 +39,7 @@ pub struct State {
     pub events: EventHandler,
     pub border: BorderConfig,
     pub splash: SplashState,
+    pub eq_selected: usize,
     pub login: LoginState,
     pub navigation: NavigationState,
     pub command_panel: CommandPanel,

@@ -5,7 +5,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Cell, Paragraph, Row, Table},
 };
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::{
     BlockStyle,
@@ -14,11 +14,7 @@ use super::{
     scrollbar::{calc_scroll_offset, render_scrollbar},
     title::render_title,
 };
-use crate::{
-    config::Theme,
-    playback::PlaybackEngine,
-    utils::{format::clip_long_text, format_duration_into},
-};
+use crate::{config::Theme, playback::PlaybackEngine, utils::format_duration_into};
 
 fn tab_style(colors: &Theme, selected: bool, playing: bool) -> Style {
     if !selected && !playing {
@@ -193,4 +189,44 @@ pub(super) fn draw_queue_table(
     f.render_widget(table, table_area);
 
     render_scrollbar(f, queue_len, sel, scrollbar_area, colors.muted);
+}
+
+/// Cap a tab label to `max_cells` display cells, appending an ellipsis when
+/// truncated, so a single long playlist name can't push the others off screen.
+fn clip_long_text(s: &str, max_cells: usize) -> String {
+    if UnicodeWidthStr::width(s) <= max_cells {
+        return s.to_string();
+    }
+    let mut out = String::new();
+    let mut cells = 0;
+    for ch in s.chars() {
+        let cw = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if cells + cw > max_cells.saturating_sub(1) {
+            break;
+        }
+        out.push(ch);
+        cells += cw;
+    }
+    out.push('…');
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use unicode_width::UnicodeWidthStr;
+
+    use super::clip_long_text;
+
+    #[test]
+    fn clip_keeps_short_labels() {
+        assert_eq!(clip_long_text("我喜欢的音乐", 24), "我喜欢的音乐");
+        assert_eq!(clip_long_text("short", 24), "short");
+    }
+
+    #[test]
+    fn clip_truncates_wide_labels() {
+        let clipped = clip_long_text("一个特别特别特别长的歌单名字", 8);
+        assert!(clipped.ends_with('…'));
+        assert!(UnicodeWidthStr::width(clipped.as_str()) <= 8);
+    }
 }

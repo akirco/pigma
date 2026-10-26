@@ -1,28 +1,23 @@
 use crossterm::event::{KeyCode, KeyEvent, MouseEventKind};
 
-use super::{
-    content::{
-        cell_enter_action, content_select_first, content_select_last, content_select_next,
-        content_select_prev, playlist_play_selected, playlist_select_first, playlist_select_last,
-        playlist_select_next, playlist_select_prev, row_enter_action,
-    },
-    navigation::{navigate_nav_down, navigate_nav_up},
-    table::{cell_select_next_column, cell_select_prev_column, toggle_table_mode},
-};
 use crate::{
     app::App,
-    event::{AppEvent, CommandEvent, NavigationEvent, PlaybackEvent},
-    playback::mode_icon,
+    event::{CommandEvent, NavigationEvent, PlaybackEvent},
+    service::ApiEndpoint,
     state::{ContentState, Page, TableMode},
     text_input::TextInput,
 };
 
 pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Result<()> {
+    if super::common::handle_playback_key(app, key_event)
+        || super::common::handle_page_key(app, key_event)
+    {
+        return Ok(());
+    }
     match key_event.code {
         KeyCode::Esc => {
             app.state.events.send(NavigationEvent::ContentRestore);
         }
-        KeyCode::Char('q') => app.state.events.send(AppEvent::Quit),
         KeyCode::Tab if app.state.navigation.page == Page::Playlist => {
             if let Some(key) = app.playback.switch_queue(true) {
                 app.state.navigation.playlist_selected =
@@ -37,50 +32,50 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Resul
                 app.toast(format!("▣ 队列: {key}"));
             }
         }
-        KeyCode::Tab => navigate_nav_down(app),
-        KeyCode::BackTab => navigate_nav_up(app),
+        KeyCode::Tab => app.nav_select_next(),
+        KeyCode::BackTab => app.nav_select_prev(),
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
             if app.state.navigation.page == Page::Playlist {
-                playlist_select_prev(app);
+                app.playlist_select_prev();
             } else {
-                content_select_prev(app);
+                app.content_select_prev();
             }
         }
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
             if app.state.navigation.page == Page::Playlist {
-                playlist_select_next(app);
+                app.playlist_select_next();
             } else {
-                content_select_next(app);
+                app.content_select_next();
             }
         }
         KeyCode::Char('g') => {
             if app.state.navigation.page == Page::Playlist {
-                playlist_select_first(app);
+                app.playlist_select_first();
             } else {
-                content_select_first(app);
+                app.content_select_first();
             }
         }
         KeyCode::Char('G') => {
             if app.state.navigation.page == Page::Playlist {
-                playlist_select_last(app);
+                app.playlist_select_last();
             } else {
-                content_select_last(app);
+                app.content_select_last();
             }
         }
         KeyCode::Enter => {
             if app.state.navigation.page == Page::Playlist {
-                playlist_play_selected(app);
+                app.playlist_play_selected();
             } else if app.state.navigation.table_mode == TableMode::Cell {
-                cell_enter_action(app);
+                app.enter_selected_cell();
             } else {
-                row_enter_action(app);
+                app.enter_selected_row();
             }
         }
         KeyCode::Left => {
             if app.state.navigation.table_mode == TableMode::Cell
                 && app.state.navigation.page != Page::Playlist
             {
-                cell_select_prev_column(app);
+                app.cell_select_prev_column();
             } else if app.playback.current_song().is_some() {
                 let interval = app.config.seek_interval_secs as f64;
                 app.playback.seek_relative(-interval);
@@ -90,44 +85,14 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Resul
             if app.state.navigation.table_mode == TableMode::Cell
                 && app.state.navigation.page != Page::Playlist
             {
-                cell_select_next_column(app);
+                app.cell_select_next_column();
             } else if app.playback.current_song().is_some() {
                 let interval = app.config.seek_interval_secs as f64;
                 app.playback.seek_relative(interval);
             }
         }
-        KeyCode::Char('l') => {
-            let next = match app.state.navigation.page {
-                Page::Main => Page::Lyrics,
-                Page::Lyrics => Page::Main,
-                Page::Playlist => Page::Main,
-                Page::Login => Page::Main,
-                Page::Splash => Page::Splash,
-            };
-            app.state.events.send(NavigationEvent::Navigate(next));
-        }
-        KeyCode::Char('p' | 'P') => {
-            app.playback.prev();
-        }
-        KeyCode::Char('n' | 'N') => {
-            app.playback.next();
-        }
         KeyCode::Char('c' | 'C') => {
-            toggle_table_mode(app);
-        }
-        KeyCode::Char('f' | 'F') => {
-            let next = match app.state.navigation.page {
-                Page::Main => {
-                    app.state.navigation.playlist_selected =
-                        app.playback.queue_current_index().unwrap_or(0);
-                    Page::Playlist
-                }
-                Page::Playlist => Page::Main,
-                Page::Lyrics => Page::Main,
-                Page::Login => Page::Main,
-                Page::Splash => Page::Splash,
-            };
-            app.state.events.send(NavigationEvent::Navigate(next));
+            app.toggle_table_mode();
         }
         KeyCode::Char('/') => {
             if app.state.navigation.page == Page::Playlist {
@@ -144,22 +109,6 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Resul
         }
         KeyCode::Char('b' | 'B') => {
             app.state.events.send(CommandEvent::ToggleBordered);
-        }
-        KeyCode::Char(' ') => {
-            let was_paused = app.playback.state.paused;
-            app.playback.toggle_pause();
-            if let Some(song) = app.playback.current_song() {
-                if was_paused {
-                    app.toast(format!("\u{f03e4}  {}", song.name));
-                } else {
-                    app.toast(format!("\u{f040a}  {}", song.name));
-                }
-            }
-        }
-        KeyCode::Char('m') => {
-            let mode = app.playback.cycle_mode();
-            let (icon, label) = mode_icon(&mode);
-            app.toast(format!("{icon} 循环: {label}"));
         }
         KeyCode::Char('S') => {
             if let Some(song) = app.playback.current_song() {
@@ -192,7 +141,7 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Resul
             }
         }
         KeyCode::Char('d') => {
-            if is_daily_recommend(app)
+            if app.selected_endpoint() == Some(ApiEndpoint::RecommendSongs)
                 && let ContentState::Songs(songs) = app.state.navigation.content.as_ref()
             {
                 let sel = app.state.navigation.content_selected;
@@ -223,26 +172,16 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Resul
                 app.reload_current_nav();
             }
         }
-        KeyCode::Char('u' | 'U') if is_download_view(app) || is_local_music_view(app) => {
+        KeyCode::Char('u' | 'U')
+            if matches!(
+                app.selected_endpoint(),
+                Some(ApiEndpoint::Download | ApiEndpoint::LocalMusic)
+            ) =>
+        {
             let sel = app.state.navigation.content_selected;
             app.state
                 .events
                 .send(NavigationEvent::UploadCachedSong(sel));
-        }
-        KeyCode::Char('+' | '=') => {
-            app.adjust_volume(0.05);
-        }
-        KeyCode::Char('-' | '_') => {
-            app.adjust_volume(-0.05);
-        }
-        KeyCode::Char('[') => {
-            app.adjust_speed(-crate::playback::SPEED_STEP);
-        }
-        KeyCode::Char(']') => {
-            app.adjust_speed(crate::playback::SPEED_STEP);
-        }
-        KeyCode::Char('t' | 'T') => {
-            app.toggle_pitch_locked();
         }
         KeyCode::Char('z' | 'Z') => {
             app.cycle_nav_position();
@@ -254,7 +193,7 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Resul
 
 pub(super) fn handle_main_mouse(app: &mut App, kind: MouseEventKind, col: u16, row: u16) {
     // Volume scroll: if mouse is over playerbar area
-    let area = app.playerbar_area;
+    let area = app.playerbar_area();
     if row >= area.y && row < area.y + area.height && col >= area.x && col < area.x + area.width {
         let vol = app.playback.state.volume;
         match kind {
@@ -283,34 +222,18 @@ pub(super) fn handle_main_mouse(app: &mut App, kind: MouseEventKind, col: u16, r
         }
         Page::Main => {
             if kind == MouseEventKind::ScrollUp {
-                content_select_prev(app);
+                app.content_select_prev();
             } else if kind == MouseEventKind::ScrollDown {
-                content_select_next(app);
+                app.content_select_next();
             }
         }
         Page::Playlist => {
             if kind == MouseEventKind::ScrollUp {
-                playlist_select_prev(app);
+                app.playlist_select_prev();
             } else if kind == MouseEventKind::ScrollDown {
-                playlist_select_next(app);
+                app.playlist_select_next();
             }
         }
         _ => {}
     }
-}
-
-fn current_api(app: &App) -> Option<&str> {
-    app.state.navigation.nav.selected_api()
-}
-
-fn is_daily_recommend(app: &App) -> bool {
-    current_api(app) == Some("recommend_songs")
-}
-
-fn is_download_view(app: &App) -> bool {
-    current_api(app) == Some("download")
-}
-
-fn is_local_music_view(app: &App) -> bool {
-    current_api(app) == Some("local_music")
 }

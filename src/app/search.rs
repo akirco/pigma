@@ -1,18 +1,32 @@
 //! TUI search-bar orchestration: turns keyboard input into navigation state and
 //! spawned searches, surfacing results via [`crate::event::NavigationEvent`]s.
-//! The execution shared with the IPC `search` server lives in [`shared`].
+//! The execution shared with the IPC `search` server lives in
+//! [`crate::service::search`].
 
-pub mod shared;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
-use std::sync::Arc;
+use sonar::{SonarFinder, Song};
 
-use self::shared::{search_ncm, search_sonar};
 use super::{App, event::send_event};
 use crate::{
     event::NavigationEvent,
+    service::{ApiEndpoint, SearchEngine, SearchResults, search_ncm, search_sonar},
     state::{ContentState, SearchProvider},
     text_input::TextInput,
 };
+
+/// Search subsystem owned by `App`: the shared sonar finder and synthetic-id
+/// registry, the recently-searched result registry backing `pigma msg play
+/// <id>`, and the cross-provider engine serving `pigma msg search <keyword>`.
+pub(super) struct SearchHost {
+    pub(super) finder: Arc<SonarFinder>,
+    pub(super) sonar_songs: Arc<Mutex<HashMap<u64, Arc<Song>>>>,
+    pub(super) results: SearchResults,
+    pub(super) engine: Arc<SearchEngine>,
+}
 
 impl App {
     pub(super) fn handle_search_song(&mut self, keyword: String) {
@@ -23,7 +37,7 @@ impl App {
     }
 
     /// TUI-only orchestration for an NCM search: mark the loading state, spawn
-    /// the search (delegating to [`shared::search_ncm`]) and hand the
+    /// the search (delegating to [`search_ncm`]) and hand the
     /// resulting `ContentState` to the navigation via an event.
     fn submit_ncm_search(&mut self, keyword: String) {
         self.state.navigation.set_content(ContentState::Loading);
@@ -42,7 +56,7 @@ impl App {
 
     /// TUI-only orchestration for a single-source sonar search: build a finder
     /// restricted to the selected provider, then delegate to
-    /// [`shared::search_sonar`] and surface the result via an event.
+    /// [`search_sonar`] and surface the result via an event.
     fn submit_sonar_search(&mut self, keyword: String, provider: SearchProvider) {
         self.state.navigation.set_content(ContentState::Loading);
         self.state.navigation.content_is_search = true;
@@ -101,7 +115,7 @@ impl App {
         nav.nav.subtitle = None;
         nav.content_selected = 0;
 
-        nav.nav.restore_focus_by_api("search");
+        nav.nav.restore_focus_by_api(ApiEndpoint::Search.as_str());
 
         nav.set_content(ContentState::Empty);
 
@@ -125,10 +139,5 @@ impl App {
         nav.search.active = false;
         nav.search.input = TextInput::new();
         nav.nav.subtitle = None;
-    }
-
-    pub(super) fn handle_content_restore(&mut self) {
-        let nav = &mut self.state.navigation;
-        nav.pop_breadcrumb();
     }
 }

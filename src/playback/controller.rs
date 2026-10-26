@@ -3,14 +3,16 @@ use std::{sync::mpsc, time::Duration};
 use tokio::sync::mpsc as tokio_mpsc;
 
 use super::{
+    equalizer::EqHandle,
     player::{self, AudioInput, ControlCmd},
     stretch::SpeedMode,
 };
-use crate::event::Event;
+use crate::{config::EqualizerConfig, event::Event};
 
 #[derive(Clone)]
 pub struct PlaybackHandle {
     cmd_tx: tokio_mpsc::UnboundedSender<PlayerCmd>,
+    eq: EqHandle,
 }
 
 enum PlayerCmd {
@@ -30,6 +32,8 @@ enum PlayerCmd {
 impl PlaybackHandle {
     pub(super) fn new(event_tx: tokio_mpsc::UnboundedSender<Event>) -> Self {
         let (cmd_tx, mut cmd_rx) = tokio_mpsc::unbounded_channel::<PlayerCmd>();
+        let eq = EqHandle::new(EqualizerConfig::default());
+        let player_eq = eq.clone();
 
         tokio::spawn(async move {
             let mut control_tx: Option<mpsc::Sender<ControlCmd>> = None;
@@ -57,6 +61,7 @@ impl PlaybackHandle {
                                 last_volume,
                                 last_speed,
                                 last_speed_mode,
+                                player_eq.clone(),
                                 tx,
                                 ctrl_rx,
                             );
@@ -107,7 +112,7 @@ impl PlaybackHandle {
             }
         });
 
-        Self { cmd_tx }
+        Self { cmd_tx, eq }
     }
 
     pub(super) fn request(&self, input: AudioInput, seek_time: Option<Duration>) {
@@ -160,5 +165,9 @@ impl PlaybackHandle {
         if self.cmd_tx.send(PlayerCmd::SetSpeedMode(mode)).is_err() {
             log::error!("PlaybackHandle: failed to send SetSpeedMode command (channel closed)");
         }
+    }
+
+    pub(super) fn set_equalizer(&self, equalizer: EqualizerConfig) {
+        self.eq.apply(equalizer);
     }
 }

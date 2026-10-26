@@ -1,7 +1,7 @@
-//! Cross-cutting helpers: string formatting, gradients, filesystem paths,
+//! Cross-cutting helpers: audio-file helpers, gradients, filesystem paths,
 //! synchronization, terminal setup, and time formatting.
 
-pub mod format;
+pub mod audio;
 pub mod gradient;
 pub mod path;
 pub mod process;

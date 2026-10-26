@@ -11,7 +11,6 @@ use ncm_api::{LoginInfo, SongInfo};
 use tokio::sync::mpsc;
 
 use crate::{
-    ipc::IpcEvent,
     playback::LyricLine,
     state::{ContentState, Page, PaginationInfo, SplashLogEntry},
 };
@@ -31,8 +30,42 @@ pub enum AppEvent {
     Navigation(NavigationEvent),
     Command(CommandEvent),
     Toast(String),
-    /// Control request received over the IPC socket (`pigma msg`).
+    /// Control request received over the IPC socket (`pigma msg`). The payload
+    /// enum is defined here so the event channel does not depend on `ipc`;
+    /// `ipc` converts its wire-level `MsgAction` via `From`.
     Ipc(IpcEvent),
+}
+
+/// Runtime playback-control request carried by [`AppEvent::Ipc`], mirrored
+/// from the IPC wire protocol's `MsgAction` (see `ipc::protocol`).
+#[derive(Debug, Clone)]
+pub enum IpcEvent {
+    Previous,
+    Next,
+    Pause,
+    Play {
+        song_id: Option<u64>,
+    },
+    TogglePlay,
+    Volume {
+        delta: Option<f64>,
+        absolute: Option<f64>,
+    },
+    Speed {
+        delta: Option<f64>,
+        absolute: Option<f64>,
+    },
+    Pitch {
+        locked: Option<bool>,
+    },
+    Mode,
+    Like,
+    Dislike,
+    ToggleLike,
+    SwitchList {
+        endpoint: String,
+        playlist: Option<usize>,
+    },
 }
 
 #[derive(Clone, Debug)]

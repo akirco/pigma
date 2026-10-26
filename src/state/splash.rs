@@ -1,3 +1,5 @@
+//! Splash-screen state and the log entries produced by the boot pipeline.
+
 use std::time::Instant;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

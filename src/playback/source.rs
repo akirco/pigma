@@ -241,7 +241,7 @@ impl AudioSource {
                     .and_then(|mut s| s.next_back().map(|s| s.to_string()))
             })
             .unwrap_or_default();
-        crate::utils::format::canonical_ext(path.rsplit('.').nth(1).unwrap_or(""))
+        crate::utils::audio::canonical_ext(path.rsplit('.').nth(1).unwrap_or(""))
     }
 
     fn to_sonar_quality(quality: SongQuality) -> Quality {

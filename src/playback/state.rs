@@ -2,7 +2,10 @@ use std::{sync::Arc, time::Duration};
 
 use ncm_api::SongInfo;
 
-use super::{cover::CoverState, lyrics::LyricLine, mode::PlayMode};
+use super::{cover::CoverState, mode::PlayMode};
+
+use super::lyrics::LyricLine;
+use crate::config::EqualizerConfig;
 
 /// Lower bound of the playback speed factor (keyboard `[`).
 pub const MIN_SPEED: f64 = 0.5;
@@ -32,6 +35,7 @@ pub struct PlaybackState {
     pub cached: bool,
     pub liked: bool,
     pub cover: CoverState,
+    pub equalizer: EqualizerConfig,
 }
 
 impl Default for PlaybackState {
@@ -52,6 +56,7 @@ impl Default for PlaybackState {
             cached: false,
             liked: false,
             cover: CoverState::default(),
+            equalizer: EqualizerConfig::default(),
         }
     }
 }

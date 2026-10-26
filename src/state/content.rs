@@ -1,3 +1,12 @@
+//! Content payloads (the data behind a navigation page and its pagination)
+//! and the table selection mode.
+//!
+//! `ContentState` is serialized to the on-disk content cache
+//! (`cache::CacheManager`), so variant names and the externally-tagged serde
+//! shape are part of the cache format — rename variants only with a migration
+//! in mind (a failed parse degrades to a cache miss, so renames are safe but
+//! invalidate).
+
 use std::sync::Arc;
 
 use ncm_api::{SingerInfo, SongInfo, SongList, TopList};
@@ -88,12 +97,6 @@ impl ContentState {
             }
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TableMode {
-    Row,
-    Cell,
 }
 
 #[cfg(test)]
@@ -247,4 +250,11 @@ mod pagination_tests {
 
         assert_eq!(pagination.next_offset(), u32::MAX);
     }
+}
+
+/// UI-only table selection mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TableMode {
+    Row,
+    Cell,
 }

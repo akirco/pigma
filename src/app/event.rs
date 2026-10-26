@@ -9,12 +9,12 @@ use tokio::{sync::mpsc::UnboundedSender, time::sleep};
 use super::App;
 use crate::{
     event::{
-        AppEvent, AuthEvent, CommandEvent, CommandPanelAction, Event, NavigationEvent,
+        AppEvent, AuthEvent, CommandEvent, CommandPanelAction, Event, IpcEvent, NavigationEvent,
         PlaybackEvent, SplashEvent,
     },
     input,
-    ipc::IpcEvent,
     playback::{NCM_SEARCH_QUEUE_KEY, THIRD_PARTY_QUEUE_KEY},
+    service::ApiEndpoint,
     state::{CommandAction, ContentState},
     utils::lock_recover,
 };
@@ -246,12 +246,14 @@ impl App {
                 {
                     self.playback.update_liked_status();
                 }
-                let is_liked_root = self.state.navigation.nav.selected_api() == Some("liked")
+                let is_liked_root = self.selected_endpoint() == Some(ApiEndpoint::LikedSongs)
                     && self.state.navigation.history.is_empty();
                 if !like && is_liked_root {
                     // The active list and its cache are snapshots; keep them in sync with the
                     // optimistic liked-state update instead of showing the removed song until reload.
-                    self.service.cache().remove_content_cache("liked");
+                    self.service
+                        .cache()
+                        .remove_content_cache(ApiEndpoint::LikedSongs.as_str());
                     let playlist_id = self
                         .state
                         .navigation

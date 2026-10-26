@@ -142,7 +142,7 @@ pub fn build_layout(area: Rect, page: Page, nav_position: NavPosition) -> Layout
                 }
             }
         },
-        Page::Lyrics | Page::Playlist => {
+        Page::Lyrics | Page::Playlist | Page::Equalizer => {
             let [topbar, middle, playerbar] = Layout::vertical([
                 Constraint::Length(3),
                 Constraint::Min(10),

@@ -19,7 +19,6 @@ use tokio::sync::mpsc;
 
 use super::{
     controller::PlaybackHandle,
-    lyrics::LyricLine,
     mode::{self, Strategy},
     queue::PlaylistQueue,
     source::AudioSource,
@@ -29,6 +28,7 @@ use super::{
 use crate::{
     cache::CacheManager,
     event::{Event, PlaybackEvent},
+    playback::LyricLine,
     service::ApiService,
     utils::{lock_recover, process::trim_heap},
 };

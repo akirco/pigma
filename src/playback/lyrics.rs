@@ -1,3 +1,6 @@
+//! Parsed lyric lines shared between the playback engine, the service layer
+//! and the lyrics renderer.
+
 use std::time::Duration;
 
 /// A single parsed lyric line.

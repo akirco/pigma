@@ -5,8 +5,10 @@ mod block;
 mod breadcrumb;
 mod command_panel;
 mod content;
+mod equalizer;
 mod gradient_line_gauge;
 mod help;
+mod layout;
 mod login;
 mod lyrics;
 mod navigation;
@@ -24,12 +26,11 @@ mod topbar;
 
 use std::time::Duration;
 
-use ratatui::Frame;
+use ratatui::{Frame, layout::Rect};
 
 use crate::{
     app::App,
     config::{Config, NavPosition},
-    layout,
     state::{NavigationState, Page},
     ui::block::{BlockStyle, CornerBlock},
 };
@@ -56,6 +57,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         tick: app.state.tick,
     };
 
+    let mut playerbar_rect = Rect::default();
     match app.state.navigation.page {
         Page::Splash => {
             let lay = layout::splash(area);
@@ -75,8 +77,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 &bs,
                 lay.topbar,
             );
-            app.playerbar_area = lay.playerbar;
-            let is_sixel = app.picker.protocol_type() == ratatui_image::picker::ProtocolType::Sixel;
+            playerbar_rect = lay.playerbar;
+            let is_sixel = app.picker_protocol() == ratatui_image::picker::ProtocolType::Sixel;
             playerbar::draw(
                 f,
                 &app.playback.state,
@@ -110,6 +112,15 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                         lay.content,
                     );
                 }
+                Page::Equalizer => {
+                    equalizer::draw(
+                        f,
+                        &app.playback.state.equalizer,
+                        app.state.eq_selected,
+                        &bs,
+                        lay.content,
+                    );
+                }
                 _ => {}
             }
         }
@@ -128,6 +139,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
 
     toast::draw_toast(f, app, colors);
+    // Recorded after `colors` (borrowed from `app.theme_registry`) is last
+    // used: the setter takes `&mut App` and cannot overlap that borrow.
+    app.set_playerbar_area(playerbar_rect);
 }
 
 /// Main content page: navigation sidebar/topbar, content title block and table.

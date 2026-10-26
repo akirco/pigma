@@ -60,7 +60,7 @@ impl ApiService {
                     Ok(result) => (
                         ContentState::Songs(arc_songs(result.songs)),
                         Some(PaginationInfo {
-                            api: "user_cloud_disk".into(),
+                            api: ApiEndpoint::UserCloudDisk.as_str().into(),
                             offset: 0,
                             limit: limit as u32,
                             has_more: result.has_more,
@@ -246,7 +246,7 @@ impl ApiService {
             ));
         }
 
-        if api == "user_cloud_disk" {
+        if api == ApiEndpoint::UserCloudDisk.as_str() {
             let r = self.client.user_cloud_disk(offset, limit).await.ok()?;
             return Some((
                 ContentState::Songs(arc_songs(r.songs)),
