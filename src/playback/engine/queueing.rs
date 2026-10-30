@@ -39,7 +39,7 @@ impl PlaybackEngine {
     }
 
     pub fn set_queue_songs(&mut self, songs: Vec<Arc<SongInfo>>) {
-        self.queue.set_songs(songs);
+        self.replace_queue_songs(songs);
     }
 
     /// Replace the queue with a subset of `full` selected by `indices`, cloning
@@ -50,7 +50,25 @@ impl PlaybackEngine {
             .iter()
             .filter_map(|&i| full.get(i).map(Arc::clone))
             .collect();
-        self.queue.set_songs(songs);
+        self.replace_queue_songs(songs);
+    }
+
+    /// Replace the active queue's songs without losing the playhead: the song
+    /// that is actually playing is re-located by id (queue filter/unfilter) and
+    /// the strategy is rebuilt for the new length, so a stale shuffle order or
+    /// an out-of-range `current_index` can never survive the swap.
+    fn replace_queue_songs(&mut self, songs: Vec<Arc<SongInfo>>) {
+        // `state.current_song` is the track that is actually playing; the
+        // queue's own entry is already unset while that track is filtered out.
+        let current_id = self
+            .state
+            .current_song
+            .as_ref()
+            .map(|s| s.id)
+            .or_else(|| self.queue.current_song().map(|s| s.id));
+        self.queue.set_songs(songs, current_id);
+        self.strategy =
+            mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);
     }
 
     /// Replace the queue for `key` with `songs` and start playing `index`.
@@ -181,12 +199,15 @@ impl PlaybackEngine {
         }
 
         match self.queue.next_index(&mut self.strategy) {
-            Some(idx) => {
+            // A strategy index must still be inside the queue: `set_songs`
+            // rebuilds it, but staying defensive here beats corrupting
+            // `current_index` with an out-of-range value that gets persisted.
+            Some(idx) if idx < self.queue.len() => {
                 self.controller.stop();
                 self.queue.advance_to(idx);
                 self.start_current_song(None);
             }
-            None => {
+            _ => {
                 self.stop();
             }
         }
@@ -207,7 +228,9 @@ impl PlaybackEngine {
             return;
         }
 
-        if let Some(idx) = self.queue.prev_index(&mut self.strategy) {
+        if let Some(idx) = self.queue.prev_index(&mut self.strategy)
+            && idx < self.queue.len()
+        {
             self.controller.stop();
             self.queue.current_index = Some(idx);
             self.queue.bump();

@@ -88,9 +88,15 @@ impl PlaylistQueue {
     }
 
     /// Replace the song list and rebuild the id→index lookup.
-    pub(super) fn set_songs(&mut self, songs: Vec<Arc<SongInfo>>) {
+    ///
+    /// `keep_current` is the id of the song whose playhead should survive the
+    /// swap (queue filter/unfilter). The playhead only stays set while that
+    /// song is part of the new list: a filtered-out song keeps playing, but
+    /// the queue itself has no current entry to point at.
+    pub(super) fn set_songs(&mut self, songs: Vec<Arc<SongInfo>>, keep_current: Option<u64>) {
         self.songs = songs;
         self.rebuild_index();
+        self.current_index = keep_current.and_then(|id| self.find_song_index(id));
         self.bump();
     }
 
@@ -205,6 +211,25 @@ mod tests {
         q.append(&[song(3)]);
         assert_eq!(q.find_song_index(3), Some(2));
         assert_eq!(q.find_song_index(1), Some(0));
+    }
+
+    /// Filtering the queue (and widening it again) must keep the playhead on
+    /// the same song while it is present, and unset it while filtered out —
+    /// never leave a stale/out-of-range index behind.
+    #[test]
+    fn set_songs_follows_the_current_song_by_id() {
+        let mut q = PlaylistQueue::from_songs(vec![song(1), song(2), song(3)], 1);
+
+        // Filter out the playing song (2): the playhead is unset, not left at 1.
+        q.set_songs(vec![song(3), song(1)], Some(2));
+        assert_eq!(q.current_index, None);
+        assert_eq!(q.find_song_index(1), Some(1));
+
+        // Widen again: the playhead follows the same song to its new index.
+        q.set_songs(vec![song(1), song(2), song(3)], Some(2));
+        assert_eq!(q.current_index, Some(1));
+        assert_eq!(q.current_song().map(|s| s.id), Some(2));
+        assert_eq!(q.find_song_index(3), Some(2));
     }
 
     #[test]

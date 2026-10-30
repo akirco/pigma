@@ -90,6 +90,10 @@ impl PlaybackEngine {
         self.queue.songs.push(Arc::new(song));
         self.queue.rebuild_index();
         self.queue.current_index = Some(self.queue.len() - 1);
+        // Appending outside the queue's own mutation helpers must still bump the
+        // version, or the IPC `status -L` snapshot never refreshes in heartbeat
+        // mode.
+        self.queue.bump();
         self.start_current_song(None);
     }
 
