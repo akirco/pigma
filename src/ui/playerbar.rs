@@ -33,6 +33,32 @@ pub(super) struct LayoutArea {
     pub speed: Rect,
 }
 
+impl LayoutArea {
+    /// Clamp every sub-area into `bar`. Layouts compute their rects by hand or
+    /// from splits and must not be trusted to stay inside the bar: an
+    /// unclamped rect on the buffer's bottom edge made LineGauge/Spinner index
+    /// outside the buffer (see `one_row_playerbar_area_stays_inside_the_buffer`).
+    fn clamped_to(mut self, bar: Rect) -> Self {
+        for rect in [
+            &mut self.progress_time_left,
+            &mut self.progress_bar,
+            &mut self.progress_time_right,
+            &mut self.song_info,
+            &mut self.song_detail,
+            &mut self.cover,
+            &mut self.controls,
+            &mut self.gauge,
+            &mut self.spinner,
+            &mut self.mode_icon,
+            &mut self.volume,
+            &mut self.speed,
+        ] {
+            *rect = rect.intersection(bar);
+        }
+        self
+    }
+}
+
 pub(super) trait Playerbar {
     /// Build the concrete sub-areas from the already-inner area.
     fn layout(&self, area: Rect, config: &PlayerbarConfig, is_sixel: bool) -> LayoutArea;
@@ -71,8 +97,18 @@ pub(super) trait Playerbar {
             return;
         }
 
-        let layout = self.layout(inner, config, is_sixel);
+        let layout = self.layout(inner, config, is_sixel).clamped_to(inner);
         self.render(f, player, colors, tick, config, &layout);
+    }
+}
+
+/// Resolve a configured layout to its implementation. Single source of truth
+/// shared by `draw` and the tests.
+fn layout_impl(layout: &LayoutType) -> &'static dyn Playerbar {
+    match layout {
+        LayoutType::Default => &default_layout::DefaultLayout,
+        LayoutType::Modern => &modern_layout::ModernLayout,
+        LayoutType::Minimal => &minimal_layout::MinimalLayout,
     }
 }
 
@@ -85,11 +121,7 @@ pub(super) fn draw(
     area: Rect,
     is_sixel: bool,
 ) {
-    let layout: &dyn Playerbar = match config.layout {
-        LayoutType::Default => &default_layout::DefaultLayout,
-        LayoutType::Modern => &modern_layout::ModernLayout,
-        LayoutType::Minimal => &minimal_layout::MinimalLayout,
-    };
+    let layout = layout_impl(&config.layout);
     layout.draw(f, player, tick, bs, config, area, is_sixel);
 }
 
@@ -300,6 +332,100 @@ mod tests {
                 shifted[0].1, "1.5x",
                 "{layout:?}: resampled speed must carry no star"
             );
+        }
+    }
+
+    /// On a 64×11 terminal the layout solver can squeeze the player bar down to
+    /// a single row, whose `block.inner()` is an empty rect sitting on the
+    /// buffer's bottom edge (y == buffer height). The clamped sub-areas must
+    /// never make a widget write outside the buffer ("index outside of
+    /// buffer").
+    #[test]
+    fn one_row_playerbar_area_stays_inside_the_buffer() {
+        let colors = Theme::default();
+        let border = BorderConfig::default();
+        let bs = BlockStyle {
+            colors: &colors,
+            border: &border,
+            tick: 0,
+        };
+        // A current song keeps the gauge rendering for every layout (Modern and
+        // Minimal skip it without one), and `seeking` makes the spinner render:
+        // both write into the buffer by index, so they must also survive an
+        // empty area on the bottom edge.
+        let mut state = state(1.0, false);
+        state.seeking = true;
+
+        for layout in LAYOUTS {
+            let config = PlayerbarConfig {
+                layout,
+                ..PlayerbarConfig::default()
+            };
+            let mut term = Terminal::new(TestBackend::new(64, 11)).unwrap();
+            term.draw(|f| {
+                // Player bar squeezed to one row at the very bottom edge.
+                draw(f, &state, 0, &bs, &config, Rect::new(0, 10, 64, 1), false)
+            })
+            .unwrap();
+        }
+    }
+
+    /// The sub-areas actually handed to widgets — after `clamped_to` — must
+    /// stay inside the bar for every layout and size, so no widget can be
+    /// asked to draw outside the bar (or the terminal buffer).
+    #[test]
+    fn every_layout_keeps_sub_areas_inside_the_playerbar() {
+        let config = PlayerbarConfig::default();
+        // Narrow and squeezed bars — including an empty one — anchored to the
+        // bottom edge like a real one-row player bar in a short terminal.
+        let sizes = [
+            (8u16, 0u16),
+            (6, 1),
+            (8, 1),
+            (10, 2),
+            (12, 2),
+            (20, 3),
+            (31, 1),
+            (64, 1),
+            (64, 2),
+            (64, 3),
+            (120, 5),
+        ];
+
+        for (w, h) in sizes {
+            let area = Rect::new(0, 10, w, h);
+            for layout_type in LAYOUTS {
+                let name = format!("{layout_type:?}").to_lowercase();
+                let la = layout_impl(&layout_type)
+                    .layout(area, &config, false)
+                    .clamped_to(area);
+                let rects = [
+                    la.progress_time_left,
+                    la.progress_bar,
+                    la.progress_time_right,
+                    la.song_info,
+                    la.song_detail,
+                    la.cover,
+                    la.controls,
+                    la.gauge,
+                    la.spinner,
+                    la.mode_icon,
+                    la.volume,
+                    la.speed,
+                ];
+                for rect in rects {
+                    if rect.width == 0 || rect.height == 0 {
+                        continue;
+                    }
+                    assert!(
+                        rect.x >= area.x
+                            && rect.y >= area.y
+                            && rect.right() <= area.right()
+                            && rect.bottom() <= area.bottom(),
+                        "{name} layout at {w}x{h}: {rect:?} escapes {area:?}"
+                    );
+                }
+            }
         }
     }
 }
