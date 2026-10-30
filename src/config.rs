@@ -224,9 +224,8 @@ impl Config {
         };
 
         if !config_path.exists() {
-            let _ = fs::create_dir_all(&config_dir);
             let content = config.to_toml();
-            if let Err(e) = fs::write(config_path, content) {
+            if let Err(e) = crate::cache::write_atomic(&config_path, content.as_bytes()) {
                 log::warn!("Failed to write default config: {e}");
             }
         }
@@ -234,18 +233,16 @@ impl Config {
     }
 
     pub fn save(&self) {
-        let dir = utils::pigma_config_dir();
-        if let Err(e) = fs::create_dir_all(&dir) {
-            log::error!("Failed to create config directory: {e}");
-            return;
-        }
         let content = self.to_toml();
         // Never clobber the user's config with an empty serialization result.
         if content.trim().is_empty() {
             log::error!("Refusing to write an empty config.toml");
             return;
         }
-        if let Err(e) = fs::write(dir.join("config.toml"), content) {
+        // Atomic write (temp file + fsync + rename): a crash or a kill mid-save
+        // must leave the previous config untouched instead of truncating it.
+        let path = utils::pigma_config_dir().join("config.toml");
+        if let Err(e) = crate::cache::write_atomic(&path, content.as_bytes()) {
             log::error!("Failed to write config.toml: {e}");
         }
     }

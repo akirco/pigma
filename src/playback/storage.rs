@@ -1,4 +1,8 @@
-use std::{fs, path::PathBuf, sync::Arc};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use ncm_api::SongInfo;
 use serde::{Deserialize, Serialize};
@@ -132,6 +136,20 @@ impl Serialize for SavedQueueRef<'_> {
         s.serialize_field("pitch_locked", &self.pitch_locked)?;
         s.serialize_field("progress", &self.progress)?;
         s.end()
+    }
+}
+
+/// Write a queue file and its active-queue marker atomically.
+///
+/// Both go through [`crate::cache::write_atomic`] (temp file + fsync + rename),
+/// so a crash mid-save leaves the previous queue/session loadable instead of a
+/// truncated JSON file that fails to restore on the next start.
+fn write_queue_files(queue_path: &Path, active_path: &Path, id: &str, json: &str) {
+    if let Err(e) = crate::cache::write_atomic(queue_path, json.as_bytes()) {
+        log::warn!("Failed to save queue {}: {e}", queue_path.display());
+    }
+    if let Err(e) = crate::cache::write_atomic(active_path, id.as_bytes()) {
+        log::warn!("Failed to save active queue marker: {e}");
     }
 }
 
@@ -307,8 +325,7 @@ impl PlaylistStorage {
                 progress,
             };
             if let Ok(json) = serde_json::to_string(&saved) {
-                let _ = fs::write(&queue_path, &json);
-                let _ = fs::write(&active_path, id);
+                write_queue_files(&queue_path, &active_path, &id, &json);
             }
         });
     }
@@ -344,8 +361,12 @@ impl PlaylistStorage {
             progress,
         };
         if let Ok(json) = serde_json::to_string(&saved) {
-            let _ = fs::write(self.queue_path(id, display), &json);
-            let _ = fs::write(self.active_path(), id);
+            write_queue_files(
+                &self.queue_path(id, display),
+                &self.active_path(),
+                id,
+                &json,
+            );
         }
     }
 
@@ -427,5 +448,62 @@ mod tests {
         }"#;
         let saved: SavedQueue = serde_json::from_str(json).unwrap();
         assert_eq!(saved.history, vec![11, 22]);
+    }
+
+    /// The save path must round-trip through the atomic writer (temp file +
+    /// rename) without leaving temp files behind.
+    #[test]
+    fn save_queue_sync_round_trips_without_temp_files() {
+        let dir = std::env::temp_dir().join(format!(
+            "pigma_storage_test_{}_{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        let storage = PlaylistStorage::new(dir.clone());
+        let song = Arc::new(SongInfo {
+            id: 42,
+            name: "song".into(),
+            singer: "artist".into(),
+            artist_id: 0,
+            album: String::new(),
+            album_id: 0,
+            pic_url: String::new(),
+            duration: 1_000,
+            copyright: ncm_api::SongCopyright::Unknown,
+        });
+
+        storage.save_queue_sync(
+            "q_test",
+            "测试",
+            &[song],
+            &[],
+            Some(0),
+            &PlayMode::Sequential,
+            0.5,
+            1.2,
+            true,
+            0.25,
+        );
+
+        let saved = storage
+            .load_queue_by_id("q_test")
+            .expect("queue should load after an atomic save");
+        assert_eq!(saved.queue.len(), 1);
+        assert_eq!(saved.queue[0].id, 42);
+        assert_eq!(saved.volume, 0.5);
+        assert_eq!(saved.speed, 1.2);
+        assert_eq!(storage.load_active_id().as_deref(), Some("q_test"));
+
+        let temp_files: Vec<_> = fs::read_dir(&storage.base_dir)
+            .expect("read playlists dir")
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
+            .collect();
+        assert!(
+            temp_files.is_empty(),
+            "temp files left behind: {temp_files:?}"
+        );
+
+        let _ = fs::remove_dir_all(dir);
     }
 }
