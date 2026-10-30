@@ -5,6 +5,10 @@ use crate::{
     utils::clock_time,
 };
 
+/// Deadline for the startup reachability probe. Kept short on purpose: the
+/// splash screen must not stall on a dead network.
+const NETWORK_CHECK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
 fn splash_status(progress: f64) -> &'static str {
     if progress < 0.3 {
         "INITIALIZING SYSTEM..."
@@ -17,9 +21,14 @@ fn splash_status(progress: f64) -> &'static str {
     }
 }
 
-async fn check_network(_api: &ncm_api::NcmClient) -> bool {
-    use tokio::net::TcpStream;
-    TcpStream::connect("music.163.com:443").await.is_ok()
+async fn check_network(api: &ncm_api::NcmClient) -> bool {
+    // Probe through the configured client so the user's proxy is honoured, and
+    // bound the wait: a raw `TcpStream::connect` ignored both the proxy and any
+    // timeout, so proxied users were wrongly sent to offline/local mode and a
+    // dead network could stall startup for the OS TCP timeout (minutes).
+    tokio::time::timeout(NETWORK_CHECK_TIMEOUT, api.search_hot())
+        .await
+        .is_ok_and(|result| result.is_ok())
 }
 
 impl App {
