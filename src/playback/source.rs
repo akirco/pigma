@@ -144,8 +144,7 @@ impl AudioSource {
             if (complete || position >= PREBUFFER_BYTES) && !notified.swap(true, Ordering::SeqCst) {
                 updates_tx.send_replace(position);
             }
-            if mark_cache
-                && !sent.swap(true, Ordering::SeqCst)
+            if should_finalize_cache(mark_cache, complete, &sent)
                 && let Some(m) = msong.take()
             {
                 cache.mark_cached(&song, ext, Some(m));
@@ -419,5 +418,43 @@ impl AudioSource {
         } else {
             Err("NCM网络错误，2次重试失败".into())
         }
+    }
+}
+
+/// Whether this progress callback should write the cache index entry.
+///
+/// `stream-download` reports progress for every chunk from the first prefetch
+/// onwards, so the entry must only be finalized once the download really
+/// finished: recording it earlier leaves a truncated file indexed as playable
+/// when the user skips to another song mid-download.
+fn should_finalize_cache(mark_cache: bool, complete: bool, sent: &AtomicBool) -> bool {
+    mark_cache && complete && !sent.swap(true, Ordering::SeqCst)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use super::should_finalize_cache;
+
+    #[test]
+    fn cache_entry_is_finalized_only_once_the_download_completes() {
+        let sent = AtomicBool::new(false);
+
+        // Prefetching/downloading callbacks must not claim the entry...
+        assert!(!should_finalize_cache(true, false, &sent));
+        assert!(
+            !sent.load(Ordering::SeqCst),
+            "an incomplete download must not consume the one-shot mark"
+        );
+
+        // ...only the completion callback does, and only once.
+        assert!(should_finalize_cache(true, true, &sent));
+        assert!(!should_finalize_cache(true, true, &sent));
+    }
+
+    #[test]
+    fn temporary_streams_never_finalize() {
+        assert!(!should_finalize_cache(false, true, &AtomicBool::new(false)));
     }
 }

@@ -116,6 +116,18 @@ impl CacheManager {
         let filename = self.resolve_filename(song, ext);
         let path = self.downloads_dir.join(&filename);
         let file_bytes = fs::metadata(&path).ok().map(|m| m.len()).unwrap_or(0);
+        // Re-caching a song (quality/template change) replaces its entry. Read
+        // the previous file's size first so the running total does not count
+        // the old and the new copy at once, which would trigger premature LRU
+        // eviction.
+        let previous_bytes = {
+            let index = self.index.read().unwrap_or_else(|e| e.into_inner());
+            index
+                .get(&song.id)
+                .and_then(|entry| fs::metadata(self.downloads_dir.join(&entry.filename)).ok())
+                .map(|m| m.len())
+                .unwrap_or(0)
+        };
         self.index
             .write()
             .unwrap_or_else(|e| e.into_inner())
@@ -132,6 +144,10 @@ impl CacheManager {
             );
         self.cached_total_bytes
             .fetch_add(file_bytes, Ordering::Relaxed);
+        if previous_bytes > 0 {
+            self.cached_total_bytes
+                .fetch_sub(previous_bytes, Ordering::Relaxed);
+        }
         self.save_index();
     }
 
