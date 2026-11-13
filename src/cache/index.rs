@@ -75,6 +75,7 @@ impl CacheManager {
         let lyrics_dir = base_dir.join("lyrics");
         let content_dir = base_dir.join("content");
         let covers_dir = base_dir.join("covers");
+        super::cleanup_stale_partials(&downloads_dir);
         let index_file = Self::load_index_static(&downloads_dir);
         let total = Self::compute_total_bytes(&downloads_dir, &index_file.songs);
         Self {
@@ -206,14 +207,47 @@ impl CacheManager {
         self.save_index();
     }
 
-    pub fn remove_from_index(&self, song_id: u64) {
-        let mut index = self.index.write().unwrap_or_else(|e| e.into_inner());
-        if let Some(entry) = index.remove(&song_id) {
-            let path = self.downloads_dir.join(&entry.filename);
-            if let Ok(meta) = fs::metadata(&path) {
-                self.cached_total_bytes
-                    .fetch_sub(meta.len(), Ordering::Relaxed);
-            }
+    /// Drop a song's cache entry from the in-memory index (and schedule the
+    /// index write), returning the file that should be deleted.
+    ///
+    /// This is synchronous and IO-free, so callers can invalidate a corrupt
+    /// entry *before* retrying playback; the actual file deletion can then run
+    /// on a blocking thread via [`Self::delete_cached_file`].
+    pub fn invalidate_cached(&self, song_id: u64) -> Option<PathBuf> {
+        let entry = self
+            .index
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&song_id)?;
+        self.save_index();
+        Some(self.downloads_dir.join(entry.filename))
+    }
+
+    /// Delete a cache file returned by [`Self::invalidate_cached`], subtracting
+    /// its size from the running total. Blocking; call from a blocking task.
+    pub fn delete_cached_file(&self, path: &Path) {
+        // Measure before deleting: after `remove_file` the size is gone and the
+        // running total would keep counting the deleted file, evicting good
+        // entries later to "make room" that was already freed.
+        let bytes = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        if let Err(e) = fs::remove_file(path)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            log::warn!("Failed to remove cached file {}: {e}", path.display());
+        }
+        let _ = self
+            .cached_total_bytes
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |total| {
+                Some(total.saturating_sub(bytes))
+            });
+    }
+
+    /// Remove a cached song completely (index entry + file). Used by tests and
+    /// one-shot callers; production retry code should prefer
+    /// [`Self::invalidate_cached`] + a blocking [`Self::delete_cached_file`].
+    pub fn remove_cached(&self, song_id: u64) {
+        if let Some(path) = self.invalidate_cached(song_id) {
+            self.delete_cached_file(&path);
         }
     }
 

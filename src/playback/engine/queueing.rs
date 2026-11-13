@@ -254,6 +254,9 @@ impl PlaybackEngine {
         if self.state.paused {
             self.controller.resume();
         } else {
+            // Pausing stops progress events; a seek that was still in flight
+            // would otherwise leave the 32ms seeking poll spinning forever.
+            self.state.seeking = false;
             self.controller.pause();
         }
         self.state.paused = !self.state.paused;

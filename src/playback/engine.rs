@@ -208,10 +208,11 @@ impl PlaybackEngine {
         if retryable && let Some(song) = self.state.current_song.as_ref() {
             let song_id = song.id;
             let cache = self.source.cache.clone();
-            tokio::task::spawn_blocking(move || {
-                let _ = std::fs::remove_file(cache.cache_path(song_id, "mp3"));
-                cache.remove_from_index(song_id);
-            });
+            // Invalidate synchronously so the retry below cannot re-open the
+            // corrupt file; delete it off the async thread.
+            if let Some(path) = cache.invalidate_cached(song_id) {
+                tokio::task::spawn_blocking(move || cache.delete_cached_file(&path));
+            }
             self.start_current_song(None);
             return;
         }

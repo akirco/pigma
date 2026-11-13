@@ -362,6 +362,10 @@ impl PlayerTask {
                 if self.player.is_none() {
                     return true;
                 }
+                // A seek rebuilds the decoder/player, and the fresh rodio player
+                // starts playing. Preserve the paused state so seeking while
+                // paused never starts audio behind the UI's back.
+                let was_paused = self.player.as_ref().is_some_and(|p| p.is_paused());
                 if let Some(ref p) = self.player {
                     p.stop();
                 }
@@ -372,6 +376,9 @@ impl PlayerTask {
                 } else {
                     None
                 };
+                if was_paused && let Some(ref p) = self.player {
+                    p.pause();
+                }
             }
             ControlCmd::Stop => {
                 if let Some(ref p) = self.player {

@@ -115,6 +115,7 @@ impl AudioSource {
         song: &SongInfo,
         ext: &'static str,
         mut msong: Option<sonar::Song>,
+        part_path: Option<std::path::PathBuf>,
     ) -> (Settings<HttpStream<HeadersClient>>, StreamProgress) {
         let event_tx = self.event_tx.clone();
         let cache = self.cache.clone();
@@ -146,8 +147,8 @@ impl AudioSource {
             }
             if should_finalize_cache(mark_cache, complete, &sent)
                 && let Some(m) = msong.take()
+                && cache.mark_cached(&song, ext, Some(m), part_path.as_deref())
             {
-                cache.mark_cached(&song, ext, Some(m));
                 let _ = event_tx.send(PlaybackEvent::Cached(song.id).into());
             }
         });
@@ -206,24 +207,27 @@ impl AudioSource {
             .await
             .map_err(|e| format!("流初始化失败: {e}"))?;
 
-        let (settings, progress) = self.tracked_settings(self.save_on_play, song, ext, msong);
-
-        let reader: Box<dyn AudioReader> = if self.save_on_play {
-            let provider = self
+        // Save-on-play downloads into a hidden `.part` file; `mark_cached`
+        // renames it into place only after the download completes. Streaming
+        // without saving uses temp storage and never touches the cache index.
+        let (reader, progress): (Box<dyn AudioReader>, StreamProgress) = if self.save_on_play {
+            let (provider, part_path) = self
                 .cache
-                .create_provider(song, ext)
+                .create_provider(song)
                 .map_err(|e| format!("缓存创建失败: {e}"))?;
-            Box::new(
-                StreamDownload::from_stream(stream, provider, settings)
-                    .await
-                    .map_err(|e| format!("流下载失败: {e}"))?,
-            )
+            let (settings, progress) =
+                self.tracked_settings(true, song, ext, msong, Some(part_path));
+            let reader = StreamDownload::from_stream(stream, provider, settings)
+                .await
+                .map_err(|e| format!("流下载失败: {e}"))?;
+            (Box::new(reader), progress)
         } else {
-            Box::new(
+            let (settings, progress) = self.tracked_settings(false, song, ext, msong, None);
+            let reader =
                 StreamDownload::from_stream(stream, TempStorageProvider::default(), settings)
                     .await
-                    .map_err(|e| format!("流下载失败: {e}"))?,
-            )
+                    .map_err(|e| format!("流下载失败: {e}"))?;
+            (Box::new(reader), progress)
         };
 
         self.wait_for_prebuffer(&progress).await;
