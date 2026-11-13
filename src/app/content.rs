@@ -9,7 +9,20 @@ use crate::{
 use ncm_api::SongList;
 
 impl App {
-    pub(super) fn handle_content_loaded(&mut self, content: ContentState) {
+    /// Start a new content load generation. Every async content/search load
+    /// captures this value and carries it on its result event, so responses
+    /// that arrive after the user switched pages can be dropped instead of
+    /// overwriting the current view.
+    pub(super) fn bump_content_generation(&mut self) -> u64 {
+        let generation = self.state.navigation.generation.wrapping_add(1);
+        self.state.navigation.generation = generation;
+        generation
+    }
+
+    pub(super) fn handle_content_loaded(&mut self, content: ContentState, generation: u64) {
+        if generation != self.state.navigation.generation {
+            return;
+        }
         self.state.navigation.set_content(content);
     }
 
@@ -48,7 +61,7 @@ impl App {
         generation: u64,
     ) {
         // Drop stale responses
-        if generation != 0 && generation != self.state.navigation.generation {
+        if generation != self.state.navigation.generation {
             return;
         }
 
@@ -90,6 +103,7 @@ impl App {
     }
 
     pub(super) fn handle_playlist_select(&mut self, id: u64, name: Option<String>) {
+        let generation = self.bump_content_generation();
         self.state.navigation.push_breadcrumb();
         self.state.navigation.set_content(ContentState::Loading);
         // The playlist is being reloaded (content may have changed), so invalidate the previous "全量已入队" marker.
@@ -110,9 +124,23 @@ impl App {
         tokio::spawn(async move {
             if is_album {
                 let state = service.load_album(id).await;
-                send_event(&sender, NavigationEvent::ContentLoaded(state).into());
+                send_event(
+                    &sender,
+                    NavigationEvent::ContentLoaded {
+                        content: state,
+                        generation,
+                    }
+                    .into(),
+                );
                 if let Some(n) = name.clone() {
-                    send_event(&sender, NavigationEvent::BreadcrumbSet(n).into());
+                    send_event(
+                        &sender,
+                        NavigationEvent::BreadcrumbSet {
+                            name: n,
+                            generation,
+                        }
+                        .into(),
+                    );
                 }
                 return;
             }
@@ -124,16 +152,30 @@ impl App {
                     NavigationEvent::ContentLoadedPaged {
                         content: state,
                         pagination: pg,
-                        generation: 0,
+                        generation,
                     }
                     .into(),
                 );
             } else {
-                send_event(&sender, NavigationEvent::ContentLoaded(state).into());
+                send_event(
+                    &sender,
+                    NavigationEvent::ContentLoaded {
+                        content: state,
+                        generation,
+                    }
+                    .into(),
+                );
             }
             let breadcrumb = detail_name.or(name);
             if let Some(n) = breadcrumb {
-                send_event(&sender, NavigationEvent::BreadcrumbSet(n).into());
+                send_event(
+                    &sender,
+                    NavigationEvent::BreadcrumbSet {
+                        name: n,
+                        generation,
+                    }
+                    .into(),
+                );
             }
         });
     }

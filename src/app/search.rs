@@ -30,16 +30,17 @@ pub(super) struct SearchHost {
 
 impl App {
     pub(super) fn handle_search_song(&mut self, keyword: String) {
+        let generation = self.bump_content_generation();
         match self.state.navigation.search.provider {
-            SearchProvider::Ncm => self.submit_ncm_search(keyword),
-            provider => self.submit_sonar_search(keyword, provider),
+            SearchProvider::Ncm => self.submit_ncm_search(keyword, generation),
+            provider => self.submit_sonar_search(keyword, provider, generation),
         }
     }
 
     /// TUI-only orchestration for an NCM search: mark the loading state, spawn
     /// the search (delegating to [`search_ncm`]) and hand the
     /// resulting `ContentState` to the navigation via an event.
-    fn submit_ncm_search(&mut self, keyword: String) {
+    fn submit_ncm_search(&mut self, keyword: String, generation: u64) {
         self.state.navigation.set_content(ContentState::Loading);
         self.state.navigation.content_is_search = true;
         self.state.navigation.nav.subtitle = Some(format!("搜索: {keyword}"));
@@ -50,14 +51,21 @@ impl App {
         let search_results = self.search.results.clone();
         tokio::spawn(async move {
             let state = search_ncm(&service, &search_results, &keyword, limit).await;
-            send_event(&sender, NavigationEvent::ContentLoaded(state).into());
+            send_event(
+                &sender,
+                NavigationEvent::ContentLoaded {
+                    content: state,
+                    generation,
+                }
+                .into(),
+            );
         });
     }
 
     /// TUI-only orchestration for a single-source sonar search: build a finder
     /// restricted to the selected provider, then delegate to
     /// [`search_sonar`] and surface the result via an event.
-    fn submit_sonar_search(&mut self, keyword: String, provider: SearchProvider) {
+    fn submit_sonar_search(&mut self, keyword: String, provider: SearchProvider, generation: u64) {
         self.state.navigation.set_content(ContentState::Loading);
         self.state.navigation.content_is_search = true;
         self.state.navigation.nav.subtitle =
@@ -77,9 +85,10 @@ impl App {
                 Err(e) => {
                     send_event(
                         &sender,
-                        NavigationEvent::ContentLoaded(ContentState::Error(format!(
-                            "搜索初始化失败: {e}"
-                        )))
+                        NavigationEvent::ContentLoaded {
+                            content: ContentState::Error(format!("搜索初始化失败: {e}")),
+                            generation,
+                        }
                         .into(),
                     );
                     return;
@@ -98,11 +107,21 @@ impl App {
                     }
                     Err(e) => ContentState::Error(e),
                 };
-            send_event(&sender, NavigationEvent::ContentLoaded(state).into());
+            send_event(
+                &sender,
+                NavigationEvent::ContentLoaded {
+                    content: state,
+                    generation,
+                }
+                .into(),
+            );
         });
     }
 
     pub(super) fn handle_search_activate(&mut self) {
+        // Invalidate any content load that is still in flight before entering
+        // search; otherwise its response could land behind the empty page.
+        self.bump_content_generation();
         let nav = &mut self.state.navigation;
         nav.search.active = true;
         nav.search.input = TextInput::new();
@@ -127,6 +146,8 @@ impl App {
     }
 
     pub(super) fn handle_search_deactivate(&mut self) {
+        // Drop search responses that are still in flight while leaving search.
+        self.bump_content_generation();
         let nav = &mut self.state.navigation;
         if nav.search.filter_queue_only {
             nav.search.filter_queue_only = false;

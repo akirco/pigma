@@ -338,7 +338,10 @@ impl App {
                     log::error!("NavSelect error: {e}");
                 }
             }
-            NavigationEvent::ContentLoaded(content) => self.handle_content_loaded(content),
+            NavigationEvent::ContentLoaded {
+                content,
+                generation,
+            } => self.handle_content_loaded(content, generation),
             NavigationEvent::ContentLoadedPaged {
                 content,
                 pagination,
@@ -347,7 +350,9 @@ impl App {
                 self.handle_content_loaded_paged(content, pagination, generation);
             }
             NavigationEvent::PlaylistSelect { id, name } => self.handle_playlist_select(id, name),
-            NavigationEvent::BreadcrumbSet(name) => self.handle_breadcrumb(name),
+            NavigationEvent::BreadcrumbSet { name, generation } => {
+                self.handle_breadcrumb(name, generation);
+            }
             NavigationEvent::SearchSong(keyword) => self.handle_search_song(keyword),
             NavigationEvent::Navigate(page) => self.state.navigation.page = page,
             NavigationEvent::SearchActivated => self.handle_search_activate(),

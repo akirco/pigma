@@ -27,6 +27,9 @@ impl App {
             }
         };
 
+        // A new navigation target invalidates every in-flight content load.
+        let generation = self.bump_content_generation();
+
         if api == ApiEndpoint::LocalMusic {
             self.state.navigation.content_is_search = false;
             self.state.navigation.clear_breadcrumb();
@@ -40,7 +43,14 @@ impl App {
                 if ttl > 0
                     && let Some((cached, _)) = cache.load_content_cache_async(&api_str, ttl).await
                 {
-                    send_event(&sender, NavigationEvent::ContentLoaded(cached).into());
+                    send_event(
+                        &sender,
+                        NavigationEvent::ContentLoaded {
+                            content: cached,
+                            generation,
+                        }
+                        .into(),
+                    );
                     return;
                 }
                 let state = service.load_local_music().await;
@@ -59,7 +69,14 @@ impl App {
                 } else {
                     state
                 };
-                send_event(&sender, NavigationEvent::ContentLoaded(state).into());
+                send_event(
+                    &sender,
+                    NavigationEvent::ContentLoaded {
+                        content: state,
+                        generation,
+                    }
+                    .into(),
+                );
             });
             return Ok(());
         }
@@ -68,8 +85,6 @@ impl App {
         self.state.navigation.content_is_search = false;
         self.state.navigation.set_content(ContentState::Loading);
         self.state.navigation.nav.subtitle = None;
-        self.state.navigation.generation += 1;
-        let generation = self.state.navigation.generation;
         if api == ApiEndpoint::Search {
             self.state.navigation.nav.subtitle = Some("热搜榜".into());
         }
@@ -85,9 +100,12 @@ impl App {
                 let songs = cache.list_cached_songs_async().await;
                 send_event(
                     &sender,
-                    NavigationEvent::ContentLoaded(ContentState::Songs(
-                        songs.into_iter().map(std::sync::Arc::new).collect(),
-                    ))
+                    NavigationEvent::ContentLoaded {
+                        content: ContentState::Songs(
+                            songs.into_iter().map(std::sync::Arc::new).collect(),
+                        ),
+                        generation,
+                    }
                     .into(),
                 );
                 return;
@@ -122,7 +140,14 @@ impl App {
                         .into(),
                     );
                 } else {
-                    send_event(&sender, NavigationEvent::ContentLoaded(cached).into());
+                    send_event(
+                        &sender,
+                        NavigationEvent::ContentLoaded {
+                            content: cached,
+                            generation,
+                        }
+                        .into(),
+                    );
                 }
                 return;
             }
@@ -144,7 +169,14 @@ impl App {
                         .into(),
                     );
                 } else {
-                    send_event(&sender, NavigationEvent::ContentLoaded(state).into());
+                    send_event(
+                        &sender,
+                        NavigationEvent::ContentLoaded {
+                            content: state,
+                            generation,
+                        }
+                        .into(),
+                    );
                 }
                 if let Some(id) = playlist_id {
                     send_event(&sender, PlaybackEvent::SetPlaylistId(id).into());
@@ -181,18 +213,32 @@ impl App {
                     .into(),
                 );
             } else {
-                send_event(&sender, NavigationEvent::ContentLoaded(state).into());
+                send_event(
+                    &sender,
+                    NavigationEvent::ContentLoaded {
+                        content: state,
+                        generation,
+                    }
+                    .into(),
+                );
             }
         });
         Ok(())
     }
 
-    pub(super) fn handle_breadcrumb(&mut self, name: String) {
+    pub(super) fn handle_breadcrumb(&mut self, name: String, generation: u64) {
+        // A stale load must not relabel the page the user already moved to.
+        if generation != self.state.navigation.generation {
+            return;
+        }
         self.state.navigation.nav.subtitle = Some(name);
     }
 
     /// Restore the previous breadcrumb level (Esc from the content page).
     pub(super) fn handle_content_restore(&mut self) {
+        // Invalidate in-flight loads from the level being left, otherwise a
+        // slow response could immediately repopulate the restored page.
+        self.bump_content_generation();
         self.state.navigation.pop_breadcrumb();
     }
 
@@ -214,12 +260,20 @@ impl App {
                     let name = format!("{}: {}", column.header, song.album);
                     self.state.navigation.push_breadcrumb();
                     self.state.navigation.set_content(ContentState::Loading);
+                    let generation = self.bump_content_generation();
                     let service = self.service.clone();
                     let sender = self.state.events.sender();
                     tokio::spawn(async move {
                         let state = service.load_album(album_id).await;
-                        let _ = sender.send(NavigationEvent::ContentLoaded(state).into());
-                        let _ = sender.send(NavigationEvent::BreadcrumbSet(name).into());
+                        let _ = sender.send(
+                            NavigationEvent::ContentLoaded {
+                                content: state,
+                                generation,
+                            }
+                            .into(),
+                        );
+                        let _ =
+                            sender.send(NavigationEvent::BreadcrumbSet { name, generation }.into());
                     });
                 }
             }
@@ -232,13 +286,21 @@ impl App {
                     let name = format!("{}: {}", column.header, song.singer);
                     self.state.navigation.push_breadcrumb();
                     self.state.navigation.set_content(ContentState::Loading);
+                    let generation = self.bump_content_generation();
                     let service = self.service.clone();
                     let sender = self.state.events.sender();
                     let limit = self.config.search_limit;
                     tokio::spawn(async move {
                         let state = service.load_artist_songs(artist_id, limit).await;
-                        let _ = sender.send(NavigationEvent::ContentLoaded(state).into());
-                        let _ = sender.send(NavigationEvent::BreadcrumbSet(name).into());
+                        let _ = sender.send(
+                            NavigationEvent::ContentLoaded {
+                                content: state,
+                                generation,
+                            }
+                            .into(),
+                        );
+                        let _ =
+                            sender.send(NavigationEvent::BreadcrumbSet { name, generation }.into());
                     });
                 }
             }
@@ -251,13 +313,21 @@ impl App {
                     let name = format!("{}: {}", column.header, singer.name);
                     self.state.navigation.push_breadcrumb();
                     self.state.navigation.set_content(ContentState::Loading);
+                    let generation = self.bump_content_generation();
                     let service = self.service.clone();
                     let sender = self.state.events.sender();
                     let limit = self.config.search_limit;
                     tokio::spawn(async move {
                         let state = service.load_artist_songs(artist_id, limit).await;
-                        let _ = sender.send(NavigationEvent::ContentLoaded(state).into());
-                        let _ = sender.send(NavigationEvent::BreadcrumbSet(name).into());
+                        let _ = sender.send(
+                            NavigationEvent::ContentLoaded {
+                                content: state,
+                                generation,
+                            }
+                            .into(),
+                        );
+                        let _ =
+                            sender.send(NavigationEvent::BreadcrumbSet { name, generation }.into());
                     });
                 }
             }

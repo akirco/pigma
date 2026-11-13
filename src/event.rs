@@ -126,7 +126,12 @@ pub enum PlaybackEvent {
 #[derive(Clone, Debug)]
 pub enum NavigationEvent {
     NavSelect(String),
-    ContentLoaded(ContentState),
+    ContentLoaded {
+        content: ContentState,
+        /// Generation of the load that produced this result; handlers drop the
+        /// event when it no longer matches the app's current generation.
+        generation: u64,
+    },
     ContentLoadedPaged {
         content: ContentState,
         pagination: PaginationInfo,
@@ -136,7 +141,10 @@ pub enum NavigationEvent {
         id: u64,
         name: Option<String>,
     },
-    BreadcrumbSet(String),
+    BreadcrumbSet {
+        name: String,
+        generation: u64,
+    },
     SearchSong(String),
     Navigate(Page),
     SearchActivated,
