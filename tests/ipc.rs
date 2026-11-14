@@ -24,11 +24,12 @@ fn stub_searcher() -> Arc<pigma::service::SearchEngine> {
         std::env::temp_dir().join(format!("pigma-ipc-test-cache-{}", std::process::id()));
     let cache = Arc::new(pigma::cache::CacheManager::new(
         cache_dir.clone(),
-        cache_dir,
+        cache_dir.clone(),
         String::new(),
     ));
+    let content_cache = Arc::new(pigma::content_cache::ContentCache::new(cache_dir));
     let api = Arc::new(ncm_api::NcmClient::builder().build().expect("client"));
-    let service = pigma::service::ApiService::new(api, cache);
+    let service = pigma::service::ApiService::new(api, cache, content_cache);
     let finder = Arc::new(
         sonar::SonarFinder::new(sonar::SearchConfig::new().with_providers(vec![])).expect("finder"),
     );

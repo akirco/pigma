@@ -175,7 +175,7 @@ impl Listener {
 #[cfg(unix)]
 fn ensure_socket_dir(dir: &std::path::Path) {
     let _ = std::fs::create_dir_all(dir);
-    if dir == crate::utils::pigma_cache_dir().as_path() {
+    if dir == crate::persist::pigma_cache_dir().as_path() {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
     }

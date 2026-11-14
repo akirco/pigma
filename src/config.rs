@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 pub use theme::{Theme, ThemeRegistry, theme_fallback};
 pub use titles::*;
 
-use crate::{logger::Logger, utils, utils::GradientPreset};
+use crate::{logger::Logger, utils::GradientPreset};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -201,8 +201,8 @@ impl Default for Config {
 
 impl Config {
     pub fn load() -> Self {
-        let config_dir = utils::pigma_config_dir();
-        let _ = utils::ensure_private_dir(&config_dir);
+        let config_dir = crate::persist::pigma_config_dir();
+        let _ = crate::persist::ensure_private_dir(&config_dir);
         let config_path = config_dir.join("config.toml");
 
         let default = Config::default();
@@ -226,7 +226,7 @@ impl Config {
 
         if !config_path.exists() {
             let content = config.to_toml();
-            if let Err(e) = crate::cache::write_atomic(&config_path, content.as_bytes()) {
+            if let Err(e) = crate::persist::write_atomic(&config_path, content.as_bytes()) {
                 log::warn!("Failed to write default config: {e}");
             }
         }
@@ -242,11 +242,11 @@ impl Config {
         }
         // Atomic write (temp file + fsync + rename): a crash or a kill mid-save
         // must leave the previous config untouched instead of truncating it.
-        let path = utils::pigma_config_dir().join("config.toml");
+        let path = crate::persist::pigma_config_dir().join("config.toml");
         if let Some(dir) = path.parent() {
-            let _ = utils::ensure_private_dir(dir);
+            let _ = crate::persist::ensure_private_dir(dir);
         }
-        if let Err(e) = crate::cache::write_atomic(&path, content.as_bytes()) {
+        if let Err(e) = crate::persist::write_atomic(&path, content.as_bytes()) {
             log::error!("Failed to write config.toml: {e}");
         }
     }

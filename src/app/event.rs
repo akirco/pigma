@@ -255,7 +255,7 @@ impl App {
                     // The active list and its cache are snapshots; keep them in sync with the
                     // optimistic liked-state update instead of showing the removed song until reload.
                     self.service
-                        .cache()
+                        .content_cache()
                         .remove_content_cache(ApiEndpoint::LikedSongs.as_str());
                     let playlist_id = self
                         .state

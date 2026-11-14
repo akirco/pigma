@@ -35,13 +35,14 @@ impl App {
             self.state.navigation.clear_breadcrumb();
             self.state.navigation.set_content(ContentState::Loading);
             let service = self.service.clone();
-            let cache = self.service.cache().clone();
+            let content_cache = self.service.content_cache().clone();
             let ttl = self.config.cache.content_cache_ttl;
             let sender = self.state.events.sender();
 
             tokio::spawn(async move {
                 if ttl > 0
-                    && let Some((cached, _)) = cache.load_content_cache_async(&api_str, ttl).await
+                    && let Some((cached, _)) =
+                        content_cache.load_content_cache_async(&api_str, ttl).await
                 {
                     send_event(
                         &sender,
@@ -55,7 +56,7 @@ impl App {
                 }
                 let state = service.load_local_music().await;
                 let state = if ttl > 0 {
-                    let cache_clone = cache.clone();
+                    let cache_clone = content_cache.clone();
                     tokio::task::spawn_blocking(move || {
                         cache_clone.save_content_cache(
                             ApiEndpoint::LocalMusic.as_str(),
@@ -89,6 +90,7 @@ impl App {
             self.state.navigation.nav.subtitle = Some("热搜榜".into());
         }
         let cache = self.service.cache().clone();
+        let content_cache = self.service.content_cache().clone();
         let service = self.service.clone();
         let sender = self.state.events.sender();
         let uid = self.state.navigation.user.as_ref().map(|u| u.uid);
@@ -115,7 +117,9 @@ impl App {
                 && !force
                 && !matches!(api, ApiEndpoint::Search | ApiEndpoint::LikedSongs)
                 && let Some(cache_key) = content_cache_key(&api_str, uid)
-                && let Some((cached, pg)) = cache.load_content_cache_async(&cache_key, ttl).await
+                && let Some((cached, pg)) = content_cache
+                    .load_content_cache_async(&cache_key, ttl)
+                    .await
             {
                 // When restoring playlist pagination from cache, top up the trackIds, otherwise lazy pagination (LoadMore) cannot slice.
                 if let Some(pg) = &pg
@@ -192,7 +196,7 @@ impl App {
                 && !matches!(state, ContentState::Error(_))
                 && let Some(cache_key) = content_cache_key(&api_str, uid)
             {
-                let cache_clone = cache.clone();
+                let cache_clone = content_cache.clone();
                 let pg_for_save = pagination.clone();
                 tokio::task::spawn_blocking(move || {
                     cache_clone.save_content_cache(&cache_key, &state, pg_for_save.as_ref());

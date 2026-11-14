@@ -12,7 +12,7 @@ use super::{
     CacheManager,
     index::{CacheEntry, CacheIndex},
 };
-use crate::utils::{sanitize_filename, unix_secs};
+use crate::{persist::sanitize_filename, utils::unix_secs};
 
 impl CacheManager {
     fn resolve_filename(&self, song: &SongInfo, ext: &str) -> String {

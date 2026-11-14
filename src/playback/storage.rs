@@ -11,7 +11,7 @@ use ncm_api::SongInfo;
 use serde::{Deserialize, Serialize};
 
 use super::{NCM_SEARCH_QUEUE_KEY, PlayMode, THIRD_PARTY_QUEUE_KEY};
-use crate::utils::sanitize_filename;
+use crate::persist::sanitize_filename;
 
 /// File name for the unified NCM search queue.
 pub(super) const NCM_SEARCH_FILE: &str = "ncm_search.json";
@@ -144,18 +144,18 @@ impl Serialize for SavedQueueRef<'_> {
 
 /// Write a queue file and its active-queue marker atomically.
 ///
-/// Both go through [`crate::cache::write_atomic`] (temp file + fsync + rename),
+/// Both go through [`crate::persist::write_atomic`] (temp file + fsync + rename),
 /// so a crash mid-save leaves the previous queue/session loadable instead of a
 /// truncated JSON file that fails to restore on the next start.
 fn write_queue_files(queue_path: &Path, active_path: &Path, id: &str, json: &str) -> bool {
-    let queue_ok = match crate::cache::write_atomic(queue_path, json.as_bytes()) {
+    let queue_ok = match crate::persist::write_atomic(queue_path, json.as_bytes()) {
         Ok(()) => true,
         Err(e) => {
             log::warn!("Failed to save queue {}: {e}", queue_path.display());
             false
         }
     };
-    let active_ok = match crate::cache::write_atomic(active_path, id.as_bytes()) {
+    let active_ok = match crate::persist::write_atomic(active_path, id.as_bytes()) {
         Ok(()) => true,
         Err(e) => {
             log::warn!("Failed to save active queue marker: {e}");

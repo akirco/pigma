@@ -40,7 +40,7 @@ struct CachedTrack {
 
 /// Scan `dir` recursively for playable audio files.
 pub fn scan_local_music(dir: &Path) -> Vec<SongInfo> {
-    let cache_path = crate::utils::pigma_cache_dir().join(CACHE_FILE);
+    let cache_path = crate::persist::pigma_cache_dir().join(CACHE_FILE);
     scan_local_music_cached(dir, &cache_path)
 }
 
@@ -60,7 +60,7 @@ fn scan_local_music_cached(dir: &Path, cache_path: &Path) -> Vec<SongInfo> {
             .any(|(path, track)| previous.entries.get(path) != Some(track));
     if changed
         && let Ok(json) = serde_json::to_string(&cache)
-        && let Err(e) = crate::cache::write_atomic(cache_path, json.as_bytes())
+        && let Err(e) = crate::persist::write_atomic(cache_path, json.as_bytes())
     {
         log::warn!("Failed to save local music index: {e}");
     }

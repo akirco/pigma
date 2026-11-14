@@ -32,8 +32,10 @@ use reqwest::Client;
 use crate::{
     cache::CacheManager,
     config::{Config, ThemeRegistry},
+    content_cache::ContentCache,
     event::{AuthEvent, EventHandler},
     ipc::IpcState,
+    persist::{expand_tilde, pigma_cache_dir, pigma_config_dir},
     playback::PlaybackEngine,
     service::{ApiService, SearchEngine, SearchResults},
     state::{
@@ -41,7 +43,6 @@ use crate::{
         SearchState, SplashState, State, TableMode,
     },
     ui,
-    utils::{path::expand_tilde, pigma_cache_dir, pigma_config_dir},
 };
 
 /// Main application state and entry point for the pigma TUI.
@@ -140,8 +141,9 @@ impl App {
             base_dir.clone(),
             config.cache.cache_template.clone(),
         ));
+        let content_cache = Arc::new(ContentCache::new(base_dir.clone()));
 
-        let service = ApiService::new(api, cache.clone());
+        let service = ApiService::new(api, cache.clone(), content_cache);
 
         let picker = Self::build_picker();
 
@@ -265,7 +267,7 @@ impl App {
         self.service.client().flush_cookies();
         // Persist any coalesced content-cache write that has not drained yet;
         // the detached blocking writer may not run before the runtime exits.
-        self.service.cache().flush_content_cache();
+        self.service.content_cache().flush_content_cache();
         self.state.running = false;
     }
 

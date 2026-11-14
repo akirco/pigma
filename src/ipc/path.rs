@@ -4,7 +4,7 @@
 use std::{cell::RefCell, path::PathBuf, sync::OnceLock};
 
 #[cfg(unix)]
-use crate::utils::pigma_cache_dir;
+use crate::persist::pigma_cache_dir;
 
 /// Socket file name inside `pigma_cache_dir()` (Unix only).
 pub const SOCKET_FILE: &str = "pigma.sock";

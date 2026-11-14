@@ -106,7 +106,7 @@ impl App {
                 && !pg_for_save.api.is_empty()
                 && let Some(cache_key) = cache_key
             {
-                let cache = self.service.cache().clone();
+                let cache = self.service.content_cache().clone();
                 // Hand the blocking writer a *clone* of the merged content. For
                 // `Songs` this is just a cheap `Vec<Arc<_>>` copy — no deep
                 // clone, and no shared `Arc` outlives this function, so the next

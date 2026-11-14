@@ -19,6 +19,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::{
     cache::CacheManager,
+    content_cache::ContentCache,
     state::{ContentState, PaginationInfo},
 };
 
@@ -180,14 +181,20 @@ mod tests {
 pub struct ApiService {
     client: Arc<ncm_api::NcmClient>,
     cache: Arc<CacheManager>,
+    content_cache: Arc<ContentCache>,
     playlist_track_ids: Arc<std::sync::Mutex<HashMap<u64, Vec<u64>>>>,
 }
 
 impl ApiService {
-    pub fn new(client: Arc<ncm_api::NcmClient>, cache: Arc<CacheManager>) -> Self {
+    pub fn new(
+        client: Arc<ncm_api::NcmClient>,
+        cache: Arc<CacheManager>,
+        content_cache: Arc<ContentCache>,
+    ) -> Self {
         Self {
             client,
             cache,
+            content_cache,
             playlist_track_ids: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
@@ -198,6 +205,12 @@ impl ApiService {
 
     pub fn cache(&self) -> &Arc<CacheManager> {
         &self.cache
+    }
+
+    /// Content-list cache (navigation payloads); separate from the media cache
+    /// because it stores view-model `ContentState` values.
+    pub fn content_cache(&self) -> &Arc<ContentCache> {
+        &self.content_cache
     }
 }
 

@@ -1,8 +1,20 @@
-use std::{fs, path::PathBuf, sync::atomic::Ordering};
+//! Content-list cache: endpoint payloads plus their pagination state.
+//!
+//! Kept outside `cache` because it depends on the UI-facing `ContentState`;
+//! the media cache must not know about view-model types.
+
+use std::{
+    collections::HashMap,
+    fs,
+    path::PathBuf,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use serde::{Deserialize, Serialize};
 
-use super::CacheManager;
 use crate::{
     state::{ContentState, PaginationInfo},
     utils::{lock_recover, unix_secs},
@@ -25,9 +37,9 @@ struct ContentCacheEntryRef<'a> {
 
 /// Serialize a content-cache entry to JSON.
 ///
-/// Split out from [`CacheManager::save_content_cache`] so a caller that holds the
-/// content through a shared `Arc` can serialize on the calling thread and move
-/// only the resulting bytes to the blocking disk writer. Holding the `Arc`
+/// Split out from [`ContentCache::save_content_cache`] so a caller that holds
+/// the content through a shared `Arc` can serialize on the calling thread and
+/// move only the resulting bytes to the blocking disk writer. Holding the `Arc`
 /// across `spawn_blocking` would make the next `Arc::make_mut` deep-clone the
 /// whole content list.
 fn content_cache_json(
@@ -42,7 +54,35 @@ fn content_cache_json(
     serde_json::to_string(&entry)
 }
 
-impl CacheManager {
+/// Cache for navigation endpoint payloads (`ContentState`) keyed by account and
+/// API string; pagination metadata is stored alongside.
+#[derive(Clone)]
+pub struct ContentCache {
+    content_dir: PathBuf,
+    /// Payloads awaiting a coalesced write, keyed by API. A paged load replaces
+    /// the entry for its API instead of re-serializing and writing the whole
+    /// list per page, so a burst of pages collapses into one write of the final
+    /// state; entries for different APIs never displace each other.
+    pending: Arc<Mutex<HashMap<String, (ContentState, PaginationInfo)>>>,
+    /// Guard ensuring at most one content-cache writer drains `pending`.
+    writer: Arc<AtomicBool>,
+    /// Serializes the take-and-write step of the writer against
+    /// [`ContentCache::flush_content_cache`] and `remove_content_cache`, so an
+    /// in-flight writer can never land an older payload after a newer one, nor
+    /// resurrect a file that was just removed.
+    write_lock: Arc<Mutex<()>>,
+}
+
+impl ContentCache {
+    pub fn new(base_dir: PathBuf) -> Self {
+        Self {
+            content_dir: base_dir.join("content"),
+            pending: Arc::new(Mutex::new(HashMap::new())),
+            writer: Arc::new(AtomicBool::new(false)),
+            write_lock: Arc::new(Mutex::new(())),
+        }
+    }
+
     fn content_path(&self, api: &str) -> PathBuf {
         self.content_dir.join(format!("{}.json", api))
     }
@@ -81,18 +121,17 @@ impl CacheManager {
                 // A full replacement supersedes any queued paged payload for
                 // the same API; dropping it also stops an older list from
                 // landing after this write.
-                let _writing = lock_recover(&self.content_write_lock);
-                lock_recover(&self.content_pending).remove(api);
+                let _writing = lock_recover(&self.write_lock);
+                lock_recover(&self.pending).remove(api);
                 self.write_content_cache_locked(api, &json);
             }
             Err(e) => log::warn!("Failed to serialize content cache for {api}: {e}"),
         }
     }
 
-    /// [`Self::save_content_cache`] for callers that already hold
-    /// `content_write_lock`.
+    /// [`Self::save_content_cache`] for callers that already hold `write_lock`.
     fn write_content_cache_locked(&self, api: &str, json: &str) {
-        if let Err(e) = super::write_atomic(&self.content_path(api), json.as_bytes()) {
+        if let Err(e) = crate::persist::write_atomic(&self.content_path(api), json.as_bytes()) {
             log::warn!("Failed to write content cache for {api}: {e}");
         }
     }
@@ -102,19 +141,15 @@ impl CacheManager {
     /// A paged load re-serializes the whole (merged) list after every page;
     /// writing each one straight to disk would be one full-list write per page.
     /// Here the newest payload for an API replaces any not-yet-written one and a
-    /// single background writer drains the queue — the same coalescing
-    /// `index::save_index` uses. `content` is typically `ContentState::Songs(..)`,
-    /// whose clone is a cheap `Vec<Arc<_>>` copy: no deep clone, and no shared
-    /// `Arc` is kept alive, so the next `Arc::make_mut` is not forced into a
-    /// deep clone.
+    /// single background writer drains the queue.
     pub fn queue_content_cache(
         &self,
         api: &str,
         content: ContentState,
         pagination: PaginationInfo,
     ) {
-        lock_recover(&self.content_pending).insert(api.to_string(), (content, pagination));
-        if self.content_writer.swap(true, Ordering::SeqCst) {
+        lock_recover(&self.pending).insert(api.to_string(), (content, pagination));
+        if self.writer.swap(true, Ordering::SeqCst) {
             // A writer loop is already running and will drain the queue.
             return;
         }
@@ -127,21 +162,15 @@ impl CacheManager {
     /// it cannot be stranded without a writer.
     fn run_content_writer(&self) {
         loop {
-            // Hold the write lock across `drain + write` so a shutdown flush (or
-            // a removal) can never interleave an older payload after a newer one.
-            // `content_pending` is always locked while the write lock is held —
-            // except in `queue_content_cache`, which takes only the former — so
-            // the lock order is consistent.
             let wrote = {
-                let _writing = lock_recover(&self.content_write_lock);
+                let _writing = lock_recover(&self.write_lock);
                 self.drain_pending_locked()
             };
             if wrote {
                 continue;
             }
-            self.content_writer.store(false, Ordering::SeqCst);
-            if !lock_recover(&self.content_pending).is_empty()
-                && !self.content_writer.swap(true, Ordering::SeqCst)
+            self.writer.store(false, Ordering::SeqCst);
+            if !lock_recover(&self.pending).is_empty() && !self.writer.swap(true, Ordering::SeqCst)
             {
                 continue;
             }
@@ -150,9 +179,9 @@ impl CacheManager {
     }
 
     /// Write every queued payload and report whether the queue had anything.
-    /// The caller must hold `content_write_lock`.
+    /// The caller must hold `write_lock`.
     fn drain_pending_locked(&self) -> bool {
-        let entries: Vec<_> = lock_recover(&self.content_pending).drain().collect();
+        let entries: Vec<_> = lock_recover(&self.pending).drain().collect();
         for (api, (content, pagination)) in &entries {
             match content_cache_json(content, Some(pagination)) {
                 Ok(json) => self.write_content_cache_locked(api, &json),
@@ -162,16 +191,11 @@ impl CacheManager {
         !entries.is_empty()
     }
 
-    /// Write every pending content-cache payload synchronously. Used on the quit
-    /// path, where the detached coalescing writer might not run before the
-    /// runtime is torn down.
-    ///
-    /// Acquiring `content_write_lock` waits out an in-flight write, so the
-    /// newest payload is always the last one to reach disk. The writer flag is
-    /// only a scheduling hint, not a lock: the queue itself is emptied here, and
-    /// a writer that wakes up afterwards finds nothing to do.
+    /// Write every pending payload synchronously. Used on the quit path, where
+    /// the detached coalescing writer might not run before the runtime is torn
+    /// down.
     pub fn flush_content_cache(&self) {
-        let _writing = lock_recover(&self.content_write_lock);
+        let _writing = lock_recover(&self.write_lock);
         self.drain_pending_locked();
     }
 
@@ -179,8 +203,8 @@ impl CacheManager {
         // Serialize with the writer: drop any queued payload for this API and
         // delete the file only once an in-flight write for it has finished, so
         // neither the writer nor a stale queue entry can recreate the file.
-        let _writing = lock_recover(&self.content_write_lock);
-        lock_recover(&self.content_pending).remove(api);
+        let _writing = lock_recover(&self.write_lock);
+        lock_recover(&self.pending).remove(api);
         match fs::remove_file(self.content_path(api)) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -193,7 +217,7 @@ impl CacheManager {
 mod tests {
     use std::{fs, sync::atomic::Ordering};
 
-    use super::CacheManager;
+    use super::ContentCache;
     use crate::{
         state::{ContentState, PaginationInfo},
         utils::lock_recover,
@@ -206,16 +230,16 @@ mod tests {
             std::process::id(),
             rand::random::<u64>()
         ));
-        let cache = CacheManager::new(dir.join("downloads"), dir.clone(), "template".into());
+        let cache = ContentCache::new(dir.clone());
         let api = "shutdown_flush_test";
         let pagination = PaginationInfo {
             api: api.to_string(),
             ..PaginationInfo::default()
         };
 
-        lock_recover(&cache.content_pending)
+        lock_recover(&cache.pending)
             .insert(api.to_string(), (ContentState::Songs(vec![]), pagination));
-        cache.content_writer.store(true, Ordering::SeqCst);
+        cache.writer.store(true, Ordering::SeqCst);
 
         cache.flush_content_cache();
 
@@ -227,7 +251,7 @@ mod tests {
         let json = fs::read_to_string(path).unwrap();
         assert!(json.contains("\"data\""), "{json}");
         assert!(
-            lock_recover(&cache.content_pending).is_empty(),
+            lock_recover(&cache.pending).is_empty(),
             "flush should drain the queued payload"
         );
 
@@ -241,7 +265,7 @@ mod tests {
             std::process::id(),
             rand::random::<u64>()
         ));
-        let cache = CacheManager::new(dir.join("downloads"), dir.clone(), "template".into());
+        let cache = ContentCache::new(dir.clone());
         let api = "queued_write_test";
         let pagination = PaginationInfo {
             api: api.to_string(),
@@ -260,7 +284,7 @@ mod tests {
             "queued content cache should be written by the background writer"
         );
         assert!(
-            lock_recover(&cache.content_pending).is_empty(),
+            lock_recover(&cache.pending).is_empty(),
             "the writer should drain the queue"
         );
 

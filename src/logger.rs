@@ -13,7 +13,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     config::Config,
-    utils::{local_timestamp, lock_recover, pigma_config_dir},
+    persist::pigma_config_dir,
+    utils::{local_timestamp, lock_recover},
 };
 
 /// Rotate once the log grows past this size.
@@ -167,7 +168,7 @@ impl Log for FileLogger {
 pub fn init_logger(config: &Config) -> eyre::Result<()> {
     let path = log_file();
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        let _ = crate::utils::ensure_private_dir(parent);
+        let _ = crate::persist::ensure_private_dir(parent);
     }
     // A previous session may have left an oversized file; rotate before the
     // first new line instead of waiting for the periodic size check.

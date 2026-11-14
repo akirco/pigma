@@ -3,7 +3,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::{
-        Arc, Mutex, RwLock,
+        Arc, RwLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
@@ -73,7 +73,6 @@ struct CacheIndexFileRef<'a> {
 impl CacheManager {
     pub fn new(downloads_dir: PathBuf, base_dir: PathBuf, template: String) -> Self {
         let lyrics_dir = base_dir.join("lyrics");
-        let content_dir = base_dir.join("content");
         let covers_dir = base_dir.join("covers");
         super::cleanup_stale_partials(&downloads_dir);
         let index_file = Self::load_index_static(&downloads_dir);
@@ -81,7 +80,6 @@ impl CacheManager {
         Self {
             downloads_dir,
             lyrics_dir,
-            content_dir,
             covers_dir,
             template,
             index: Arc::new(RwLock::new(index_file.songs)),
@@ -89,9 +87,6 @@ impl CacheManager {
             cached_total_bytes: Arc::new(AtomicU64::new(total)),
             index_dirty: Arc::new(AtomicBool::new(false)),
             index_write_pending: Arc::new(AtomicBool::new(false)),
-            content_pending: Arc::new(Mutex::new(HashMap::new())),
-            content_writer: Arc::new(AtomicBool::new(false)),
-            content_write_lock: Arc::new(Mutex::new(())),
         }
     }
 
@@ -182,7 +177,7 @@ impl CacheManager {
             }
         };
         let path = Self::index_path(downloads_dir);
-        if let Err(e) = super::write_atomic(&path, snapshot.as_bytes()) {
+        if let Err(e) = crate::persist::write_atomic(&path, snapshot.as_bytes()) {
             log::warn!("Failed to write cache index: {e}");
         }
     }
