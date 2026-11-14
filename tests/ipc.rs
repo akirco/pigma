@@ -324,3 +324,30 @@ async fn search_round_trip() {
     let results = ipc::search_songs("test").await.expect("search round trip");
     assert!(results.is_empty());
 }
+
+/// The Unix socket must be owner-only; otherwise another local user could
+/// control playback or read the status snapshot.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn unix_socket_is_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let path = tmp_socket("mode");
+    ipc::set_socket_path_override(Some(path.clone()));
+    let _guard = ipc::start_server(
+        Arc::new(Mutex::new(StatusSnapshot::default())),
+        Arc::new(Mutex::new(QueueSnapshot::default())),
+        channel().0,
+        tokio::sync::mpsc::unbounded_channel().0,
+        stub_searcher(),
+    );
+
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    let mode = std::fs::metadata(&path)
+        .expect("socket metadata")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o600, "ipc socket must be owner-only");
+}

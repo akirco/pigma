@@ -11,7 +11,8 @@
 //!
 //! Transport is platform-specific: a Unix domain socket at
 //! `~/.cache/pigma/pigma.sock` on Linux/macOS, and a named pipe `\\.\pipe\pigma`
-//! on Windows. The endpoint is user-scoped so no authentication is needed.
+//! on Windows. The Unix endpoint is chmod 0600 and peer credentials are checked
+//! where available, so only the owning user can control the instance.
 
 pub mod client;
 pub mod path;
