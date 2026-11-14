@@ -39,7 +39,7 @@ struct CachedTrack {
 }
 
 /// Scan `dir` recursively for playable audio files.
-pub fn scan_local_music(dir: &Path) -> Vec<SongInfo> {
+pub(super) fn scan_local_music(dir: &Path) -> Vec<SongInfo> {
     let cache_path = crate::store::pigma_cache_dir().join(CACHE_FILE);
     scan_local_music_cached(dir, &cache_path)
 }

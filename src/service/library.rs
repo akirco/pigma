@@ -3,7 +3,7 @@
 use std::{path::Path, sync::Arc};
 
 use super::{ApiService, arc_songs};
-use crate::{playback::scan_local_music, state::ContentState};
+use crate::{service::scan::scan_local_music, state::ContentState};
 
 impl ApiService {
     /// Scan the user's Music directory off the async runtime and map it to a

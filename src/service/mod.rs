@@ -14,6 +14,7 @@ mod content_cache;
 mod library;
 mod liked;
 mod lyrics;
+mod scan;
 mod search;
 
 use std::{collections::HashMap, sync::Arc};
