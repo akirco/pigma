@@ -11,7 +11,7 @@ use std::{
 use serde::{Deserialize, Serialize, Serializer, ser::SerializeMap};
 
 use super::{CacheManager, DEFAULT_MAX_CACHE_BYTES};
-use crate::utils::unix_secs;
+use crate::time::unix_secs;
 
 /// Entry in the audio cache index, mapping song ID to filename and duration.
 #[derive(Clone, Deserialize)]

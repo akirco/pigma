@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use super::{BlockStyle, block::CornerBlock};
-use crate::app::App;
+use crate::state::HelpState;
 
 const HELP_ITEMS: &[(&str, &str)] = &[
     ("Ctrl+C/q", "退出程序"),
@@ -49,22 +49,15 @@ const KEY_COL_WIDTH: usize = 16;
 
 /// Renders the popup and returns the scroll limit implied by the rendered
 /// geometry, for the caller to persist into [`crate::state::HelpState`].
-pub(super) fn draw(f: &mut Frame, app: &App, area: Rect) -> usize {
-    let help = &app.state.help;
-    let colors = app.current_theme();
+pub(super) fn draw(f: &mut Frame, help: &HelpState, bs: &BlockStyle<'_>, area: Rect) -> usize {
+    let colors = bs.colors;
 
     let popup_area = area.centered(
         Constraint::Length(POPUP_WIDTH),
         Constraint::Length(POPUP_HEIGHT),
     );
 
-    let style = BlockStyle {
-        colors,
-        border: &app.state.border,
-        tick: app.state.tick,
-    };
-    let block =
-        CornerBlock::from_color(&style, colors.surface).title("\u{25BA} HELP \u{25C4}", colors);
+    let block = CornerBlock::from_color(bs, colors.surface).title("\u{25BA} HELP \u{25C4}", colors);
     let inner = block.inner(popup_area);
 
     f.render_widget(Clear, popup_area);

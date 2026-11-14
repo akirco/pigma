@@ -13,7 +13,7 @@ use super::{BlockStyle, scrollbar::calc_scroll_offset, skeleton::Skeleton, table
 use crate::{
     config::{ColumnDef, ColumnsConfig, Theme},
     state::{ContentState, TableMode},
-    utils::format_duration,
+    time::format_duration,
 };
 
 const MISSING: &str = "—";

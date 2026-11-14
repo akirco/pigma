@@ -14,7 +14,7 @@ use super::{
     scrollbar::{calc_scroll_offset, render_scrollbar},
     title::render_title,
 };
-use crate::{config::Theme, playback::PlaybackEngine, utils::format_duration_into};
+use crate::{config::Theme, playback::PlaybackEngine, time::format_duration_into};
 
 fn tab_style(colors: &Theme, selected: bool, playing: bool) -> Style {
     if !selected && !playing {

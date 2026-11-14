@@ -18,7 +18,8 @@ use super::stream_client::HeadersClient;
 use crate::{
     audio::{AudioInput, AudioReader, SharedReader},
     cache::CacheManager,
-    event::{Event, PlaybackEvent},
+    event::Event,
+    playback::PlaybackEvent,
     service::ApiService,
     utils::lock_recover,
 };
@@ -242,7 +243,7 @@ impl AudioSource {
                     .and_then(|mut s| s.next_back().map(|s| s.to_string()))
             })
             .unwrap_or_default();
-        crate::audio::canonical_ext(path.rsplit('.').nth(1).unwrap_or(""))
+        crate::store::canonical_ext(path.rsplit('.').nth(1).unwrap_or(""))
     }
 
     fn to_sonar_quality(quality: SongQuality) -> Quality {

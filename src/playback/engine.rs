@@ -22,8 +22,8 @@ use tokio::sync::mpsc;
 use super::{controller::PlaybackHandle, source::AudioSource, state::PlaybackState};
 use crate::{
     cache::CacheManager,
-    event::{Event, PlaybackEvent},
-    playback::LyricLine,
+    event::Event,
+    playback::{LyricLine, PlaybackEvent},
     queue::{
         PlaylistQueue, PlaylistStorage,
         mode::{self, Strategy},

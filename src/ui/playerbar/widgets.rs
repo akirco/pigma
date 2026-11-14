@@ -10,8 +10,9 @@ use ratatui_image::{Resize, StatefulImage};
 use crate::{
     config::{PlayerbarConfig, Theme},
     playback::{PlaybackState, mode_icon},
+    time::format_duration_into,
     ui::{gradient_line_gauge::GradientLineGauge, spinner::Spinner},
-    utils::{format_duration_into, lock_recover},
+    utils::lock_recover,
 };
 
 pub(super) fn draw_song_info(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {

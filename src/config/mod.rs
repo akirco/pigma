@@ -22,7 +22,7 @@ pub use playerbar::*;
 use serde::{Deserialize, Serialize};
 pub use titles::*;
 
-use crate::{logger::Logger, utils::GradientPreset};
+use crate::{logger::Logger, theme::GradientPreset};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]

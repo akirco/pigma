@@ -20,6 +20,7 @@ pub mod service;
 pub mod state;
 mod store;
 pub mod theme;
+pub mod time;
 pub mod tui;
 pub mod ui;
 pub mod utils;

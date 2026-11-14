@@ -1,7 +1,7 @@
 //! `pigma status` subcommand: fetch a snapshot or the queue from the running
 //! instance and render it as JSON, a `{token}` template, or a plain listing.
 
-use crate::{config::Config, ipc, ipc::StatusSnapshot, utils::format_duration};
+use crate::{config::Config, ipc, ipc::StatusSnapshot, time::format_duration};
 
 /// `pigma status` handler.
 pub async fn status(template: &str, json: bool, list: bool) -> eyre::Result<()> {

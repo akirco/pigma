@@ -12,7 +12,7 @@ use super::{BlockStyle, block::CornerBlock};
 use crate::{
     config::Theme,
     playback::{LyricLine, PlaybackState},
-    utils::GradientPreset,
+    theme::GradientPreset,
 };
 
 thread_local! {

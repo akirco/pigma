@@ -11,10 +11,7 @@ use std::{
 use log::{Level, Log, Metadata, Record};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    store::pigma_config_dir,
-    utils::{local_timestamp, lock_recover},
-};
+use crate::{store::pigma_config_dir, time::local_timestamp, utils::lock_recover};
 
 /// Rotate once the log grows past this size.
 const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;

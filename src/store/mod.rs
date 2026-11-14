@@ -12,6 +12,10 @@ use std::{
 
 use dirs::home_dir;
 
+mod ext;
+
+pub(crate) use ext::canonical_ext;
+
 /// Atomically write `bytes` to `path`, creating its parent directory if needed.
 ///
 /// A unique temp file is written in the same directory, `fsync`ed, then renamed

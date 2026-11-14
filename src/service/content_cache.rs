@@ -17,7 +17,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     state::{ContentState, PaginationInfo},
-    utils::{lock_recover, unix_secs},
+    time::unix_secs,
+    utils::lock_recover,
 };
 
 #[derive(Serialize, Deserialize)]

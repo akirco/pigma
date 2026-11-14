@@ -2,7 +2,7 @@ use super::{App, event::send_event};
 use crate::{
     event::SplashEvent,
     state::{LogLevel, SplashLogEntry},
-    utils::clock_time,
+    time::clock_time,
 };
 
 /// Deadline for the startup reachability probe. Kept short on purpose: the
