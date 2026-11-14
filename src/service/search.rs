@@ -1,5 +1,5 @@
 //! Shared search execution used by the TUI search bar and the IPC `search`
-//! request.
+//! request, plus the underlying NCM song lookup on `ApiService`.
 //!
 //! The TUI search is async-fire-and-forget (spawns a task, pushes
 //! [`crate::event::NavigationEvent`]s, updates navigation state) while the IPC
@@ -16,7 +16,7 @@ use std::{
 use ncm_api::SongInfo;
 use sonar::{SearchQuery, SonarFinder, Song};
 
-use super::ApiService;
+use super::{ApiService, api::arc_songs};
 use crate::{
     lock::lock_recover,
     state::{ContentState, SearchProvider},
@@ -44,6 +44,17 @@ pub struct SearchEngine {
     search_results: SearchResults,
     limit: usize,
     providers: Vec<SearchProvider>,
+}
+
+impl ApiService {
+    /// Search songs by keyword on the NCM client and share the result as
+    /// `Arc`s so the content state and playback queue own the same entries.
+    pub async fn search_songs(&self, keyword: &str, limit: u16) -> ContentState {
+        match self.client.search_song(keyword, 0, limit).await {
+            Ok(result) => ContentState::Songs(arc_songs(result.songs)),
+            Err(e) => ContentState::Error(e.to_string()),
+        }
+    }
 }
 
 impl SearchEngine {

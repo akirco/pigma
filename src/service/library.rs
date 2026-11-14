@@ -1,4 +1,4 @@
-//! Local library, search, authentication, song URLs and cloud upload.
+//! Local music library: scanning `~/Music` and turning it into content state.
 
-mod api;
+mod local;
 mod scan;
