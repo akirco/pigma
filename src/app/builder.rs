@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use ratatui_image::picker::Picker;
 use reqwest::Client;
@@ -18,6 +18,11 @@ pub(super) enum ProxyKind {
     /// YouTube services, proxied under `Normal`/`Both`.
     Youtube,
 }
+
+/// Bound connection setup and each read. Deliberately no total request timeout:
+/// audio streams legitimately download for the length of the track.
+const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const HTTP_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 impl App {
     /// `NonYoutube` is proxied under `Reversed`/`Both`; `Youtube` under `Normal`/`Both`.
@@ -127,7 +132,9 @@ impl App {
 
     /// Build a blocking HTTP client for the given proxy address; an empty address connects directly.
     pub(super) fn build_http_client(proxy: &str) -> eyre::Result<Client> {
-        let mut builder = Client::builder();
+        let mut builder = Client::builder()
+            .connect_timeout(HTTP_CONNECT_TIMEOUT)
+            .read_timeout(HTTP_READ_TIMEOUT);
         if !proxy.is_empty() {
             builder = builder.proxy(reqwest::Proxy::all(proxy).map_err(eyre::Report::msg)?);
         }

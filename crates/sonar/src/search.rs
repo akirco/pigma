@@ -435,10 +435,13 @@ impl SonarFinder {
 
     /// Fetch LRC lyrics for a song via the provider that produced it.
     pub async fn get_lyrics(&self, song: &crate::model::Song) -> Result<Option<String>> {
-        let provider = self.providers.iter().find(|p| p.source() == song.source);
-        match provider {
-            Some(p) => p.get_lyrics(song).await,
-            None => Ok(None),
+        let Some(provider) = self.providers.iter().find(|p| p.source() == song.source) else {
+            return Ok(None);
+        };
+        let timeout = std::time::Duration::from_millis(self.config.timeout_ms);
+        match tokio::time::timeout(timeout, provider.get_lyrics(song)).await {
+            Ok(result) => result,
+            Err(_) => Err(crate::error::SonarError::Timeout),
         }
     }
 
@@ -498,6 +501,7 @@ impl SonarFinder {
     ) -> Option<Song> {
         let query =
             SearchQuery::new(format!("{} {}", song.name, song.singer)).with_duration(song.duration);
+        let timeout = std::time::Duration::from_millis(self.config.timeout_ms);
         for source in sources {
             let Some(provider) = self
                 .providers
@@ -507,10 +511,18 @@ impl SonarFinder {
             else {
                 continue;
             };
-            if let Ok(result) = provider.search(&query).await
-                && let Some(first) = result.songs.into_iter().next()
-            {
-                return Some(first);
+            match tokio::time::timeout(timeout, provider.search(&query)).await {
+                Ok(Ok(result)) => {
+                    if let Some(first) = result.songs.into_iter().next() {
+                        return Some(first);
+                    }
+                }
+                Ok(Err(e)) => {
+                    log::warn!("sonar fallback: {:?} search failed: {e}", source);
+                }
+                Err(_) => {
+                    log::warn!("sonar fallback: {:?} search timed out", source);
+                }
             }
         }
         None
@@ -609,6 +621,62 @@ mod tests {
             providers,
             config: SearchConfig::default(),
         }
+    }
+
+    /// Provider whose calls never finish, used to verify the per-request
+    /// timeout applied to lyrics and fallback searches.
+    struct SlowProvider;
+
+    #[async_trait::async_trait]
+    impl crate::provider::SonarProvider for SlowProvider {
+        fn source(&self) -> SonarSource {
+            SonarSource::Kugou
+        }
+
+        async fn search(&self, _query: &SearchQuery) -> crate::error::Result<SearchResult> {
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            unreachable!("slow provider should be cancelled by the timeout")
+        }
+
+        async fn get_play_url(
+            &self,
+            _song: &Song,
+            _quality: Option<Quality>,
+        ) -> crate::error::Result<PlayUrlResult> {
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            unreachable!("slow provider should be cancelled by the timeout")
+        }
+
+        async fn get_lyrics(&self, _song: &Song) -> crate::error::Result<Option<String>> {
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            unreachable!("slow provider should be cancelled by the timeout")
+        }
+    }
+
+    #[tokio::test]
+    async fn get_lyrics_times_out_instead_of_hanging() {
+        let mut finder = finder(vec![Arc::new(SlowProvider)]);
+        finder.config.timeout_ms = 20;
+
+        let started = std::time::Instant::now();
+        let result = finder.get_lyrics(&song("晴天", "周杰伦")).await;
+
+        assert!(matches!(result, Err(crate::error::SonarError::Timeout)));
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+    }
+
+    #[tokio::test]
+    async fn fallback_search_times_out_and_returns_none() {
+        let mut finder = finder(vec![Arc::new(SlowProvider)]);
+        finder.config.timeout_ms = 20;
+
+        let started = std::time::Instant::now();
+        let found = finder
+            .search_first(&[SonarSource::Kugou], &song("晴天", "周杰伦"))
+            .await;
+
+        assert!(found.is_none());
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
     }
 
     fn score(name: &str, singer: &str, keyword: &str) -> f64 {
