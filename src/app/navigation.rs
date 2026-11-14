@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use super::{App, event::send_event};
+use super::{App, content::content_cache_key, event::send_event};
 use crate::{
     event::{AppEvent, NavigationEvent, PlaybackEvent},
     service::ApiEndpoint,
@@ -114,7 +114,8 @@ impl App {
             if ttl > 0
                 && !force
                 && !matches!(api, ApiEndpoint::Search | ApiEndpoint::LikedSongs)
-                && let Some((cached, pg)) = cache.load_content_cache_async(&api_str, ttl).await
+                && let Some(cache_key) = content_cache_key(&api_str, uid)
+                && let Some((cached, pg)) = cache.load_content_cache_async(&cache_key, ttl).await
             {
                 // When restoring playlist pagination from cache, top up the trackIds, otherwise lazy pagination (LoadMore) cannot slice.
                 if let Some(pg) = &pg
@@ -189,11 +190,12 @@ impl App {
             let state = if ttl > 0
                 && api != ApiEndpoint::Search
                 && !matches!(state, ContentState::Error(_))
+                && let Some(cache_key) = content_cache_key(&api_str, uid)
             {
                 let cache_clone = cache.clone();
                 let pg_for_save = pagination.clone();
                 tokio::task::spawn_blocking(move || {
-                    cache_clone.save_content_cache(&api_str, &state, pg_for_save.as_ref());
+                    cache_clone.save_content_cache(&cache_key, &state, pg_for_save.as_ref());
                     state
                 })
                 .await

@@ -8,6 +8,20 @@ use crate::{
 };
 use ncm_api::SongList;
 
+/// Cache key for an endpoint's content.
+///
+/// Personal endpoints are scoped by the signed-in uid, so logging into another
+/// account cannot show the previous account's recent/playlists/cloud disk from
+/// the cache. Public endpoints keep their plain name. Returns `None` when a
+/// personal endpoint is requested without a uid (nothing should be cached or
+/// served from cache in that state).
+pub(super) fn content_cache_key(api: &str, uid: Option<u64>) -> Option<String> {
+    match ApiEndpoint::parse(api) {
+        Some(endpoint) if endpoint.is_personal() => uid.map(|uid| format!("u{uid}-{api}")),
+        _ => Some(api.to_string()),
+    }
+}
+
 impl App {
     /// Start a new content load generation. Every async content/search load
     /// captures this value and carries it on its result event, so responses
@@ -84,7 +98,14 @@ impl App {
             self.state.navigation.pagination = Some(pagination);
 
             let ttl = self.config.cache.content_cache_ttl;
-            if ttl > 0 && !pg_for_save.api.is_empty() {
+            let cache_key = content_cache_key(
+                &pg_for_save.api,
+                self.state.navigation.user.as_ref().map(|u| u.uid),
+            );
+            if ttl > 0
+                && !pg_for_save.api.is_empty()
+                && let Some(cache_key) = cache_key
+            {
                 let cache = self.service.cache().clone();
                 // Hand the blocking writer a *clone* of the merged content. For
                 // `Songs` this is just a cheap `Vec<Arc<_>>` copy — no deep
@@ -94,7 +115,7 @@ impl App {
                 // pages coalesces into one write of the final state
                 // (`queue_content_cache`).
                 let merged = self.state.navigation.content.as_ref().clone();
-                cache.queue_content_cache(&pg_for_save.api, merged, pg_for_save.clone());
+                cache.queue_content_cache(&cache_key, merged, pg_for_save.clone());
             }
             return;
         }
@@ -416,5 +437,39 @@ impl App {
                 state
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::content_cache_key;
+
+    #[test]
+    fn personal_content_cache_is_scoped_by_uid() {
+        assert_eq!(
+            content_cache_key("recent", Some(42)).as_deref(),
+            Some("u42-recent")
+        );
+        assert_eq!(
+            content_cache_key("user_cloud_disk", Some(42)).as_deref(),
+            Some("u42-user_cloud_disk")
+        );
+        assert_eq!(content_cache_key("recent", None), None);
+    }
+
+    #[test]
+    fn public_and_non_endpoint_keys_are_unchanged() {
+        assert_eq!(
+            content_cache_key("toplist", Some(42)).as_deref(),
+            Some("toplist")
+        );
+        assert_eq!(
+            content_cache_key("local_music", None).as_deref(),
+            Some("local_music")
+        );
+        assert_eq!(
+            content_cache_key("playlist:7", None).as_deref(),
+            Some("playlist:7")
+        );
     }
 }

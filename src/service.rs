@@ -90,6 +90,26 @@ impl ApiEndpoint {
             _ => return None,
         })
     }
+
+    /// Whether the endpoint returns data scoped to the signed-in account.
+    ///
+    /// Used both to gate the request (login required) and to scope the content
+    /// cache so switching accounts cannot show another account's lists.
+    pub const fn is_personal(self) -> bool {
+        matches!(
+            self,
+            Self::RecommendSongs
+                | Self::RecommendResource
+                | Self::UserRadioSublist
+                | Self::UserCloudDisk
+                | Self::LikedSongs
+                | Self::UserSongList
+                | Self::UserCreatedSongList
+                | Self::UserSubscribedSongList
+                | Self::SavedAlbums
+                | Self::Recent
+        )
+    }
 }
 
 #[cfg(test)]
@@ -138,6 +158,18 @@ mod tests {
         );
         assert_eq!(ApiEndpoint::parse("__recent__"), Some(ApiEndpoint::Recent));
         assert_eq!(ApiEndpoint::parse("nope"), None);
+    }
+
+    #[test]
+    fn personal_endpoints_are_the_login_gated_ones() {
+        assert!(ApiEndpoint::RecommendSongs.is_personal());
+        assert!(ApiEndpoint::Recent.is_personal());
+        assert!(ApiEndpoint::LikedSongs.is_personal());
+        assert!(ApiEndpoint::UserCloudDisk.is_personal());
+        assert!(!ApiEndpoint::Toplist.is_personal());
+        assert!(!ApiEndpoint::Download.is_personal());
+        assert!(!ApiEndpoint::LocalMusic.is_personal());
+        assert!(!ApiEndpoint::Search.is_personal());
     }
 }
 

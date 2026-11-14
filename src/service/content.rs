@@ -18,19 +18,7 @@ impl ApiService {
         uid: Option<u64>,
         limit: u16,
     ) -> (ContentState, Option<PaginationInfo>) {
-        let requires_login = matches!(
-            api,
-            ApiEndpoint::RecommendSongs
-                | ApiEndpoint::RecommendResource
-                | ApiEndpoint::UserRadioSublist
-                | ApiEndpoint::UserCloudDisk
-                | ApiEndpoint::LikedSongs
-                | ApiEndpoint::UserSongList
-                | ApiEndpoint::UserCreatedSongList
-                | ApiEndpoint::UserSubscribedSongList
-                | ApiEndpoint::SavedAlbums
-                | ApiEndpoint::Recent
-        );
+        let requires_login = api.is_personal();
         if requires_login && !self.client.is_logged_in() {
             return (ContentState::Error("未登录".into()), None);
         }
