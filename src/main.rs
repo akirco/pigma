@@ -18,12 +18,32 @@ use pigma::{
 
 struct TerminalGuard;
 
+/// Mirror [`TerminalGuard`]'s cleanup from a panic hook.
+///
+/// `ratatui::init` already installs a hook that restores raw mode and the
+/// alternate screen, but Pigma enables mouse capture separately. In release
+/// builds (`panic = "abort"`) `Drop` never runs, so the hook is the only place
+/// that can turn mouse reporting off.
+fn install_panic_hook() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let mut output = stdout();
+        let _ = execute!(output, DisableMouseCapture, ResetColor, cursor::Show);
+        let _ = output.flush();
+        // The logger is buffered; keep the last lines leading up to the panic.
+        flush_logger();
+        // Ratatui's hook (the previous one) restores raw mode / alternate screen
+        // and then prints the standard panic message.
+        previous(info);
+    }));
+}
+
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
         let mut output = stdout();
-        // Disable mouse reporting even when the app unwinds from a panic. The
-        // ratatui panic hook restores raw mode and the alternate screen, but it
-        // does not know that Pigma enabled mouse capture separately.
+        // Clean exits and unwinding panics: disable mouse reporting. A custom
+        // panic hook (`install_panic_hook`) covers `panic = "abort"`, where this
+        // `Drop` never runs.
         let _ = execute!(output, DisableMouseCapture, ResetColor, cursor::Show);
         // On the panic path the ratatui panic hook has already called restore(),
         // so only call it on clean exits to avoid restoring the terminal twice.
@@ -34,8 +54,8 @@ impl Drop for TerminalGuard {
         let _ = output.flush();
         // The file logger is buffered; flush here so lines written just before a
         // panic still reach disk on the unwind path. This `Drop` does not run at
-        // all in release builds (`panic = "abort"`); there only the immediate
-        // flush of warn/error records survives a crash.
+        // all in release builds (`panic = "abort"`); `install_panic_hook` does
+        // the same cleanup there.
         flush_logger();
     }
 }
@@ -69,6 +89,7 @@ async fn main() -> eyre::Result<()> {
     let result = match app {
         Some(app) => {
             let terminal = ratatui::init();
+            install_panic_hook();
             let _terminal_guard = TerminalGuard;
             execute!(stdout(), EnableMouseCapture)?;
             app.run(terminal).await
