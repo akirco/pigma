@@ -9,7 +9,7 @@ pub mod lyrics;
 
 use std::{
     collections::HashMap,
-    fs::{self, File},
+    fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
     sync::{
@@ -50,7 +50,16 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     ));
 
     let result = (|| {
-        let mut file = File::create(&tmp)?;
+        let mut options = OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            // Config, queues and cache payloads can contain account data;
+            // keep them owner-only.
+            options.mode(0o600);
+        }
+        let mut file = options.open(&tmp)?;
         file.write_all(bytes)?;
         file.sync_all()?;
         drop(file);
@@ -130,6 +139,12 @@ mod tests {
 
         write_atomic(&path, b"first").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"first");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600, "atomic writes must be owner-only");
+        }
 
         // A second write replaces the contents (not appends / truncates).
         write_atomic(&path, b"second").unwrap();

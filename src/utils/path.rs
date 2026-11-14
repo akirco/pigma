@@ -1,6 +1,20 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use dirs::home_dir;
+
+/// Create `dir` (if needed) and make it owner-only on Unix.
+///
+/// Used for pigma's config directory, which holds `config.toml` (possibly with
+/// proxy credentials) and `debug.log`.
+pub fn ensure_private_dir(dir: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
 
 /// Replace illegal characters in a file name with `_`.
 pub fn sanitize_filename(s: &str) -> String {
@@ -72,5 +86,26 @@ mod tests {
         } else {
             assert_eq!(expand_tilde(win_input), PathBuf::from(win_input));
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ensure_private_dir_makes_the_directory_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!(
+            "pigma_private_dir_test_{}_{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        ensure_private_dir(&dir).expect("create private dir");
+
+        let mode = std::fs::metadata(&dir)
+            .expect("metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o700);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

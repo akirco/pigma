@@ -202,6 +202,7 @@ impl Default for Config {
 impl Config {
     pub fn load() -> Self {
         let config_dir = utils::pigma_config_dir();
+        let _ = utils::ensure_private_dir(&config_dir);
         let config_path = config_dir.join("config.toml");
 
         let default = Config::default();
@@ -242,6 +243,9 @@ impl Config {
         // Atomic write (temp file + fsync + rename): a crash or a kill mid-save
         // must leave the previous config untouched instead of truncating it.
         let path = utils::pigma_config_dir().join("config.toml");
+        if let Some(dir) = path.parent() {
+            let _ = utils::ensure_private_dir(dir);
+        }
         if let Err(e) = crate::cache::write_atomic(&path, content.as_bytes()) {
             log::error!("Failed to write config.toml: {e}");
         }
