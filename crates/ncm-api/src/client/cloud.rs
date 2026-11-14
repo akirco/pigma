@@ -87,8 +87,23 @@ impl NcmClient {
             _ => "audio/mpeg",
         };
 
-        // Compute the MD5 and file size in a streaming manner (without reading the whole file into memory)
-        let (md5, size) = stream_file_digest(path)?;
+        // Digesting and tag parsing read the file synchronously; keep them off
+        // the async runtime's worker threads so a large upload does not stall
+        // unrelated requests.
+        let (md5, size, parsed_name, parsed_album, parsed_artist) = {
+            let path = path.to_path_buf();
+            tokio::task::spawn_blocking(move || {
+                let (md5, size) = stream_file_digest(&path)?;
+                let meta_file = std::fs::File::open(&path).map_err(|e| {
+                    NcmError::Session(format!("failed to open {}: {e}", path.display()))
+                })?;
+                let (song, album, artist) = parse_audio_meta(meta_file, mime);
+                Ok::<_, NcmError>((md5, size, song, album, artist))
+            })
+            .await
+            .map_err(|e| NcmError::Session(format!("metadata task failed: {e}")))?
+            ?
+        };
         let bitrate = 999000u32;
 
         // Step 1: pre-upload check (parameters aligned with the reference implementation, preserving JSON types)
@@ -99,29 +114,25 @@ impl NcmClient {
             .unwrap_or(true);
         let check_song_id = parse_song_id(&check_value).unwrap_or_else(|| "0".to_string());
 
-        // Step 2: parse the audio metadata (using a separate file handle, seeking to read the tags on demand, without filling memory)
-        let meta_file = std::fs::File::open(path)
-            .map_err(|e| NcmError::Session(format!("failed to open {}: {e}", path.display())))?;
-        let (song_name, album, artist) = {
-            let (s, a, ar) = parse_audio_meta(meta_file, mime);
-            (
-                if s.is_empty() && !song_hint.is_empty() {
-                    song_hint.to_string()
-                } else {
-                    s
-                },
-                if a.is_empty() && !album_hint.is_empty() {
-                    album_hint.to_string()
-                } else {
-                    a
-                },
-                if ar.is_empty() && !artist_hint.is_empty() {
-                    artist_hint.to_string()
-                } else {
-                    ar
-                },
-            )
-        };
+        // Step 2: apply the metadata hints fetched from the cache index when the
+        // file itself had no usable tags.
+        let (song_name, album, artist) = (
+            if parsed_name.is_empty() && !song_hint.is_empty() {
+                song_hint.to_string()
+            } else {
+                parsed_name
+            },
+            if parsed_album.is_empty() && !album_hint.is_empty() {
+                album_hint.to_string()
+            } else {
+                parsed_album
+            },
+            if parsed_artist.is_empty() && !artist_hint.is_empty() {
+                artist_hint.to_string()
+            } else {
+                parsed_artist
+            },
+        );
 
         // Normalize the file name (aligned with the reference implementation)
         let raw_name = file_name
