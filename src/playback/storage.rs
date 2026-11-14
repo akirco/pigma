@@ -1,7 +1,10 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use ncm_api::SongInfo;
@@ -144,17 +147,65 @@ impl Serialize for SavedQueueRef<'_> {
 /// Both go through [`crate::cache::write_atomic`] (temp file + fsync + rename),
 /// so a crash mid-save leaves the previous queue/session loadable instead of a
 /// truncated JSON file that fails to restore on the next start.
-fn write_queue_files(queue_path: &Path, active_path: &Path, id: &str, json: &str) {
-    if let Err(e) = crate::cache::write_atomic(queue_path, json.as_bytes()) {
-        log::warn!("Failed to save queue {}: {e}", queue_path.display());
+fn write_queue_files(queue_path: &Path, active_path: &Path, id: &str, json: &str) -> bool {
+    let queue_ok = match crate::cache::write_atomic(queue_path, json.as_bytes()) {
+        Ok(()) => true,
+        Err(e) => {
+            log::warn!("Failed to save queue {}: {e}", queue_path.display());
+            false
+        }
+    };
+    let active_ok = match crate::cache::write_atomic(active_path, id.as_bytes()) {
+        Ok(()) => true,
+        Err(e) => {
+            log::warn!("Failed to save active queue marker: {e}");
+            false
+        }
+    };
+    // Both files must match: advancing the save sequence after a partial write
+    // would let a stale queue stay paired with a newer active-queue marker.
+    queue_ok && active_ok
+}
+
+/// Serializes queue snapshots so disk order always follows save order.
+///
+/// `save_queue` snapshots are written from detached blocking tasks, which may
+/// finish in any order; without a guard an older snapshot can land after a
+/// newer one (and after the shutdown save), so the next start restores the
+/// wrong queue or playhead. Each save takes a monotonically increasing sequence
+/// and only the highest sequence is allowed to write.
+#[derive(Default)]
+struct SaveGate {
+    next_seq: AtomicU64,
+    last_written: Mutex<u64>,
+}
+
+impl SaveGate {
+    fn next_seq(&self) -> u64 {
+        self.next_seq.fetch_add(1, Ordering::Relaxed) + 1
     }
-    if let Err(e) = crate::cache::write_atomic(active_path, id.as_bytes()) {
-        log::warn!("Failed to save active queue marker: {e}");
+
+    /// Skip work for a snapshot that is already superseded.
+    fn is_stale(&self, seq: u64) -> bool {
+        seq <= *self.last_written.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn commit(&self, seq: u64, queue_path: &Path, active_path: &Path, id: &str, json: &str) {
+        // Hold the lock across the check + write: a lower sequence that reaches
+        // the lock later must not overwrite the newer snapshot.
+        let mut last = self.last_written.lock().unwrap_or_else(|e| e.into_inner());
+        if seq <= *last {
+            return;
+        }
+        if write_queue_files(queue_path, active_path, id, json) {
+            *last = seq;
+        }
     }
 }
 
 pub struct PlaylistStorage {
     base_dir: PathBuf,
+    save_gate: Arc<SaveGate>,
 }
 
 impl PlaylistStorage {
@@ -163,7 +214,10 @@ impl PlaylistStorage {
     pub(super) fn new(base_dir: PathBuf) -> Self {
         let base_dir = base_dir.join("playlists");
         let _ = fs::create_dir_all(&base_dir);
-        Self { base_dir }
+        Self {
+            base_dir,
+            save_gate: Arc::new(SaveGate::default()),
+        }
     }
 
     /// Records which per-key queue was active at last shutdown.
@@ -305,6 +359,9 @@ impl PlaylistStorage {
         if id.is_empty() {
             return;
         }
+        // Take the sequence before snapshotting: save order must follow call
+        // order even if two callers ever race.
+        let seq = self.save_gate.next_seq();
         // Move owned (cheap Arc) copies into the blocking task so both the
         // JSON serialization and the disk writes run off the UI thread.
         let queue = queue.to_vec();
@@ -313,7 +370,13 @@ impl PlaylistStorage {
         let queue_path = self.queue_path(id, display);
         let active_path = self.active_path();
         let id = id.to_string();
+        let gate = Arc::clone(&self.save_gate);
         tokio::task::spawn_blocking(move || {
+            // A newer save already reached disk; skip the (expensive)
+            // serialization of a snapshot that can never be used.
+            if gate.is_stale(seq) {
+                return;
+            }
             let saved = SavedQueueRef {
                 queue: &queue,
                 history: &history,
@@ -325,7 +388,7 @@ impl PlaylistStorage {
                 progress,
             };
             if let Ok(json) = serde_json::to_string(&saved) {
-                write_queue_files(&queue_path, &active_path, &id, &json);
+                gate.commit(seq, &queue_path, &active_path, &id, &json);
             }
         });
     }
@@ -350,6 +413,7 @@ impl PlaylistStorage {
         if id.is_empty() {
             return;
         }
+        let seq = self.save_gate.next_seq();
         let saved = SavedQueueRef {
             queue,
             history,
@@ -360,13 +424,11 @@ impl PlaylistStorage {
             pitch_locked,
             progress,
         };
+        let queue_path = self.queue_path(id, display);
+        let active_path = self.active_path();
         if let Ok(json) = serde_json::to_string(&saved) {
-            write_queue_files(
-                &self.queue_path(id, display),
-                &self.active_path(),
-                id,
-                &json,
-            );
+            self.save_gate
+                .commit(seq, &queue_path, &active_path, id, &json);
         }
     }
 
@@ -502,6 +564,40 @@ mod tests {
         assert!(
             temp_files.is_empty(),
             "temp files left behind: {temp_files:?}"
+        );
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// Detached save tasks may finish out of order; only the newest sequence
+    /// may reach disk, otherwise a restart restores an older queue/playhead.
+    #[test]
+    fn save_gate_keeps_the_newest_snapshot() {
+        let dir = std::env::temp_dir().join(format!(
+            "pigma_storage_gate_test_{}_{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        let storage = PlaylistStorage::new(dir.clone());
+        let queue_path = storage.queue_path("q_test", "测试");
+        let active_path = storage.active_path();
+
+        // Simulate the newer task acquiring the lock first...
+        storage
+            .save_gate
+            .commit(2, &queue_path, &active_path, "q_test", r#"{"new":true}"#);
+        // ...then an older task reaching it late must be skipped.
+        storage
+            .save_gate
+            .commit(1, &queue_path, &active_path, "q_test", r#"{"old":true}"#);
+
+        assert_eq!(
+            fs::read_to_string(&queue_path).expect("read queue"),
+            r#"{"new":true}"#
+        );
+        assert_eq!(
+            fs::read_to_string(&active_path).expect("read active marker"),
+            "q_test"
         );
 
         let _ = fs::remove_dir_all(dir);
