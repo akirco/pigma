@@ -164,4 +164,55 @@ impl App {
         nav.search.input = TextInput::new();
         nav.nav.subtitle = None;
     }
+
+    /// Leave the in-queue filter (Enter while filtering): restore the unfiltered
+    /// queue and put the playhead back on whichever song was selected while the
+    /// list was filtered.
+    pub(super) fn handle_queue_filter_exit(&mut self) {
+        let selected = self.state.navigation.playlist_selected;
+        let song_id = self.playback.song_at(selected).map(|s| s.id);
+        let restored = self
+            .state
+            .navigation
+            .search
+            .unfiltered_songs
+            .take()
+            .unwrap_or_default();
+        self.playback.set_queue_songs(restored);
+
+        let nav = &mut self.state.navigation;
+        nav.search.active = false;
+        nav.search.filter_queue_only = false;
+        nav.search.unfiltered_songs = None;
+        nav.playlist_selected = 0;
+
+        if let Some(id) = song_id
+            && let Some(pos) = self.playback.queue_songs().iter().position(|s| s.id == id)
+        {
+            self.playback.play_index(pos);
+        }
+    }
+
+    /// Recompute the filtered queue for the current keyword. An empty keyword
+    /// restores every index of the unfiltered list.
+    pub(super) fn handle_queue_filter_changed(&mut self) {
+        let keyword = self.state.navigation.search.input.value.to_lowercase();
+        let Some(full) = self.state.navigation.search.unfiltered_songs.as_ref() else {
+            return;
+        };
+        let indices: Vec<usize> = if keyword.is_empty() {
+            (0..full.len()).collect()
+        } else {
+            full.iter()
+                .enumerate()
+                .filter(|(_, s)| {
+                    s.name.to_lowercase().contains(&keyword)
+                        || s.singer.to_lowercase().contains(&keyword)
+                })
+                .map(|(i, _)| i)
+                .collect()
+        };
+        self.playback.set_queue_indices(full, &indices);
+        self.state.navigation.playlist_selected = 0;
+    }
 }

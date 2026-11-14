@@ -10,25 +10,9 @@ pub(super) fn handle_search_key(app: &mut App, key_event: KeyEvent) -> bool {
         }
         KeyCode::Enter => {
             if app.state.navigation.search.filter_queue_only {
-                let sel = app.state.navigation.playlist_selected;
-                let song_id = app.playback.song_at(sel).map(|s| s.id);
-                let restored = app
-                    .state
-                    .navigation
-                    .search
-                    .unfiltered_songs
-                    .take()
-                    .unwrap_or_default();
-                app.playback.set_queue_songs(restored);
-                app.state.navigation.search.active = false;
-                app.state.navigation.search.filter_queue_only = false;
-                app.state.navigation.search.unfiltered_songs = None;
-                app.state.navigation.playlist_selected = 0;
-                if let Some(id) = song_id
-                    && let Some(pos) = app.playback.queue_songs().iter().position(|s| s.id == id)
-                {
-                    app.playback.play_index(pos);
-                }
+                // Restoring the queue and moving the playhead is state work; the
+                // handler owns it so this stays a key-to-intent mapping.
+                app.events.send(NavigationEvent::QueueFilterExit);
             } else {
                 let keyword = app.state.navigation.search.input.value.clone();
                 if !keyword.is_empty() {
@@ -57,7 +41,7 @@ pub(super) fn handle_search_key(app: &mut App, key_event: KeyEvent) -> bool {
         KeyCode::Backspace => {
             app.state.navigation.search.input.delete_char();
             if app.state.navigation.search.filter_queue_only {
-                apply_filter_queue_only(app);
+                app.events.send(NavigationEvent::QueueFilterChanged);
             }
             return true;
         }
@@ -72,33 +56,11 @@ pub(super) fn handle_search_key(app: &mut App, key_event: KeyEvent) -> bool {
         KeyCode::Char(c) => {
             app.state.navigation.search.input.enter_char(c);
             if app.state.navigation.search.filter_queue_only {
-                apply_filter_queue_only(app);
+                app.events.send(NavigationEvent::QueueFilterChanged);
             }
             return true;
         }
         _ => {}
     }
     false
-}
-
-pub(super) fn apply_filter_queue_only(app: &mut App) {
-    let keyword = app.state.navigation.search.input.value.to_lowercase();
-    if let Some(full) = &app.state.navigation.search.unfiltered_songs {
-        if keyword.is_empty() {
-            let all: Vec<usize> = (0..full.len()).collect();
-            app.playback.set_queue_indices(full, &all);
-        } else {
-            let indices: Vec<usize> = full
-                .iter()
-                .enumerate()
-                .filter(|(_, s)| {
-                    s.name.to_lowercase().contains(&keyword)
-                        || s.singer.to_lowercase().contains(&keyword)
-                })
-                .map(|(i, _)| i)
-                .collect();
-            app.playback.set_queue_indices(full, &indices);
-        }
-        app.state.navigation.playlist_selected = 0;
-    }
 }

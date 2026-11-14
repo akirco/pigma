@@ -119,6 +119,8 @@ impl App {
                 }
             }
             NavigationEvent::UploadCachedSong(row) => self.handle_upload_cached_song(row),
+            NavigationEvent::QueueFilterExit => self.handle_queue_filter_exit(),
+            NavigationEvent::QueueFilterChanged => self.handle_queue_filter_changed(),
         }
     }
 

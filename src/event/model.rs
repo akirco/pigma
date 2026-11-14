@@ -161,6 +161,11 @@ pub enum NavigationEvent {
     /// A paged load failed; clears the in-flight flag so it can be retried.
     LoadMoreFailed,
     UploadCachedSong(usize),
+    /// Leave the in-queue filter: restore the unfiltered queue and keep the
+    /// song selected while filtered as the playhead.
+    QueueFilterExit,
+    /// The filter keyword changed; recompute which queue indices still match.
+    QueueFilterChanged,
 }
 
 #[derive(Clone, Debug)]
