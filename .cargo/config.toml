@@ -1,8 +1,11 @@
+# Release builds target the generic CPU so binaries run on pre-AVX2 machines.
+# For a local performance build, opt in explicitly instead of checking it in:
+#   RUSTFLAGS="-C target-cpu=x86-64-v3" cargo build --release
 [target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "link-arg=-fuse-ld=lld", "-C", "target-cpu=x86-64-v3"]
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 # [target.x86_64-unknown-linux-gnu]
 # linker = "clang"
 # rustflags = ["-Clink-arg=--ld-path=wild"]
 
 [target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "link-arg=-fuse-ld=lld", "-C", "target-cpu=x86-64-v3"]
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
