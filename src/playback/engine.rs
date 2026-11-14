@@ -130,7 +130,7 @@ impl PlaybackEngine {
                 event_tx.clone(),
             ),
             controller: PlaybackHandle::new(event_tx.clone()),
-            event_tx: event_tx.clone(),
+            event_tx,
             service,
             playlist_id: None,
             consecutive_errors: 0,

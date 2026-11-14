@@ -13,7 +13,7 @@ const BLOCKS_FRAMES: &[&str] = &[
 
 const SPEED: u64 = 3;
 
-pub struct Spinner {
+pub(super) struct Spinner {
     tick: u64,
     filled_color: Style,
     empty_color: Style,

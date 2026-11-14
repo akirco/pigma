@@ -37,5 +37,5 @@ mod source;
 #[cfg(test)]
 mod tests;
 
-pub use core::Stretch;
-pub use handle::{SpeedHandle, SpeedMode};
+pub(super) use core::Stretch;
+pub(super) use handle::{SpeedHandle, SpeedMode};

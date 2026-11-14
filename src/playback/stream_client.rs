@@ -13,7 +13,7 @@ const BROWSER_UA: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:153.0) Gecko/201001
 /// used by `StreamDownload::new`. Prefer [`HeadersClient::new`] together with
 /// [`StreamDownload::from_stream`] instead.
 #[derive(Clone)]
-pub struct HeadersClient {
+pub(super) struct HeadersClient {
     inner: reqwest::Client,
 }
 

@@ -49,7 +49,7 @@ struct StreamProgress {
 
 /// Resolves audio inputs for songs via local files, NCM streaming, or sonar fallback.
 #[derive(Clone)]
-pub struct AudioSource {
+pub(super) struct AudioSource {
     service: ApiService,
     pub cache: Arc<CacheManager>,
     quality: SongQuality,

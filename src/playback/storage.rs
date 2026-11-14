@@ -14,12 +14,12 @@ use super::{NCM_SEARCH_QUEUE_KEY, PlayMode, THIRD_PARTY_QUEUE_KEY};
 use crate::utils::sanitize_filename;
 
 /// File name for the unified NCM search queue.
-pub const NCM_SEARCH_FILE: &str = "ncm_search.json";
+pub(super) const NCM_SEARCH_FILE: &str = "ncm_search.json";
 /// Stable id for the NCM search queue: a single shared file, no date/hash.
 const NCM_SEARCH_ID: &str = "q_ncm_search";
 
 /// File name for the unified third-party (sonar) search queue.
-pub const THIRD_PARTY_FILE: &str = "thirdparty_source.json";
+pub(super) const THIRD_PARTY_FILE: &str = "thirdparty_source.json";
 /// Stable id for the third-party queue: a single shared file, no date/hash.
 const THIRD_PARTY_ID: &str = "q_thirdparty";
 
@@ -42,7 +42,7 @@ fn special_queue_by_id(id: &str) -> Option<(&'static str, &'static str)> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SavedQueue {
+pub(super) struct SavedQueue {
     /// Legacy display key, only present in queues written before the
     /// `q_<hash>-<display>.json` naming was introduced. New files keep the
     /// display name in the file name instead.
@@ -203,7 +203,7 @@ impl SaveGate {
     }
 }
 
-pub struct PlaylistStorage {
+pub(super) struct PlaylistStorage {
     base_dir: PathBuf,
     save_gate: Arc<SaveGate>,
 }

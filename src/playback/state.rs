@@ -67,7 +67,7 @@ impl Default for PlaybackState {
 }
 
 /// Clamp a playback speed factor into [`MIN_SPEED`]..=[`MAX_SPEED`].
-pub fn clamp_speed(speed: f64) -> f64 {
+pub(super) fn clamp_speed(speed: f64) -> f64 {
     if !speed.is_finite() {
         return 1.0;
     }

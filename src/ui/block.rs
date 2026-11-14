@@ -7,7 +7,7 @@ use ratatui::{
 
 use crate::utils::GradientPreset;
 
-pub struct CornerBlock<'a> {
+pub(super) struct CornerBlock<'a> {
     block: Block<'a>,
     tl_color: Color,
     tr_color: Color,
@@ -328,7 +328,7 @@ use ratatui::{
 use super::styled_text;
 use crate::config::{BorderConfig, Theme};
 
-pub struct BlockStyle<'a> {
+pub(super) struct BlockStyle<'a> {
     pub colors: &'a Theme,
     pub border: &'a BorderConfig,
     pub tick: u64,

@@ -10,7 +10,7 @@ use super::mode::PlayStrategy;
 const MAX_HISTORY: usize = 200;
 
 #[derive(Debug, Clone)]
-pub struct PlaylistQueue {
+pub(super) struct PlaylistQueue {
     pub songs: Vec<Arc<SongInfo>>,
     id_index: HashMap<u64, usize>,
     pub history: Vec<u64>,

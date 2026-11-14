@@ -5,24 +5,27 @@ edition = "2024"
 description = "A library for searching audios from youtube,bilibili and other platforms.(no cookies)"
 license = "MIT"
 
+[lints]
+workspace = true
+
 [dependencies]
 async-trait = "0.1.92"
-base64 = { version = "0.23.1", features = ["std"] }
-log = "0.4.34"
-md-5 = "0.11.0"
-once_cell = "1.21.4"
+base64 = { version = "0.23.1", default-features = false, features = ["std"] }
+log = { version = "0.4.34", default-features = false, features = ["std"] }
+md-5 = { version = "0.11.0", default-features = false }
+once_cell = { version = "1.21.4", default-features = false, features = ["std"] }
 regex = "1.13.1"
 reqwest = { version = "0.13.4", default-features = false, features = ["gzip", "json", "query", "rustls-no-provider"] }
-serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.151"
-thiserror = "2.0.21"
+serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
+serde_json = { version = "1.0.151", default-features = false, features = ["std"] }
+thiserror = { version = "2.0.21", default-features = false, features = ["std"] }
 # chrono = { version = "0.4.45", features = ["serde"] }
-time = { version = "0.3.55", features = ["local-offset"] }
-tokio = { version = "1.53.1", features = ["rt", "sync", "time"] }
-url = "2.5.8"
+time = { version = "0.3.55", default-features = false, features = ["std"] }
+tokio = { version = "1.53.1", default-features = false, features = ["rt", "sync", "time"] }
+url = { version = "2.5.8", default-features = false, features = ["std"] }
 urlencoding = "2.1"
 y7dl = { path = "../y7dl", default-features = false }
 
 [dev-dependencies]
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
-tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.53.1", default-features = false, features = ["macros", "rt-multi-thread"] }

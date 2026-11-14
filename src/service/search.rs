@@ -145,7 +145,7 @@ pub(crate) async fn search_sonar(
                 let source = SearchProvider::from_sonar(song.source)
                     .display_name()
                     .to_string();
-                lock_recover(sonar_songs).insert(info.id, Arc::new(song.clone()));
+                lock_recover(sonar_songs).insert(info.id, Arc::new(song));
                 lock_recover(search_results).insert(info.id, Arc::new(info.clone()));
                 SearchHit { info, source }
             })

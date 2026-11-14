@@ -9,7 +9,7 @@ use toml_edit::{Array, InlineTable, Table, Value};
 /// - `table`: the table to modify (e.g. a section)
 /// - `key`: the field name (e.g. "items")
 /// - `indent`: the indentation before each inline table (e.g. "\n  ")
-pub fn convert_aot_to_inline(table: &mut Table, key: &str, indent: &str) -> bool {
+pub(super) fn convert_aot_to_inline(table: &mut Table, key: &str, indent: &str) -> bool {
     let item = match table.remove(key) {
         Some(item) => item,
         None => return false,
@@ -43,7 +43,7 @@ pub fn convert_aot_to_inline(table: &mut Table, key: &str, indent: &str) -> bool
 }
 
 /// Convert all array-of-tables fields in the table into inline table arrays.
-pub fn convert_all_aot_to_inline(table: &mut Table, indent: &str) {
+pub(super) fn convert_all_aot_to_inline(table: &mut Table, indent: &str) {
     // Collect the keys to convert first (cannot modify while iterating)
     let keys: Vec<String> = table
         .iter()

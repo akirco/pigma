@@ -97,7 +97,7 @@ impl App {
     pub(super) fn handle_qr_created(&mut self, url: String, key: String) {
         self.state.login.loading = false;
         self.state.login.qr_url = url;
-        self.state.login.qr_key = key.clone();
+        self.state.login.qr_key.clone_from(&key);
         self.state.login.qr_status_text = "等待扫码...".to_string();
 
         // Starting to poll this QR supersedes any previous polling task.

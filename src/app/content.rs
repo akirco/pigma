@@ -115,7 +115,7 @@ impl App {
                 // pages coalesces into one write of the final state
                 // (`queue_content_cache`).
                 let merged = self.state.navigation.content.as_ref().clone();
-                cache.queue_content_cache(&cache_key, merged, pg_for_save.clone());
+                cache.queue_content_cache(&cache_key, merged, pg_for_save);
             }
             return;
         }

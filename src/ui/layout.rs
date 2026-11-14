@@ -5,14 +5,14 @@ use ratatui::layout::{Constraint, Flex, Layout, Rect};
 
 use crate::{config::NavPosition, state::Page};
 
-pub struct SplashLayout {
+pub(super) struct SplashLayout {
     pub logo: Rect,
     pub progress: Rect,
     pub logs: Rect,
     pub tag: Rect,
 }
 
-pub fn splash(area: Rect) -> SplashLayout {
+pub(super) fn splash(area: Rect) -> SplashLayout {
     let [logo_area, progress_area, logs_area, tag_area] = Layout::vertical([
         Constraint::Length(3),
         Constraint::Length(2),
@@ -30,13 +30,13 @@ pub fn splash(area: Rect) -> SplashLayout {
     }
 }
 
-pub struct LoginLayout {
+pub(super) struct LoginLayout {
     pub status: Rect,
     pub logo: Rect,
     pub login_box: Rect,
 }
 
-pub fn login(area: Rect) -> LoginLayout {
+pub(super) fn login(area: Rect) -> LoginLayout {
     let [status_area, body] = Layout::vertical([Constraint::Length(1), Constraint::Min(26)])
         .flex(Flex::Center)
         .spacing(1)
@@ -52,7 +52,7 @@ pub fn login(area: Rect) -> LoginLayout {
     }
 }
 
-pub struct LayoutAreas {
+pub(super) struct LayoutAreas {
     pub topbar: Rect,
     pub sidebar: Rect,
     pub breadcrumb: Rect,
@@ -61,7 +61,7 @@ pub struct LayoutAreas {
     pub playerbar: Rect,
 }
 
-pub fn build_layout(area: Rect, page: Page, nav_position: NavPosition) -> LayoutAreas {
+pub(super) fn build_layout(area: Rect, page: Page, nav_position: NavPosition) -> LayoutAreas {
     match page {
         Page::Main => match nav_position {
             NavPosition::Top => {

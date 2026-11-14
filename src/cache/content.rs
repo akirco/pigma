@@ -213,10 +213,8 @@ mod tests {
             ..PaginationInfo::default()
         };
 
-        lock_recover(&cache.content_pending).insert(
-            api.to_string(),
-            (ContentState::Songs(vec![]), pagination.clone()),
-        );
+        lock_recover(&cache.content_pending)
+            .insert(api.to_string(), (ContentState::Songs(vec![]), pagination));
         cache.content_writer.store(true, Ordering::SeqCst);
 
         cache.flush_content_cache();

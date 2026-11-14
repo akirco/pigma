@@ -141,7 +141,7 @@ impl App {
             config.cache.cache_template.clone(),
         ));
 
-        let service = ApiService::new(api.clone(), cache.clone());
+        let service = ApiService::new(api, cache.clone());
 
         let picker = Self::build_picker();
 

@@ -9,7 +9,7 @@ use ratatui::{
 
 use crate::utils::GradientPreset;
 
-pub struct GradientLineGauge<'a> {
+pub(super) struct GradientLineGauge<'a> {
     ratio: f64,
     label: Option<Line<'a>>,
     filled_symbol: String,

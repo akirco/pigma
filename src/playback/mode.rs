@@ -11,13 +11,13 @@ pub enum PlayMode {
     Heartbeat { playlist_id: u64 },
 }
 
-pub trait PlayStrategy: Send {
+pub(super) trait PlayStrategy: Send {
     fn next(&mut self, current_index: Option<usize>, queue_len: usize) -> Option<usize>;
     fn prev(&mut self, current_index: Option<usize>, queue_len: usize) -> Option<usize>;
 }
 
 #[derive(Clone)]
-pub enum Strategy {
+pub(super) enum Strategy {
     Sequential,
     RepeatOne,
     RepeatAll,

@@ -10,7 +10,7 @@ use super::{
 use crate::{config::EqualizerConfig, event::Event};
 
 #[derive(Clone)]
-pub struct PlaybackHandle {
+pub(super) struct PlaybackHandle {
     cmd_tx: tokio_mpsc::UnboundedSender<PlayerCmd>,
     eq: EqHandle,
 }

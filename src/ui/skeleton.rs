@@ -7,7 +7,7 @@ use ratatui::{
 
 /// Skeleton screen: while table content loads, alternate `bg` and `surface` background colors
 /// row by row to mimic the row-spacing look of the real table.
-pub struct Skeleton {
+pub(super) struct Skeleton {
     bg: Color,
     surface: Color,
 }

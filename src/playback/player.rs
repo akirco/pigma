@@ -50,10 +50,10 @@ struct DeviceHealth {
     epoch: Instant,
 }
 
-pub trait AudioReader: Read + Seek + Send + Sync {}
+pub(super) trait AudioReader: Read + Seek + Send + Sync {}
 impl<T: Read + Seek + Send + Sync> AudioReader for T {}
 
-pub type AudioInput = SharedReader;
+pub(super) type AudioInput = SharedReader;
 
 /// A reader wrapper that can be shared between the player and the seek controller.
 /// On seek, the controller locks the shared reader, seeks to the new position,
@@ -70,7 +70,7 @@ pub type AudioInput = SharedReader;
 /// seconds at a time while the network catches up — the seek path competes
 /// for it.
 #[derive(Clone)]
-pub struct SharedReader(pub Arc<Mutex<Box<dyn AudioReader + 'static>>>);
+pub(super) struct SharedReader(pub Arc<Mutex<Box<dyn AudioReader + 'static>>>);
 
 impl std::fmt::Debug for SharedReader {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -95,7 +95,7 @@ impl Seek for SharedReader {
 }
 
 #[derive(Debug, Clone)]
-pub enum ControlCmd {
+pub(super) enum ControlCmd {
     Switch(AudioInput, Option<Duration>),
     SeekTo(Duration),
     Pause,
