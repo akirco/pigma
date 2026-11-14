@@ -101,8 +101,7 @@ impl NcmClient {
                 Ok::<_, NcmError>((md5, size, song, album, artist))
             })
             .await
-            .map_err(|e| NcmError::Session(format!("metadata task failed: {e}")))?
-            ?
+            .map_err(|e| NcmError::Session(format!("metadata task failed: {e}")))??
         };
         let bitrate = 999000u32;
 

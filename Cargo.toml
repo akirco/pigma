@@ -7,6 +7,18 @@ repository = "https://github.com/akirco/pigma.git"
 license = "Apache-2.0"
 # authors = ["akirco <earlfx@163.com>"]
 
+[workspace]
+members = ["crates/*"]
+# y7dl is a git submodule with its own formatting/lockfile; making it a
+# workspace member would make root `cargo fmt` rewrite the submodule and
+# require a submodule commit. CI runs its tests/clippy with
+# `--manifest-path crates/y7dl/Cargo.toml` instead.
+exclude = ["crates/y7dl"]
+# Release builds and plain `cargo build` still operate on pigma itself; CI
+# runs `--workspace` explicitly to include ncm-api and sonar.
+default-members = ["."]
+resolver = "3"
+
 [dependencies]
 biquad = "0.6.0"
 clap = { version = "4.6.7", features = ["derive"] }
