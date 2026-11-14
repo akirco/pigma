@@ -10,7 +10,7 @@ use ratatui::{
     widgets::{Padding, Paragraph},
 };
 
-use super::{BlockStyle, block::CornerBlock};
+use super::{BlockStyle, block::StyledBlock};
 use crate::{
     config::{LayoutType, PlayerbarConfig, Theme},
     playback::PlaybackState,
@@ -73,6 +73,7 @@ pub(super) trait Playerbar {
         layout: &LayoutArea,
     );
 
+    // Playerbar drawing needs both the playback state and its layout/config inputs.
     #[allow(clippy::too_many_arguments)]
     fn draw(
         &self,
@@ -85,13 +86,14 @@ pub(super) trait Playerbar {
         is_sixel: bool,
     ) {
         let colors = bs.colors;
-        let block = CornerBlock::from_color(bs, bs.colors.bg).block_padding(Padding::horizontal(1));
+        let block = StyledBlock::from_color(bs, bs.colors.bg).block_padding(Padding::horizontal(1));
         let inner = block.inner(area);
         f.render_widget(block, area);
 
         if let Some(err) = player.device_error.as_ref().or(player.error.as_ref()) {
             f.render_widget(
-                Paragraph::new(format!(" ⚠  {}", err)).style(Style::default().fg(colors.error)),
+                Paragraph::new(format!(" {}  {}", crate::icons::WARNING, err))
+                    .style(Style::default().fg(colors.error)),
                 inner,
             );
             return;

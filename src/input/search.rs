@@ -5,7 +5,7 @@ use crate::{app::App, event::NavigationEvent, state::ContentState};
 pub(super) fn handle_search_key(app: &mut App, key_event: KeyEvent) -> bool {
     match key_event.code {
         KeyCode::Esc => {
-            app.state.events.send(NavigationEvent::SearchDeactivated);
+            app.events.send(NavigationEvent::SearchDeactivated);
             return true;
         }
         KeyCode::Enter => {
@@ -33,16 +33,14 @@ pub(super) fn handle_search_key(app: &mut App, key_event: KeyEvent) -> bool {
                 let keyword = app.state.navigation.search.input.value.clone();
                 if !keyword.is_empty() {
                     app.state.navigation.search.active = false;
-                    app.state.events.send(NavigationEvent::SearchSong(keyword));
+                    app.events.send(NavigationEvent::SearchSong(keyword));
                 } else if let ContentState::HotSearch(keywords) =
                     app.state.navigation.content.as_ref()
                 {
                     let sel = app.state.navigation.content_selected;
                     if let Some(kw) = keywords.0.get(sel) {
                         app.state.navigation.search.active = false;
-                        app.state
-                            .events
-                            .send(NavigationEvent::SearchSong(kw.clone()));
+                        app.events.send(NavigationEvent::SearchSong(kw.clone()));
                     }
                 }
             }

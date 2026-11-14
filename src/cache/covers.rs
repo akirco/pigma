@@ -16,7 +16,7 @@ impl CacheManager {
     }
 
     pub fn save_cover(&self, song_id: u64, data: &[u8]) {
-        if let Err(e) = crate::store::write_atomic(&self.cover_path(song_id), data) {
+        if let Err(e) = crate::persist::write_atomic(&self.cover_path(song_id), data) {
             log::warn!("Failed to write cover cache for {song_id}: {e}");
         }
     }

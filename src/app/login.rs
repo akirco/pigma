@@ -8,8 +8,8 @@ use tokio::time::{Duration, sleep};
 use super::{App, event::send_event};
 use crate::{
     event::{AuthEvent, NavigationEvent, PlaybackEvent},
+    lock::lock_recover,
     state::Page,
-    utils::lock_recover,
 };
 
 /// Whether a QR-login task is still the newest one the user started.
@@ -28,7 +28,7 @@ impl App {
         let generation = self.qr_generation.fetch_add(1, Ordering::SeqCst) + 1;
         let qr_generation = Arc::clone(&self.qr_generation);
         let service = self.service.clone();
-        let sender = self.state.events.sender();
+        let sender = self.events.sender();
 
         tokio::spawn(async move {
             let result = service.login_qr_create().await;
@@ -49,7 +49,12 @@ impl App {
     pub(super) fn handle_login_success(&mut self, info: ncm_api::LoginInfo) {
         // Stop any QR poll still in flight; the login is complete.
         self.qr_generation.fetch_add(1, Ordering::SeqCst);
-        self.toast(format!("登录成功: {}", info.nickname));
+        let was_startup = self.awaiting_login_status;
+        self.awaiting_login_status = false;
+        // Resolving the session at startup is not a fresh login: no toast.
+        if !was_startup {
+            self.toast(format!("登录成功: {}", info.nickname));
+        }
         let uid = info.uid;
         let was_logged_in = self.state.navigation.user.is_some();
         self.state.login.loading = false;
@@ -62,7 +67,7 @@ impl App {
             // main page. Reload the selected tab once its UID is available.
             if let Some(api) = self.state.navigation.nav.selected_api() {
                 send_event(
-                    &self.state.events.sender(),
+                    &self.events.sender(),
                     NavigationEvent::NavSelect(api.to_string()).into(),
                 );
             }
@@ -71,7 +76,7 @@ impl App {
         // After login, fetch the "我喜欢的音乐" list from the cloud so the local set and the playerbar icon stay in sync.
         let service = self.service.clone();
         let liked_ids = Arc::clone(&self.liked_ids);
-        let sender = self.state.events.sender();
+        let sender = self.events.sender();
         tokio::spawn(async move {
             match service.load_liked_song_ids(uid).await {
                 Ok(ids) => {
@@ -86,9 +91,17 @@ impl App {
     pub(super) fn handle_login_error(&mut self, e: String) {
         // A terminal error also ends any QR polling still running.
         self.qr_generation.fetch_add(1, Ordering::SeqCst);
-        self.toast(format!("登录失败: {}", e));
+        let was_startup = self.awaiting_login_status;
+        self.awaiting_login_status = false;
+        if was_startup {
+            // A failed startup lookup is not a failed login: log it and fall
+            // through to the main page instead of showing a "登录失败" toast.
+            log::warn!("Startup login status lookup failed: {e}");
+        } else {
+            self.toast(format!("登录失败: {}", e));
+            self.state.login.error = Some(e);
+        }
         self.state.login.loading = false;
-        self.state.login.error = Some(e);
         if self.state.navigation.page == Page::Splash {
             self.navigate_to_main();
         }
@@ -104,7 +117,7 @@ impl App {
         let generation = self.qr_generation.fetch_add(1, Ordering::SeqCst) + 1;
         let qr_generation = Arc::clone(&self.qr_generation);
         let service = self.service.clone();
-        let sender = self.state.events.sender();
+        let sender = self.events.sender();
         tokio::spawn(async move {
             let mut scanned = false;
             for _ in 0..150 {

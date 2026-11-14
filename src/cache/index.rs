@@ -8,51 +8,32 @@ use std::{
     },
 };
 
-use serde::{Deserialize, Serialize, Serializer, ser::SerializeMap};
+use serde::{Deserialize, Serialize};
 
-use super::{CacheManager, DEFAULT_MAX_CACHE_BYTES};
+use super::{
+    CacheManager,
+    manager::{DEFAULT_MAX_CACHE_BYTES, cleanup_stale_partials},
+};
 use crate::time::unix_secs;
 
 /// Entry in the audio cache index, mapping song ID to filename and duration.
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub(super) struct CacheEntry {
     pub(super) filename: String,
     #[serde(default)]
     pub(super) duration: u64,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_zero")]
     pub(super) accessed_at: u64,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub(super) pic_url: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_zero")]
     pub(super) uploaded_at: u64,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) thirdparty: Option<Arc<sonar::Song>>,
 }
 
-impl Serialize for CacheEntry {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let n = 2
-            + usize::from(self.accessed_at > 0)
-            + usize::from(!self.pic_url.is_empty())
-            + usize::from(self.uploaded_at > 0)
-            + usize::from(self.thirdparty.is_some());
-        let mut map = serializer.serialize_map(Some(n))?;
-        map.serialize_entry("filename", &self.filename)?;
-        map.serialize_entry("duration", &self.duration)?;
-        if self.accessed_at > 0 {
-            map.serialize_entry("accessed_at", &self.accessed_at)?;
-        }
-        if !self.pic_url.is_empty() {
-            map.serialize_entry("pic_url", &self.pic_url)?;
-        }
-        if self.uploaded_at > 0 {
-            map.serialize_entry("uploaded_at", &self.uploaded_at)?;
-        }
-        if let Some(song) = &self.thirdparty {
-            map.serialize_entry("thirdparty", song)?;
-        }
-        map.end()
-    }
+fn is_zero(value: &u64) -> bool {
+    *value == 0
 }
 
 pub(super) type CacheIndex = HashMap<u64, CacheEntry>;
@@ -74,7 +55,7 @@ impl CacheManager {
     pub fn new(downloads_dir: PathBuf, base_dir: PathBuf, template: String) -> Self {
         let lyrics_dir = base_dir.join("lyrics");
         let covers_dir = base_dir.join("covers");
-        super::cleanup_stale_partials(&downloads_dir);
+        cleanup_stale_partials(&downloads_dir);
         let index_file = Self::load_index_static(&downloads_dir);
         let total = Self::compute_total_bytes(&downloads_dir, &index_file.songs);
         Self {
@@ -177,7 +158,7 @@ impl CacheManager {
             }
         };
         let path = Self::index_path(downloads_dir);
-        if let Err(e) = crate::store::write_atomic(&path, snapshot.as_bytes()) {
+        if let Err(e) = crate::persist::write_atomic(&path, snapshot.as_bytes()) {
             log::warn!("Failed to write cache index: {e}");
         }
     }
@@ -333,6 +314,10 @@ mod tests {
         );
         let file = CacheIndexFile { songs };
         let json = serde_json::to_string(&file).unwrap();
+        // Default/empty fields stay out of the file, as the old hand-written
+        // serializer did.
+        assert!(!json.contains("uploaded_at"), "{json}");
+        assert!(!json.contains("thirdparty"), "{json}");
         let back: CacheIndexFile = serde_json::from_str(&json).unwrap();
         assert_eq!(back.songs.get(&186150).unwrap().filename, "夜曲-周杰伦.mp3");
     }

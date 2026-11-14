@@ -4,8 +4,8 @@ use std::{collections::HashMap, sync::Arc};
 
 use super::ApiService;
 use crate::{
-    playback::{LyricLine, parse_lyric_lines},
-    utils::lock_recover,
+    lock::lock_recover,
+    lyrics::{LyricLine, parse_lyric_lines},
 };
 
 impl ApiService {

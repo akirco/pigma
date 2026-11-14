@@ -24,7 +24,10 @@ impl Default for NavConfig {
         Self {
             sections: vec![
                 NavSectionConfig {
-                    title: "<accent>▎</accent> <accent>DISCOVER</accent>".into(),
+                    title: format!(
+                        "<accent>{}</accent> <accent>DISCOVER</accent>",
+                        crate::icons::SECTION_MARK
+                    ),
                     items: vec![
                         NavItemConfig {
                             name: " 每日推荐".into(),
@@ -64,7 +67,10 @@ impl Default for NavConfig {
                     ],
                 },
                 NavSectionConfig {
-                    title: "<accent>▎</accent> <accent>MY MUSIC</accent>".into(),
+                    title: format!(
+                        "<accent>{}</accent> <accent>MY MUSIC</accent>",
+                        crate::icons::SECTION_MARK
+                    ),
                     items: vec![
                         NavItemConfig {
                             name: " 我喜欢的音乐".into(),
@@ -128,4 +134,36 @@ pub struct NavItemConfig {
     /// If None, defaults to `"a"`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title_template: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum NavPosition {
+    #[default]
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+impl NavPosition {
+    /// The next position in the left → right → top → bottom cycle.
+    pub fn cycle(self) -> Self {
+        match self {
+            NavPosition::Left => NavPosition::Right,
+            NavPosition::Right => NavPosition::Top,
+            NavPosition::Top => NavPosition::Bottom,
+            NavPosition::Bottom => NavPosition::Left,
+        }
+    }
+
+    /// Human-readable Chinese label used for toasts.
+    pub fn label(self) -> &'static str {
+        match self {
+            NavPosition::Left => "左侧",
+            NavPosition::Right => "右侧",
+            NavPosition::Top => "顶部",
+            NavPosition::Bottom => "底部",
+        }
+    }
 }

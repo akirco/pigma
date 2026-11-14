@@ -5,31 +5,31 @@ use crate::{
     event::{CommandEvent, NavigationEvent, PlaybackEvent},
     service::ApiEndpoint,
     state::{ContentState, Page, TableMode},
-    tui::TextInput,
+    text_input::TextInput,
 };
 
 pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Result<()> {
-    if super::common::handle_playback_key(app, key_event)
-        || super::common::handle_page_key(app, key_event)
+    if super::global::handle_playback_key(app, key_event)
+        || super::global::handle_page_key(app, key_event)
     {
         return Ok(());
     }
     match key_event.code {
         KeyCode::Esc => {
-            app.state.events.send(NavigationEvent::ContentRestore);
+            app.events.send(NavigationEvent::ContentRestore);
         }
         KeyCode::Tab if app.state.navigation.page == Page::Playlist => {
             if let Some(key) = app.playback.switch_queue(true) {
                 app.state.navigation.playlist_selected =
                     app.playback.queue_current_index().unwrap_or(0);
-                app.toast(format!("▣ 队列: {key}"));
+                app.toast(format!("{} 队列: {key}", crate::icons::QUEUE));
             }
         }
         KeyCode::BackTab if app.state.navigation.page == Page::Playlist => {
             if let Some(key) = app.playback.switch_queue(false) {
                 app.state.navigation.playlist_selected =
                     app.playback.queue_current_index().unwrap_or(0);
-                app.toast(format!("▣ 队列: {key}"));
+                app.toast(format!("{} 队列: {key}", crate::icons::QUEUE));
             }
         }
         KeyCode::Tab => app.nav_select_next(),
@@ -65,7 +65,9 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Resul
         KeyCode::Enter => {
             if app.state.navigation.page == Page::Playlist {
                 app.playlist_play_selected();
-            } else if app.state.navigation.table_mode == TableMode::Cell {
+            } else if app.state.navigation.table_mode == TableMode::Cell
+                && app.state.navigation.content_columns == 1
+            {
                 app.enter_selected_cell();
             } else {
                 app.enter_selected_row();
@@ -73,9 +75,14 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Resul
         }
         KeyCode::Left => {
             if app.state.navigation.table_mode == TableMode::Cell
+                && app.state.navigation.content_columns == 1
                 && app.state.navigation.page != Page::Playlist
             {
                 app.cell_select_prev_column();
+            } else if app.state.navigation.page == Page::Main
+                && app.state.navigation.content_columns > 1
+            {
+                app.content_select_left();
             } else if app.playback.current_song().is_some() {
                 let interval = app.config.seek_interval_secs as f64;
                 app.playback.seek_relative(-interval);
@@ -83,9 +90,14 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Resul
         }
         KeyCode::Right => {
             if app.state.navigation.table_mode == TableMode::Cell
+                && app.state.navigation.content_columns == 1
                 && app.state.navigation.page != Page::Playlist
             {
                 app.cell_select_next_column();
+            } else if app.state.navigation.page == Page::Main
+                && app.state.navigation.content_columns > 1
+            {
+                app.content_select_right();
             } else if app.playback.current_song().is_some() {
                 let interval = app.config.seek_interval_secs as f64;
                 app.playback.seek_relative(interval);
@@ -104,28 +116,24 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Resul
             } else if app.state.navigation.page == Page::Lyrics {
                 return Ok(());
             } else {
-                app.state.events.send(NavigationEvent::SearchActivated);
+                app.events.send(NavigationEvent::SearchActivated);
             }
         }
         KeyCode::Char('b' | 'B') => {
-            app.state.events.send(CommandEvent::ToggleBordered);
+            app.events.send(CommandEvent::ToggleBordered);
         }
         KeyCode::Char('S') => {
             if let Some(song) = app.playback.current_song() {
-                app.state
-                    .events
-                    .send(PlaybackEvent::LikeSong(song.id, true));
-                app.toast(format!("♥  {}", song.name));
+                app.events.send(PlaybackEvent::LikeSong(song.id, true));
+                app.toast(format!("{}  {}", crate::icons::HEART_FILLED, song.name));
             }
         }
         KeyCode::Char('s') => {
             if let ContentState::Songs(songs) = app.state.navigation.content.as_ref() {
                 let sel = app.state.navigation.content_selected;
                 if let Some(song) = songs.get(sel) {
-                    app.state
-                        .events
-                        .send(PlaybackEvent::LikeSong(song.id, true));
-                    app.toast(format!("♥  {}", song.name));
+                    app.events.send(PlaybackEvent::LikeSong(song.id, true));
+                    app.toast(format!("{}  {}", crate::icons::HEART_FILLED, song.name));
                 }
             }
         }
@@ -137,7 +145,11 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Resul
             };
             if let Some(song) = song {
                 app.playback.add_next(song.clone());
-                app.toast(format!("⏭  下一首: {}", song.name));
+                app.toast(format!(
+                    "{}  下一首: {}",
+                    crate::icons::NEXT_INDICATOR,
+                    song.name
+                ));
             }
         }
         KeyCode::Char('d') => {
@@ -146,25 +158,29 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Resul
             {
                 let sel = app.state.navigation.content_selected;
                 if let Some(song) = songs.get(sel) {
-                    app.state.events.send(PlaybackEvent::DislikeSong(song.id));
-                    app.toast(format!("✕  {}", song.name));
+                    app.events.send(PlaybackEvent::DislikeSong(song.id));
+                    app.toast(format!("{}  {}", crate::icons::ERROR_MARK, song.name));
                 }
             } else if let ContentState::Songs(songs) = app.state.navigation.content.as_ref() {
                 let sel = app.state.navigation.content_selected;
                 if let Some(song) = songs.get(sel) {
-                    app.state
-                        .events
-                        .send(PlaybackEvent::LikeSong(song.id, false));
-                    app.toast(format!("♡ 已取消喜欢: {}", song.name));
+                    app.events.send(PlaybackEvent::LikeSong(song.id, false));
+                    app.toast(format!(
+                        "{} 已取消喜欢: {}",
+                        crate::icons::HEART_OUTLINE,
+                        song.name
+                    ));
                 }
             }
         }
         KeyCode::Char('D') => {
             if let Some(song) = app.playback.current_song() {
-                app.state
-                    .events
-                    .send(PlaybackEvent::LikeSong(song.id, false));
-                app.toast(format!("♡ 已取消喜欢: {}", song.name));
+                app.events.send(PlaybackEvent::LikeSong(song.id, false));
+                app.toast(format!(
+                    "{} 已取消喜欢: {}",
+                    crate::icons::HEART_OUTLINE,
+                    song.name
+                ));
             }
         }
         KeyCode::Char('r' | 'R') => {
@@ -179,9 +195,7 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Resul
             ) =>
         {
             let sel = app.state.navigation.content_selected;
-            app.state
-                .events
-                .send(NavigationEvent::UploadCachedSong(sel));
+            app.events.send(NavigationEvent::UploadCachedSong(sel));
         }
         KeyCode::Char('z' | 'Z') => {
             app.cycle_nav_position();
@@ -200,12 +214,20 @@ pub(super) fn handle_main_mouse(app: &mut App, kind: MouseEventKind, col: u16, r
             MouseEventKind::ScrollUp => {
                 let new = (vol + 0.05).clamp(0.0, 1.0);
                 app.playback.set_volume(new);
-                app.toast(format!("   {:.0}%", new * 100.0));
+                app.toast(format!(
+                    " {}  {:.0}%",
+                    crate::icons::VOLUME_HIGH,
+                    new * 100.0
+                ));
             }
             MouseEventKind::ScrollDown => {
                 let new = (vol - 0.05).clamp(0.0, 1.0);
                 app.playback.set_volume(new);
-                app.toast(format!("   {:.0}%", new * 100.0));
+                app.toast(format!(
+                    " {}  {:.0}%",
+                    crate::icons::VOLUME_HIGH,
+                    new * 100.0
+                ));
             }
             _ => {}
         }

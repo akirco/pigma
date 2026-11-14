@@ -89,6 +89,37 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: Run clippy (y7dl submodule)
         run: cargo clippy --manifest-path crates/y7dl/Cargo.toml --all-targets --all-features -- -D warnings
+      - name: Check default feature set
+        # AGENTS.md: CI tests both the default and the all-features combination.
+        # Clippy above covers --all-features; this covers the default graph.
+        run: cargo check --locked --workspace --all-targets
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+  deps:
+    name: dependency graph (non-blocking)
+    needs: skip-check
+    if: needs.skip-check.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Duplicate dependency versions
+        run: cargo tree --workspace --duplicates
+      - name: Unexpected default-feature edges
+        # AGENTS.md: every workspace dependency disables default-features. A
+        # `default` edge at depth 1 means a member forgot the workspace-wide vote.
+        run: |
+          cargo tree -e features --depth 1 --workspace > features.txt
+          if grep -q 'feature "default"' features.txt; then
+            echo "::warning::direct dependency still enables default features"
+            grep 'feature "default"' features.txt | head -30
+          fi
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
   build-aarch64:

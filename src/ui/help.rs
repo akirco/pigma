@@ -6,8 +6,7 @@ use ratatui::{
     widgets::{Clear, Paragraph},
 };
 
-use super::{BlockStyle, block::CornerBlock};
-use crate::state::HelpState;
+use super::{BlockStyle, block::StyledBlock};
 
 const HELP_ITEMS: &[(&str, &str)] = &[
     ("Ctrl+C/q", "退出程序"),
@@ -16,13 +15,13 @@ const HELP_ITEMS: &[(&str, &str)] = &[
     ("w", "清空播放队列"),
     ("?", "帮助"),
     ("Esc", "返回"),
-    ("Tab / ⇧Tab", "切换导航区块 / 搜索引擎"),
+    (SHIFT_TAB, "切换导航区块 / 搜索引擎"),
     ("↑ / ↓ 或 k / j", "上 / 下选择 / 均衡器选频段"),
     ("g / G", "跳转顶部 / 底部"),
     ("Enter", "播放选中 / 进入"),
     ("Space", "播放 / 暂停"),
     ("n / p", "下一首 / 上一首"),
-    ("← / →", "上一列/快退，下一列/快进/均衡器调节"),
+    ("← / →", "平铺卡片左右 / 快退快进 / 均衡器调节"),
     ("+ / -", "音量增大 / 减小"),
     ("[ / ]", "播放速度 -0.1 / +0.1"),
     ("t", "切换变速模式"),
@@ -37,19 +36,20 @@ const HELP_ITEMS: &[(&str, &str)] = &[
     ("a", "添加到队列下一首播放"),
     ("d", "不感兴趣（每日推荐）/ 取消喜欢选中"),
     ("D", "取消喜欢当前播放歌曲"),
-    ("c", "行 / 单元格模式"),
-    ("b", "切换边框模式"),
+    ("c", "窄屏表格：行 / 单元格模式"),
+    ("b", "显示 / 隐藏边框"),
     ("u", "上传缓存歌曲"),
     ("r", "手动刷新列表内容 / 均衡器置0"),
 ];
 
+const SHIFT_TAB: &str = "Tab / \u{21e7}Tab";
 const POPUP_WIDTH: u16 = 64;
 const POPUP_HEIGHT: u16 = 24;
 const KEY_COL_WIDTH: usize = 16;
 
 /// Renders the popup and returns the scroll limit implied by the rendered
 /// geometry, for the caller to persist into [`crate::state::HelpState`].
-pub(super) fn draw(f: &mut Frame, help: &HelpState, bs: &BlockStyle<'_>, area: Rect) -> usize {
+pub(super) fn draw(f: &mut Frame, scroll: usize, bs: &BlockStyle<'_>, area: Rect) -> usize {
     let colors = bs.colors;
 
     let popup_area = area.centered(
@@ -57,7 +57,12 @@ pub(super) fn draw(f: &mut Frame, help: &HelpState, bs: &BlockStyle<'_>, area: R
         Constraint::Length(POPUP_HEIGHT),
     );
 
-    let block = CornerBlock::from_color(bs, colors.surface).title("\u{25BA} HELP \u{25C4}", colors);
+    let title = format!(
+        "{} HELP {}",
+        crate::icons::TITLE_START,
+        crate::icons::TITLE_END
+    );
+    let block = StyledBlock::from_color(bs, colors.surface).title(&title, colors);
     let inner = block.inner(popup_area);
 
     f.render_widget(Clear, popup_area);
@@ -80,7 +85,7 @@ pub(super) fn draw(f: &mut Frame, help: &HelpState, bs: &BlockStyle<'_>, area: R
 
     let visible = (inner.height.saturating_sub(1)) as usize;
     let max_scroll = HELP_ITEMS.len().saturating_sub(visible);
-    let scroll = help.scroll.min(max_scroll);
+    let scroll = scroll.min(max_scroll);
     for (i, (key, desc)) in HELP_ITEMS.iter().enumerate().skip(scroll).take(visible) {
         let line_area = Rect {
             y: inner.y + (i - scroll) as u16,

@@ -1,4 +1,4 @@
-use std::{cell::RefCell, sync::Arc};
+use std::{cell::RefCell, ops::Range, sync::Arc};
 
 use ncm_api::{LoginInfo, SongInfo};
 use ratatui::widgets::{ListState, TableState};
@@ -97,6 +97,7 @@ pub struct BreadcrumbEntry {
     pub subtitle: Option<String>,
     pub content_selected: usize,
     pub content_column_selected: usize,
+    pub content_scroll: usize,
     pub table_mode: TableMode,
     pub table_state: TableState,
 }
@@ -109,6 +110,12 @@ pub struct NavigationState {
     pub history: Vec<BreadcrumbEntry>,
     pub content_selected: usize,
     pub content_column_selected: usize,
+    /// Columns used by the current content layout, set by the renderer.
+    pub content_columns: usize,
+    /// Screen-row scroll offset for the card grid, set by the renderer.
+    pub content_scroll: usize,
+    /// Item range drawn last frame, used to prefetch covers.
+    pub content_visible: Range<usize>,
     pub table_mode: TableMode,
     pub table_state: TableState,
     pub playlist_selected: usize,
@@ -133,6 +140,9 @@ impl NavigationState {
         self.content = Arc::new(content);
         self.content_selected = 0;
         self.content_column_selected = 0;
+        self.content_columns = 1;
+        self.content_scroll = 0;
+        self.content_visible = 0..0;
         self.table_mode = TableMode::Row;
         self.table_state = TableState::default();
         self.table_state.select_first();
@@ -148,6 +158,7 @@ impl NavigationState {
             subtitle: self.nav.subtitle.clone(),
             content_selected: self.content_selected,
             content_column_selected: self.content_column_selected,
+            content_scroll: self.content_scroll,
             table_mode: self.table_mode,
             table_state: self.table_state,
         });
@@ -158,6 +169,7 @@ impl NavigationState {
             self.content = entry.content;
             self.content_selected = entry.content_selected;
             self.content_column_selected = entry.content_column_selected;
+            self.content_scroll = entry.content_scroll;
             self.table_mode = entry.table_mode;
             self.table_state = entry.table_state;
             self.nav.subtitle = entry.subtitle;

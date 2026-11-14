@@ -286,6 +286,7 @@ impl NcmClient {
     }
 
     /// Step 5: `/api/upload/cloud/info/v2` submits the metadata, returns the server-assigned `songId`.
+    // Mirrors the upstream API's metadata field set; a wrapper struct would not simplify callers.
     #[allow(clippy::too_many_arguments)]
     async fn submit_cloud_info(
         &self,

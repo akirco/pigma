@@ -33,7 +33,7 @@ async fn check_network(api: &ncm_api::NcmClient) -> bool {
 
 impl App {
     pub(super) fn start_splash_boot(&self) {
-        let sender = self.state.events.sender();
+        let sender = self.events.sender();
         let client = self.service.client().clone();
         let duration = std::time::Duration::from_secs_f64(self.config.splash_duration_secs);
 

@@ -43,11 +43,28 @@ impl CommandPanel {
         self.levels.last()
     }
 
-    pub fn current_title(&self) -> &str {
+    /// The event loop has no periodic tick, so the panel is redrawn on every
+    /// event: keep the two possible titles cached instead of allocating a
+    /// `String` per frame.
+    pub fn current_title(&self) -> &'static str {
+        static COMMANDS: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+            format!(
+                "{} COMMANDS {}",
+                crate::icons::TITLE_START,
+                crate::icons::TITLE_END
+            )
+        });
+        static THEMES: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+            format!(
+                "{} THEMES {}",
+                crate::icons::TITLE_START,
+                crate::icons::TITLE_END
+            )
+        });
         if self.levels.len() > 1 {
-            "\u{25BA} THEMES \u{25C4}"
+            THEMES.as_str()
         } else {
-            "\u{25BA} COMMANDS \u{25C4}"
+            COMMANDS.as_str()
         }
     }
 

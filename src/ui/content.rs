@@ -1,3 +1,6 @@
+//! Content renderer: per-content-type table or two-column cover cards (cover left,
+//! title/subtitle right), with the table as a fallback when rows do not fit.
+
 use std::{borrow::Cow, ops::Range};
 
 use ncm_api::{SingerInfo, SongInfo, SongList, TopList};
@@ -9,9 +12,10 @@ use ratatui::{
     widgets::{Cell, Paragraph, Row, TableState},
 };
 
-use super::{BlockStyle, scrollbar::calc_scroll_offset, skeleton::Skeleton, table};
+use super::{BlockStyle, cards, scrollbar::calc_scroll_offset, skeleton::Skeleton, table};
 use crate::{
-    config::{ColumnDef, ColumnsConfig, Theme},
+    app::cover::ContentCovers,
+    config::{ColumnDef, ColumnsConfig, ContentConfig, ContentStyle, Theme},
     state::{ContentState, TableMode},
     time::format_duration,
 };
@@ -129,6 +133,7 @@ fn build_content_rows<'a>(
     }
 }
 
+// The renderer forwards the content view's full input set; a struct would only relocate the noise.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn render_content(
     f: &mut Frame,
@@ -139,9 +144,39 @@ pub(super) fn render_content(
     table_state: &mut TableState,
     content_selected: usize,
     table_mode: TableMode,
+    content_config: &ContentConfig,
+    content_columns: &mut usize,
+    content_scroll: &mut usize,
+    content_visible: &mut std::ops::Range<usize>,
+    covers: &ContentCovers,
+    font_size: ratatui_image::FontSize,
     area: Rect,
 ) {
     let colors = bs.colors;
+    if content_config.style_for(content.content_type()) == ContentStyle::Cards
+        && !matches!(
+            content,
+            ContentState::Empty | ContentState::Loading | ContentState::Error(_)
+        )
+        && cards::fits(area, content.len(), bs)
+    {
+        cards::draw(
+            f,
+            cards::CardView {
+                content,
+                bs,
+                covers,
+                font_size,
+            },
+            content_selected,
+            content_columns,
+            content_scroll,
+            content_visible,
+            area,
+        );
+        return;
+    }
+    *content_columns = 1;
     match content {
         ContentState::Empty => {
             let text = Line::from(Span::styled("", Style::default().fg(colors.muted)));

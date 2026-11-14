@@ -7,7 +7,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use super::{BlockStyle, block::CornerBlock, layout::LoginLayout, splash::LOGO};
+use super::{BlockStyle, block::StyledBlock, layout::LoginLayout, splash::LOGO};
 use crate::{config::Theme, state::LoginState};
 
 pub(super) fn draw(
@@ -54,7 +54,7 @@ fn render_logo(f: &mut Frame, colors: &Theme, area: Rect) {
 fn render_status(f: &mut Frame, colors: &Theme, area: Rect) {
     let line = Line::from(vec![
         Span::styled(
-            "● ",
+            format!("{} ", crate::icons::BULLET),
             Style::default()
                 .fg(colors.accent)
                 .add_modifier(Modifier::SLOW_BLINK),
@@ -73,10 +73,11 @@ fn render_box(f: &mut Frame, login: &mut LoginState, bs: &BlockStyle<'_>, area: 
     let box_height = (8 + content_rows).min(area.height);
     let box_y = area.y + (area.height.saturating_sub(box_height)) / 2;
 
-    let block = CornerBlock::from_color(bs, colors.bg).title(
-        " <accent> ► <b>AUTHENTICATION REQUIRED</b></accent>",
-        colors,
+    let title = format!(
+        " <accent> {} <b>AUTHENTICATION REQUIRED</b></accent>",
+        crate::icons::TITLE_START
     );
+    let block = StyledBlock::from_color(bs, colors.bg).title(&title, colors);
 
     let box_area = Rect {
         x: box_x,
@@ -103,7 +104,7 @@ fn render_inner(f: &mut Frame, login: &mut LoginState, colors: &Theme, area: Rec
 
     if let Some(err) = &login.error {
         let err_line = Line::from(Span::styled(
-            format!(" ✗ {}", err),
+            format!(" {} {}", crate::icons::ERROR_MARK, err),
             Style::default().fg(colors.error),
         ));
         f.render_widget(
@@ -114,7 +115,7 @@ fn render_inner(f: &mut Frame, login: &mut LoginState, colors: &Theme, area: Rec
 
     if login.loading {
         let loading_line = Line::from(Span::styled(
-            " ◌ CREATING QR CODE ...",
+            format!(" {} CREATING QR CODE ...", crate::icons::PENDING_MARK),
             Style::default().fg(colors.muted),
         ));
         f.render_widget(
@@ -197,7 +198,7 @@ fn render_qr_content(f: &mut Frame, login: &mut LoginState, colors: &Theme, area
 }
 
 fn render_button(f: &mut Frame, colors: &Theme, area: Rect) {
-    let text = "► GENERATE QR CODE";
+    let text = format!("{} GENERATE QR CODE", crate::icons::TITLE_START);
     let inner = area.width as usize;
     let pad_left = (inner.saturating_sub(text.len())) / 2;
     let pad_right = inner.saturating_sub(text.len()).saturating_sub(pad_left);

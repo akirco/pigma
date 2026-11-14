@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::playback::PlayMode;
+
 /// Live playback state snapshot served to `pigma status`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatusSnapshot {
@@ -50,6 +52,29 @@ impl Default for StatusSnapshot {
 }
 
 impl StatusSnapshot {
+    pub fn from_playback(state: &crate::playback::PlaybackState) -> Self {
+        let song = state.current_song.as_ref();
+        let duration_ms = song.map(|s| s.duration).unwrap_or(0);
+        let position_ms = song
+            .map(|s| (state.progress * s.duration as f64) as u64)
+            .unwrap_or(0);
+        Self {
+            id: song.map(|s| s.id).unwrap_or(0),
+            name: song.map(|s| s.name.clone()).unwrap_or_default(),
+            artist: song.map(|s| s.singer.clone()).unwrap_or_default(),
+            album: song.map(|s| s.album.clone()).unwrap_or_default(),
+            duration_ms,
+            position_ms,
+            volume: state.volume,
+            speed: state.speed,
+            pitch_locked: state.pitch_locked,
+            playing: state.playing,
+            paused: state.paused,
+            mode: mode_key(&state.mode).to_string(),
+            liked: state.liked,
+        }
+    }
+
     /// Whether `self` differs from `other` in any field that is *not* the
     /// playback position. The app loop compares snapshots with this before
     /// deciding to broadcast, so a running track does not spam subscribers on
@@ -70,6 +95,16 @@ impl StatusSnapshot {
     }
 }
 
+fn mode_key(mode: &PlayMode) -> &'static str {
+    match mode {
+        PlayMode::Sequential => "sequential",
+        PlayMode::RepeatOne => "repeat_one",
+        PlayMode::RepeatAll => "repeat_all",
+        PlayMode::Shuffle => "shuffle",
+        PlayMode::Heartbeat { .. } => "heartbeat",
+    }
+}
+
 /// A single entry in the playback queue, served to `pigma status -L`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueueEntry {
@@ -78,6 +113,18 @@ pub struct QueueEntry {
     pub singer: String,
     pub album: String,
     pub duration_ms: u64,
+}
+
+impl QueueEntry {
+    pub fn from_song(song: &ncm_api::SongInfo) -> Self {
+        Self {
+            id: song.id,
+            name: song.name.clone(),
+            singer: song.singer.clone(),
+            album: song.album.clone(),
+            duration_ms: song.duration,
+        }
+    }
 }
 
 /// Full queue listing served to `pigma status -L`: the active queue's display
@@ -103,4 +150,17 @@ pub struct SearchEntry {
     pub album: String,
     pub duration_ms: u64,
     pub source: String,
+}
+
+impl SearchEntry {
+    pub fn from_song(song: &ncm_api::SongInfo, source: &str) -> Self {
+        Self {
+            id: song.id,
+            name: song.name.clone(),
+            singer: song.singer.clone(),
+            album: song.album.clone(),
+            duration_ms: song.duration,
+            source: source.to_string(),
+        }
+    }
 }

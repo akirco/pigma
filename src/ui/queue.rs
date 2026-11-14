@@ -9,7 +9,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::{
     BlockStyle,
-    block::CornerBlock,
+    block::StyledBlock,
     navigation::keep_visible,
     scrollbar::{calc_scroll_offset, render_scrollbar},
     title::render_title,
@@ -47,7 +47,7 @@ pub(super) fn draw_queue_table(
     } else {
         render_title(title_template, key, count, 0)
     };
-    let block = CornerBlock::from_color(bs, bs.colors.bg).title(&title, bs.colors);
+    let block = StyledBlock::from_color(bs, bs.colors.bg).title(&title, bs.colors);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -143,7 +143,11 @@ pub(super) fn draw_queue_table(
             let is_playing = Some(i) == current_idx;
             let is_selected = i == sel;
 
-            let prefix = if is_playing { "\u{25b6}" } else { " " };
+            let prefix = if is_playing {
+                crate::icons::PLAY_INDICATOR
+            } else {
+                " "
+            };
             let num = format!("{}{:02}", prefix, i + 1);
 
             let row_style = if is_playing {

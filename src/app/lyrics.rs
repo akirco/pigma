@@ -4,7 +4,7 @@
 use super::{App, event::send_event};
 use crate::{
     event::{Event, PlaybackEvent},
-    playback::{LyricLine, parse_lyric_lines},
+    lyrics::{LyricLine, parse_lyric_lines},
 };
 
 impl App {
@@ -12,7 +12,7 @@ impl App {
     /// sonar path) and emits `LyricsLoaded` when found.
     pub(super) fn spawn_lyrics_load(&self, song_id: u64) {
         let service = self.service.clone();
-        let sender = self.state.events.sender();
+        let sender = self.events.sender();
         if sonar::is_sonar_song_id(song_id) {
             let finder = self.search.finder.clone();
             let registry = self.search.sonar_songs.clone();

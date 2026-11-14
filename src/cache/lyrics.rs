@@ -21,7 +21,8 @@ impl CacheManager {
     pub fn save_lyrics_cache(&self, id: u64, lyrics: &ncm_api::Lyrics) {
         match serde_json::to_string(lyrics) {
             Ok(json) => {
-                if let Err(e) = crate::store::write_atomic(&self.lyrics_path(id), json.as_bytes()) {
+                if let Err(e) = crate::persist::write_atomic(&self.lyrics_path(id), json.as_bytes())
+                {
                     log::warn!("Failed to write lyrics cache for {id}: {e}");
                 }
             }

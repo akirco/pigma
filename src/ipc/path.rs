@@ -4,7 +4,7 @@
 use std::{cell::RefCell, path::PathBuf, sync::OnceLock};
 
 #[cfg(unix)]
-use crate::store::pigma_cache_dir;
+use crate::persist::pigma_cache_dir;
 
 /// Socket file name inside `pigma_cache_dir()` (Unix only).
 pub const SOCKET_FILE: &str = "pigma.sock";
@@ -50,7 +50,7 @@ pub fn set_socket_path(path: Option<PathBuf>) {
 
 /// Resolve the socket path: a thread-local override if set, otherwise the
 /// process-wide override, otherwise the default location under `pigma_cache_dir()`.
-pub(crate) fn resolve_socket_path() -> PathBuf {
+pub(super) fn resolve_socket_path() -> PathBuf {
     SOCKET_OVERRIDE
         .with(|c| c.borrow().clone())
         .unwrap_or_else(|| SOCKET_GLOBAL.get().cloned().unwrap_or_else(socket_path))

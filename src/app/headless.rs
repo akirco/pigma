@@ -5,8 +5,8 @@
 
 use std::sync::Arc;
 
-use super::{App, start_server};
-use crate::{state::Page, utils::lock_recover};
+use super::App;
+use crate::{lock::lock_recover, state::Page};
 
 impl App {
     /// Headless daemon mode: load the endpoint, start the IPC server, and pump
@@ -17,11 +17,11 @@ impl App {
         playlist_index: Option<usize>,
     ) -> eyre::Result<()> {
         self.state.navigation.page = Page::Main;
-        let _ipc_guard = start_server(
+        let _ipc_guard = crate::ipc::start_server(
             Arc::clone(&self.ipc.status),
             Arc::clone(&self.ipc.queue),
             self.ipc.status_tx.clone(),
-            self.state.events.sender(),
+            self.events.sender(),
             Arc::clone(&self.search.engine),
         );
 
@@ -47,7 +47,7 @@ impl App {
 
         // Forward termination signals to the event loop so shutdown goes through
         // `App::quit` (session save + cookie flush) like a normal quit.
-        let tx = self.state.events.sender();
+        let tx = self.events.sender();
         tokio::spawn(async move {
             wait_shutdown_signal().await;
             let _ = tx.send(crate::event::AppEvent::Quit.into());
@@ -78,8 +78,12 @@ impl App {
 
 #[cfg(unix)]
 async fn wait_shutdown_signal() {
-    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-        .expect("failed to install SIGTERM handler");
+    let Ok(mut sigterm) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+    else {
+        log::warn!("failed to install SIGTERM handler; falling back to Ctrl-C");
+        let _ = tokio::signal::ctrl_c().await;
+        return;
+    };
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {}
         _ = sigterm.recv() => {}

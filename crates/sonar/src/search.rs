@@ -554,6 +554,16 @@ mod tests {
     use super::*;
     use crate::model::{PlayUrlResult, Quality, make_song_id};
 
+    #[test]
+    fn live_word_boundary_stays_unicode_aware() {
+        // The regex crate's `unicode` feature keeps CJK characters on the
+        // "word" side of `\b`. With ASCII-only boundaries `现场live` would
+        // match, silently changing which titles count as live recordings.
+        assert!(LIVE_RE.is_match("live version"));
+        assert!(!LIVE_RE.is_match("alive"));
+        assert!(!LIVE_RE.is_match("现场live"));
+    }
+
     /// Provider whose answers are fixed, for testing the finder's fallback
     /// chains without touching the network.
     struct FakeProvider {

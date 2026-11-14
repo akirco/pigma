@@ -13,7 +13,7 @@ pub(super) struct DefaultLayout;
 
 impl Playerbar for DefaultLayout {
     fn layout(&self, area: Rect, _config: &PlayerbarConfig, _is_sixel: bool) -> LayoutArea {
-        // `⏮   ▶   ⏭` — one cell per glyph plus the two three-cell gaps.
+        // Previous, play and next: one cell per glyph plus the two three-cell gaps.
         const CONTROLS_WIDTH: u16 = 9;
         const SONG_INFO_MIN: u16 = 20;
         const SPINNER_WIDTH: u16 = 3;

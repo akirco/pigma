@@ -8,11 +8,11 @@ use ratatui::{
     widgets::{Padding, Paragraph},
 };
 
-use super::{BlockStyle, block::CornerBlock};
+use super::{BlockStyle, block::StyledBlock};
 use crate::{
-    config::Theme,
-    playback::{LyricLine, PlaybackState},
-    theme::GradientPreset,
+    config::{GradientPreset, Theme},
+    lyrics::LyricLine,
+    playback::PlaybackState,
 };
 
 thread_local! {
@@ -52,7 +52,7 @@ pub(super) fn draw(
     area: Rect,
 ) {
     let colors = bs.colors;
-    let block = CornerBlock::from_color(bs, bs.colors.bg).title(title, bs.colors);
+    let block = StyledBlock::from_color(bs, bs.colors.bg).title(title, bs.colors);
     let inner = block.inner(area);
     f.render_widget(block.block_padding(Padding::vertical(1)), area);
 
@@ -204,7 +204,7 @@ mod tests {
     use ratatui::{Terminal, backend::TestBackend};
 
     use super::*;
-    use crate::{config::BorderConfig, playback::parse_lyric_lines};
+    use crate::{config::BorderConfig, lyrics::parse_lyric_lines};
 
     /// Credit lines carry timestamps in `lyric` but have no counterpart in
     /// `tlyric`, so the two streams are not index-aligned. Shape taken from the

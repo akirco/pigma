@@ -58,10 +58,16 @@ fn render_progress(f: &mut Frame, splash: &SplashState, colors: &Theme, area: Re
 
     let mut line = Line::default();
     for _ in 0..filled {
-        line.push_span(Span::styled("▍", Style::default().fg(colors.accent)));
+        line.push_span(Span::styled(
+            crate::icons::SPLASH_MARK,
+            Style::default().fg(colors.accent),
+        ));
     }
     for _ in 0..empty {
-        line.push_span(Span::styled("▍", Style::default().fg(colors.surface)));
+        line.push_span(Span::styled(
+            crate::icons::SPLASH_MARK,
+            Style::default().fg(colors.surface),
+        ));
     }
     f.render_widget(Paragraph::new(line).alignment(Alignment::Center), bar_area);
 

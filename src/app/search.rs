@@ -15,7 +15,7 @@ use crate::{
     event::NavigationEvent,
     service::{ApiEndpoint, SearchEngine, SearchResults, search_ncm, search_sonar},
     state::{ContentState, SearchProvider},
-    tui::TextInput,
+    text_input::TextInput,
 };
 
 /// Search subsystem owned by `App`: the shared sonar finder and synthetic-id
@@ -46,7 +46,7 @@ impl App {
         self.state.navigation.nav.subtitle = Some(format!("搜索: {keyword}"));
         self.state.navigation.content_selected = 0;
         let service = self.service.clone();
-        let sender = self.state.events.sender();
+        let sender = self.events.sender();
         let limit = self.config.search_limit as usize;
         let search_results = self.search.results.clone();
         tokio::spawn(async move {
@@ -66,13 +66,16 @@ impl App {
     /// restricted to the selected provider, then delegate to
     /// [`search_sonar`] and surface the result via an event.
     fn submit_sonar_search(&mut self, keyword: String, provider: SearchProvider, generation: u64) {
+        let Some(source) = provider.to_sonar() else {
+            log::warn!("sonar search requested for non-sonar provider");
+            return;
+        };
         self.state.navigation.set_content(ContentState::Loading);
         self.state.navigation.content_is_search = true;
         self.state.navigation.nav.subtitle =
             Some(format!("({}): {keyword}", provider.display_name()));
         self.state.navigation.content_selected = 0;
-        let source = provider.to_sonar().expect("sonar provider");
-        let sender = self.state.events.sender();
+        let sender = self.events.sender();
         let registry = self.search.sonar_songs.clone();
         let search_results = self.search.results.clone();
         let limit = self.config.search_limit as usize;
@@ -140,7 +143,7 @@ impl App {
 
         let api = nav.nav.selected_api();
         if let Some(api) = api {
-            let sender = self.state.events.sender();
+            let sender = self.events.sender();
             send_event(&sender, NavigationEvent::NavSelect(api.to_string()).into());
         }
     }

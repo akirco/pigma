@@ -13,6 +13,7 @@ use crate::{
     ui::scrollbar::render_scrollbar,
 };
 
+// Table rendering takes pre-built rows plus all layout/selection inputs at once.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn render_table(
     f: &mut Frame,

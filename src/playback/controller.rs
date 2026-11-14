@@ -2,10 +2,12 @@ use std::{sync::mpsc, time::Duration};
 
 use tokio::sync::mpsc as tokio_mpsc;
 
-use crate::{
-    audio::{self, AudioInput, ControlCmd, EqHandle, PlayerEvent, SpeedMode},
-    config::EqualizerConfig,
+use super::{
+    equalizer::EqHandle,
+    player::{self, AudioInput, ControlCmd},
+    stretch::SpeedMode,
 };
+use crate::{config::EqualizerConfig, event::Event};
 
 #[derive(Clone)]
 pub(super) struct PlaybackHandle {
@@ -28,7 +30,7 @@ enum PlayerCmd {
 }
 
 impl PlaybackHandle {
-    pub(super) fn new(event_tx: tokio_mpsc::UnboundedSender<PlayerEvent>) -> Self {
+    pub(super) fn new(event_tx: tokio_mpsc::UnboundedSender<Event>) -> Self {
         let (cmd_tx, mut cmd_rx) = tokio_mpsc::unbounded_channel::<PlayerCmd>();
         let eq = EqHandle::new(EqualizerConfig::default());
         let player_eq = eq.clone();
@@ -53,7 +55,7 @@ impl PlaybackHandle {
                             let (ctrl_tx, ctrl_rx) = mpsc::channel();
                             control_tx = Some(ctrl_tx);
                             let tx = event_tx.clone();
-                            audio::run(
+                            player::run(
                                 input,
                                 seek_time,
                                 last_volume,

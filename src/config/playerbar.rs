@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::theme::{GradientPreset, deserialize_optional};
+use super::{GradientPreset, deserialize_optional};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -53,10 +53,10 @@ pub struct PlayerbarConfig {
 }
 
 fn default_pb_filled_symbol() -> String {
-    "━".into()
+    crate::icons::PROGRESS_FILLED.into()
 }
 fn default_pb_unfilled_symbol() -> String {
-    "─".into()
+    crate::icons::PROGRESS_UNFILLED.into()
 }
 fn default_pb_filled_color() -> String {
     "accent".into()

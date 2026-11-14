@@ -3,11 +3,11 @@
 
 use std::time::Duration;
 
-use super::PlaybackEngine;
-use crate::{
-    audio::{EqualizerConfig, SpeedMode},
-    queue::mode::{self, PlayMode},
+use super::{
+    PlaybackEngine,
+    mode::{self, PlayMode},
 };
+use crate::{config::EqualizerConfig, playback::stretch::SpeedMode};
 
 impl PlaybackEngine {
     pub fn seek_relative(&mut self, delta_secs: f64) {
@@ -108,7 +108,7 @@ impl PlaybackEngine {
         next
     }
 
-    pub(in crate::playback) fn set_mode(&mut self, mode: PlayMode) {
+    pub(super) fn set_mode(&mut self, mode: PlayMode) {
         // Any response for the previous mode is no longer relevant.
         self.invalidate_heartbeat_request();
         self.state.mode = mode;

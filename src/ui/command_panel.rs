@@ -8,15 +8,18 @@ use ratatui::{
     widgets::{Clear, Paragraph},
 };
 
-use super::{BlockStyle, block::CornerBlock};
-use crate::{
-    app::App,
-    state::{CommandAction, CommandItem},
-};
+use super::{BlockStyle, block::StyledBlock};
+use crate::state::{CommandAction, CommandItem, CommandPanel};
 
-pub(super) fn draw(f: &mut Frame, app: &App, area: Rect) {
-    let panel = &app.state.command_panel;
-    let colors = app.current_theme();
+pub(super) fn draw(
+    f: &mut Frame,
+    panel: &CommandPanel,
+    default_theme: &str,
+    save_on_play: bool,
+    bs: &BlockStyle<'_>,
+    area: Rect,
+) {
+    let colors = bs.colors;
     let Some(items) = panel.current_items() else {
         return;
     };
@@ -30,12 +33,7 @@ pub(super) fn draw(f: &mut Frame, app: &App, area: Rect) {
         Constraint::Length(inner_height),
     );
 
-    let style = BlockStyle {
-        colors,
-        border: &app.state.border,
-        tick: app.state.tick,
-    };
-    let block = CornerBlock::from_color(&style, colors.surface).title(title, colors);
+    let block = StyledBlock::from_color(bs, colors.surface).title(title, colors);
     let inner = block.inner(popup_area);
 
     f.render_widget(Clear, popup_area);
@@ -56,17 +54,13 @@ pub(super) fn draw(f: &mut Frame, app: &App, area: Rect) {
                 name,
                 action: CommandAction::SwitchTheme(n),
                 ..
-            } if n == &app.config.default_theme => Cow::Owned(format!("{} *", name)),
+            } if n == default_theme => Cow::Owned(format!("{} *", name)),
             CommandItem::Action {
                 name,
                 action: CommandAction::ToggleSaveOnPlay,
                 ..
             } => {
-                let state = if app.config.cache.save_on_play {
-                    "ON"
-                } else {
-                    "OFF"
-                };
+                let state = if save_on_play { "ON" } else { "OFF" };
                 Cow::Owned(format!("{name}: {state}"))
             }
             CommandItem::Action { name, .. } | CommandItem::SubMenu { name, .. } => {
@@ -74,7 +68,11 @@ pub(super) fn draw(f: &mut Frame, app: &App, area: Rect) {
             }
         };
 
-        let prefix = if i == panel.selected { "▶ " } else { "  " };
+        let prefix = if i == panel.selected {
+            crate::icons::PLAY_INDICATOR
+        } else {
+            " "
+        };
         let style = if i == panel.selected {
             Style::default()
                 .fg(colors.accent)
@@ -84,7 +82,7 @@ pub(super) fn draw(f: &mut Frame, app: &App, area: Rect) {
         };
 
         f.render_widget(
-            Paragraph::new(format!("{}{}", prefix, display)).style(style),
+            Paragraph::new(format!("{prefix} {display}")).style(style),
             line_area,
         );
     }

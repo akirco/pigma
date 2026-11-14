@@ -359,6 +359,20 @@ Config file location:
 - macOS: `$HOME/Library/Application Support/pigma/config.tomnl`
 - windows:`RoamingAppData`
 
+### Content Layout Configuration
+
+Each content type can use the original table or the two-column cover cards:
+
+```toml
+[content]
+songs = "table"
+playlists = "cards"
+singers = "cards"
+hot_search = "table"
+```
+
+`table` and `cards` are the only values. `playlists` applies to both playlists and toplists. The default is `table` for every type; rows automatically fall back to the table when the content area is too narrow.
+
 ### Columns Configuration
 
 Each content type has two levels of columns: **type-defaults** and **per-API overrides**.
@@ -665,10 +679,12 @@ highlight = "#31748F"
 muted = "#6E6A86"
 error = "#EB6F92"
 warning = "#F6C177"
+# 可选：选中卡片背景色；省略时使用 surface/accent 的混合色
+selection = "#3A2530"
 ```
 
 Supported theme color fields: `bg`, `surface`, `text`, `accent`, `highlight`,
-`muted`, `error`, `warning`.
+`muted`, `error`, `warning`, and optional `selection`.
 
 You can define multiple themes and switch between them at runtime (style toggle,
 default key `b`).

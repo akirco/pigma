@@ -19,10 +19,16 @@ impl App {
         if count == 0 {
             return;
         }
+        let cols = self.state.navigation.content_columns.max(1);
         let sel = &mut self.state.navigation.content_selected;
-        *sel = (*sel + count - 1) % count;
+        *sel = if cols > 1 {
+            sel.saturating_sub(cols)
+        } else {
+            (*sel + count - 1) % count
+        };
         self.state.navigation.table_state.select(Some(*sel));
         self.check_load_more(count);
+        self.prefetch_content_covers();
     }
 
     pub(crate) fn content_select_next(&mut self) {
@@ -30,10 +36,39 @@ impl App {
         if count == 0 {
             return;
         }
+        let cols = self.state.navigation.content_columns.max(1);
         let sel = &mut self.state.navigation.content_selected;
-        *sel = (*sel + 1) % count;
+        *sel = if cols > 1 {
+            (*sel + cols).min(count - 1)
+        } else {
+            (*sel + 1) % count
+        };
         self.state.navigation.table_state.select(Some(*sel));
         self.check_load_more(count);
+        self.prefetch_content_covers();
+    }
+
+    /// Move one flat column left/right inside the current row.
+    pub(crate) fn content_select_left(&mut self) {
+        if self.content_item_count() == 0 {
+            return;
+        }
+        let sel = &mut self.state.navigation.content_selected;
+        *sel = sel.saturating_sub(1);
+        self.state.navigation.table_state.select(Some(*sel));
+        self.prefetch_content_covers();
+    }
+
+    pub(crate) fn content_select_right(&mut self) {
+        let count = self.content_item_count();
+        if count == 0 {
+            return;
+        }
+        let sel = &mut self.state.navigation.content_selected;
+        *sel = (*sel + 1).min(count - 1);
+        self.state.navigation.table_state.select(Some(*sel));
+        self.check_load_more(count);
+        self.prefetch_content_covers();
     }
 
     pub(crate) fn content_select_first(&mut self) {
@@ -42,6 +77,7 @@ impl App {
         }
         self.state.navigation.content_selected = 0;
         self.state.navigation.table_state.select(Some(0));
+        self.prefetch_content_covers();
     }
 
     pub(crate) fn content_select_last(&mut self) {
@@ -51,6 +87,7 @@ impl App {
         }
         self.state.navigation.content_selected = count - 1;
         self.state.navigation.table_state.select(Some(count - 1));
+        self.prefetch_content_covers();
     }
 
     /// Ask for the next page when the selection approaches the loaded tail.
@@ -59,7 +96,7 @@ impl App {
             let sel = self.state.navigation.content_selected;
             if !pg.loading && pg.has_more && count >= 10 && sel >= count.saturating_sub(10) {
                 pg.loading = true;
-                self.state.events.send(NavigationEvent::LoadMore);
+                self.events.send(NavigationEvent::LoadMore);
             }
         }
     }
@@ -105,7 +142,7 @@ impl App {
         match self.state.navigation.content.as_ref() {
             ContentState::SongLists(lists) => {
                 if let Some(list) = lists.get(sel) {
-                    self.state.events.send(NavigationEvent::PlaylistSelect {
+                    self.events.send(NavigationEvent::PlaylistSelect {
                         id: list.id,
                         name: Some(list.name.clone()),
                     });
@@ -113,7 +150,7 @@ impl App {
             }
             ContentState::TopLists(lists) => {
                 if let Some(list) = lists.get(sel) {
-                    self.state.events.send(NavigationEvent::PlaylistSelect {
+                    self.events.send(NavigationEvent::PlaylistSelect {
                         id: list.id,
                         name: Some(list.name.clone()),
                     });
@@ -121,17 +158,15 @@ impl App {
             }
             ContentState::Songs(songs) => {
                 if let Some(song) = songs.get(sel) {
-                    self.state.events.send(PlaybackEvent::SongPlay(song.id));
+                    self.events.send(PlaybackEvent::SongPlay(song.id));
                 }
             }
             ContentState::Singers(_) => {
-                self.state.events.send(NavigationEvent::CellAction(sel, 0));
+                self.events.send(NavigationEvent::CellAction(sel, 0));
             }
             ContentState::HotSearch(keywords) => {
                 if let Some(kw) = keywords.0.get(sel) {
-                    self.state
-                        .events
-                        .send(NavigationEvent::SearchSong(kw.clone()));
+                    self.events.send(NavigationEvent::SearchSong(kw.clone()));
                 }
             }
             _ => {}
@@ -142,8 +177,6 @@ impl App {
     pub(crate) fn enter_selected_cell(&mut self) {
         let sel = self.state.navigation.content_selected;
         let col = self.state.navigation.content_column_selected;
-        self.state
-            .events
-            .send(NavigationEvent::CellAction(sel, col));
+        self.events.send(NavigationEvent::CellAction(sel, col));
     }
 }

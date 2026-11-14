@@ -67,7 +67,10 @@ impl Playerbar for MinimalLayout {
 fn draw_song_info_inline(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     if let Some(song) = &player.current_song {
         let info = Line::from(vec![
-            Span::styled(" ♪ ", Style::default().fg(colors.accent)),
+            Span::styled(
+                format!(" {} ", crate::icons::MUSIC_NOTE),
+                Style::default().fg(colors.accent),
+            ),
             Span::styled(
                 &song.name,
                 Style::default()

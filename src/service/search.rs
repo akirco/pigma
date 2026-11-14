@@ -18,8 +18,8 @@ use sonar::{SearchQuery, SonarFinder, Song};
 
 use super::ApiService;
 use crate::{
+    lock::lock_recover,
     state::{ContentState, SearchProvider},
-    utils::lock_recover,
 };
 
 /// Registry of recently searched songs keyed by song id, shared with `App` so

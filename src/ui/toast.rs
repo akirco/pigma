@@ -7,18 +7,15 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
 };
 
-use crate::{app::App, config::Theme};
+use crate::config::Theme;
 
-pub(super) fn draw_toast(f: &mut Frame, app: &App, colors: &Theme) {
-    let Some(time) = app.state.toast_time else {
-        return;
-    };
-    if time.elapsed() > Duration::from_secs(2) {
+pub(super) fn draw_toast(f: &mut Frame, msg: &str, age: Duration, colors: &Theme) {
+    if age > Duration::from_secs(2) {
         return;
     }
 
     let area = f.area();
-    let display_w = unicode_width::UnicodeWidthStr::width(app.state.toast_msg.as_str());
+    let display_w = unicode_width::UnicodeWidthStr::width(msg);
     let w = (display_w as u16 + 6).min(area.width);
     let h = 3u16;
     let x = area.x + (area.width.saturating_sub(w)) / 2;
@@ -39,7 +36,7 @@ pub(super) fn draw_toast(f: &mut Frame, app: &App, colors: &Theme) {
         .border_style(Style::default().fg(colors.muted))
         .style(Style::default().bg(colors.surface));
 
-    let p = Paragraph::new(format!(" {} ", app.state.toast_msg))
+    let p = Paragraph::new(format!(" {msg} "))
         .style(Style::default().fg(colors.text))
         .block(block)
         .alignment(Alignment::Center);

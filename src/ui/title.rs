@@ -36,13 +36,22 @@ pub(super) fn content_title(nst: &NavigationState) -> Arc<String> {
     // cloud drive; non-paged content shows only the loaded count. Each nav item
     // can also override this via `title_template`.
     let show_total = nst.pagination.as_ref().is_some_and(|p| p.total > 0);
+    let fallback = if show_total {
+        format!(
+            "{} {{name}} ({{count}}/{{total}}) {}",
+            crate::icons::TITLE_START,
+            crate::icons::TITLE_END
+        )
+    } else {
+        format!(
+            "{} {{name}} ({{count}}) {}",
+            crate::icons::TITLE_START,
+            crate::icons::TITLE_END
+        )
+    };
     let template = current_item
         .and_then(|item| item.title_template.as_deref())
-        .unwrap_or(if show_total {
-            "\u{25BA} {name} ({count}/{total}) \u{25C4}"
-        } else {
-            "\u{25BA} {name} ({count}) \u{25C4}"
-        });
+        .unwrap_or(&fallback);
     let title = Arc::new(render_title(template, name, count, total));
     *nst.title_cache.borrow_mut() = Some((Arc::clone(&title), focus, selected, generation, count));
     title

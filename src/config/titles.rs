@@ -11,13 +11,27 @@ pub struct TitlesConfig {
 }
 
 fn default_title_sidebar() -> String {
-    "\u{25BA} NAVIGATION \u{25C4}".into()
+    format!(
+        "{} NAVIGATION {}",
+        crate::icons::TITLE_START,
+        crate::icons::TITLE_END
+    )
 }
 fn default_title_playlist() -> String {
-    "\u{25BA} \u{266a} QUEUE ({count}) \u{25C4}".into()
+    format!(
+        "{} {} QUEUE ({{count}}) {}",
+        crate::icons::TITLE_START,
+        crate::icons::MUSIC_NOTE,
+        crate::icons::TITLE_END
+    )
 }
 fn default_title_lyrics() -> String {
-    "\u{25BA} \u{266a} LYRICS \u{25C4}".into()
+    format!(
+        "{} {} LYRICS {}",
+        crate::icons::TITLE_START,
+        crate::icons::MUSIC_NOTE,
+        crate::icons::TITLE_END
+    )
 }
 
 impl Default for TitlesConfig {

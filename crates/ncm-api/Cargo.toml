@@ -4,37 +4,29 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 
-[lints]
-workspace = true
-
 [dependencies]
-aes = "0.9.3"
-base64 = { version = "0.23.1", default-features = false, features = ["std"] }
-lofty = "0.25.4"
-md-5 = { version = "0.11.0", default-features = false }
-percent-encoding = { version = "2.3.2", default-features = false, features = ["std"] }
-rand = { version = "0.10.3", default-features = false, features = ["std", "thread_rng"] }
-reqwest = {
-  version = "0.13.4",
-  default-features = false,
-  features = [
-    "charset",
-    "gzip",
-    "json",
-    "rustls-no-provider",
-    "stream",
-  ]
-}
-rsa = { version = "0.9.10", default-features = false, features = ["std", "pem"] }
-tokio = { version = "1.53.1", default-features = false, features = ["fs"] }
+aes = { workspace = true }
+base64 = { workspace = true, features = ["std"] }
+# `id3v2_compression_support` is lofty's only default feature; keep it explicit
+# so uploaded files with compressed ID3v2 tags still parse.
+lofty = { workspace = true, features = ["id3v2_compression_support"] }
+md-5 = { workspace = true }
+percent-encoding = { workspace = true, features = ["std"] }
+rand = { workspace = true, features = ["std", "thread_rng"] }
+reqwest = { workspace = true, features = ["charset", "gzip", "json", "rustls-no-provider", "stream"] }
+rsa = { workspace = true, features = ["pem", "std"] }
+tokio = { workspace = true, features = ["fs", "rt"] }
 
-serde = { version = "1.0.228", default-features = false, features = ["std", "derive"] }
-serde_json = { version = "1.0.151", default-features = false, features = ["std"] }
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
 
-log = { version = "0.4.34", default-features = false, features = ["std"] }
-thiserror = { version = "2.0.21", default-features = false, features = ["std"] }
+log = { workspace = true, features = ["std"] }
+thiserror = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
-qrcode = { version = "0.14.1", default-features = false }
-rustls = { version = "0.23.32", default-features = false, features = ["ring", "std"] }
-tokio = { version = "1.53.1", default-features = false, features = ["macros", "rt-multi-thread"] }
+qrcode = { workspace = true }
+rustls = { workspace = true, features = ["ring", "std"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

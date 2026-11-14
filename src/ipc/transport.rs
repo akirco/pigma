@@ -11,19 +11,19 @@ use super::path::resolve_socket_path;
 /// The stream accepted by the server (Unix socket on unix, named pipe on
 /// Windows).
 #[cfg(unix)]
-pub(crate) type Stream = tokio::net::UnixStream;
+pub(super) type Stream = tokio::net::UnixStream;
 #[cfg(windows)]
-pub(crate) type Stream = tokio::net::windows::named_pipe::NamedPipeServer;
+pub(super) type Stream = tokio::net::windows::named_pipe::NamedPipeServer;
 
 /// The stream a client connects with (Unix socket on unix, named pipe on
 /// Windows).
 #[cfg(unix)]
-pub(crate) type ClientStream = tokio::net::UnixStream;
+pub(super) type ClientStream = tokio::net::UnixStream;
 #[cfg(windows)]
-pub(crate) type ClientStream = tokio::net::windows::named_pipe::NamedPipeClient;
+pub(super) type ClientStream = tokio::net::windows::named_pipe::NamedPipeClient;
 
 /// Connect to the running instance's listener endpoint.
-pub(crate) async fn connect_client(path: &std::path::Path) -> std::io::Result<ClientStream> {
+pub(super) async fn connect_client(path: &std::path::Path) -> std::io::Result<ClientStream> {
     #[cfg(unix)]
     {
         ClientStream::connect(path).await
@@ -38,7 +38,7 @@ pub(crate) async fn connect_client(path: &std::path::Path) -> std::io::Result<Cl
 ///
 /// On Windows a named pipe is re-created for every connection, so the Windows
 /// variant holds the pipe name rather than a persistent handle.
-pub(crate) struct Listener {
+pub(super) struct Listener {
     #[cfg(unix)]
     unix: tokio::net::UnixListener,
     /// Owner of the socket file, used to reject connections from other local
@@ -53,7 +53,7 @@ impl Listener {
     /// Bind the listener, clearing any stale file left by a previous run on
     /// Unix. Returns `None` when another pigma instance already holds the
     /// endpoint.
-    pub(crate) fn bind() -> Option<Self> {
+    pub(super) fn bind() -> Option<Self> {
         let path = resolve_socket_path();
         #[cfg(unix)]
         {
@@ -110,7 +110,7 @@ impl Listener {
     /// The Unix socket is already chmod 0600; peer credentials are a second
     /// line of defense against a race during bind or a mis-set directory mode.
     #[cfg(unix)]
-    pub(crate) fn is_trusted(&self, stream: &Stream) -> bool {
+    pub(super) fn is_trusted(&self, stream: &Stream) -> bool {
         #[cfg(any(
             target_os = "linux",
             target_os = "android",
@@ -145,12 +145,12 @@ impl Listener {
 
     /// Windows named pipes are scoped by the default pipe ACL; no extra check.
     #[cfg(windows)]
-    pub(crate) fn is_trusted(&self, _stream: &Stream) -> bool {
+    pub(super) fn is_trusted(&self, _stream: &Stream) -> bool {
         true
     }
 
     /// Wait for the next incoming connection, returning the accepted stream.
-    pub(crate) async fn next(&mut self) -> Option<Stream> {
+    pub(super) async fn next(&mut self) -> Option<Stream> {
         #[cfg(unix)]
         {
             self.unix.accept().await.ok().map(|(stream, _)| stream)
@@ -175,7 +175,7 @@ impl Listener {
 #[cfg(unix)]
 fn ensure_socket_dir(dir: &std::path::Path) {
     let _ = std::fs::create_dir_all(dir);
-    if dir == crate::store::pigma_cache_dir().as_path() {
+    if dir == crate::persist::pigma_cache_dir().as_path() {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
     }
@@ -200,7 +200,7 @@ fn socket_owner(path: &std::path::Path) -> Option<u32> {
 
 /// Remove the endpoint file so a later run can rebind it. No-op on Windows,
 /// which releases the pipe name when the process exits.
-pub(crate) fn remove_endpoint() {
+pub(super) fn remove_endpoint() {
     #[cfg(unix)]
     let _ = std::fs::remove_file(resolve_socket_path());
 }

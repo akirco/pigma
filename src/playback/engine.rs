@@ -19,17 +19,21 @@ use std::{
 use ncm_api::{SongInfo, SongQuality};
 use tokio::sync::mpsc;
 
-use super::{controller::PlaybackHandle, source::AudioSource, state::PlaybackState};
+use super::{
+    controller::PlaybackHandle,
+    mode::{self, Strategy},
+    queue::PlaylistQueue,
+    source::AudioSource,
+    state::PlaybackState,
+    storage::PlaylistStorage,
+};
 use crate::{
     cache::CacheManager,
-    event::Event,
-    playback::{LyricLine, PlaybackEvent},
-    queue::{
-        PlaylistQueue, PlaylistStorage,
-        mode::{self, Strategy},
-    },
+    event::{Event, PlaybackEvent},
+    lock::lock_recover,
+    lyrics::LyricLine,
+    playback::memory::trim_heap,
     service::ApiService,
-    utils::{lock_recover, process::trim_heap},
 };
 
 /// Return whether an error is a transient audio stream error (buffer underrun/overrun). These
@@ -82,6 +86,7 @@ pub struct PlaybackEngine {
 }
 
 impl PlaybackEngine {
+    // Engine construction wires all shared services; keep the flat signature until a second constructor exists.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         event_tx: mpsc::UnboundedSender<Event>,
@@ -97,28 +102,6 @@ impl PlaybackEngine {
         liked_ids: Arc<std::sync::Mutex<HashSet<u64>>>,
     ) -> Self {
         let storage = PlaylistStorage::new(base_dir);
-        // The audio task emits its own events; bridge them into the app's
-        // playback-event stream here instead of coupling the audio module to
-        // `crate::event`.
-        let (player_tx, mut player_rx) = mpsc::unbounded_channel::<crate::audio::PlayerEvent>();
-        let player_events = event_tx.clone();
-        tokio::spawn(async move {
-            while let Some(event) = player_rx.recv().await {
-                let event = match event {
-                    crate::audio::PlayerEvent::Progress { position, total } => {
-                        PlaybackEvent::Progress { position, total }
-                    }
-                    crate::audio::PlayerEvent::Finished => PlaybackEvent::Finished,
-                    crate::audio::PlayerEvent::Error(message) => PlaybackEvent::Error(message),
-                    crate::audio::PlayerEvent::DeviceError(message) => {
-                        PlaybackEvent::DeviceError(message)
-                    }
-                };
-                if player_events.send(Event::from(event)).is_err() {
-                    break;
-                }
-            }
-        });
         let mut this = Self {
             state: PlaybackState::default(),
             queue: PlaylistQueue::new(),
@@ -140,7 +123,7 @@ impl PlaybackEngine {
                 sonar_songs,
                 event_tx.clone(),
             ),
-            controller: PlaybackHandle::new(player_tx),
+            controller: PlaybackHandle::new(event_tx.clone()),
             event_tx,
             service,
             playlist_id: None,

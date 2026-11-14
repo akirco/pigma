@@ -9,23 +9,24 @@ license = "MIT"
 workspace = true
 
 [dependencies]
-async-trait = "0.1.92"
-base64 = { version = "0.23.1", default-features = false, features = ["std"] }
-log = { version = "0.4.34", default-features = false, features = ["std"] }
-md-5 = { version = "0.11.0", default-features = false }
-once_cell = { version = "1.21.4", default-features = false, features = ["std"] }
-regex = "1.13.1"
-reqwest = { version = "0.13.4", default-features = false, features = ["gzip", "json", "query", "rustls-no-provider"] }
-serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
-serde_json = { version = "1.0.151", default-features = false, features = ["std"] }
-thiserror = { version = "2.0.21", default-features = false, features = ["std"] }
-# chrono = { version = "0.4.45", features = ["serde"] }
-time = { version = "0.3.55", default-features = false, features = ["std"] }
-tokio = { version = "1.53.1", default-features = false, features = ["rt", "sync", "time"] }
-url = { version = "2.5.8", default-features = false, features = ["std"] }
-urlencoding = "2.1"
+async-trait = { workspace = true }
+base64 = { workspace = true, features = ["std"] }
+log = { workspace = true, features = ["std"] }
+md-5 = { workspace = true }
+once_cell = { workspace = true, features = ["std"] }
+# `\blive\b` is a Unicode word boundary; without `unicode` it would match in
+# the middle of a Chinese title. `perf` keeps the original engine tuning.
+regex = { workspace = true, features = ["std", "perf", "unicode"] }
+reqwest = { workspace = true, features = ["gzip", "json", "query", "rustls-no-provider"] }
+serde = { workspace = true, features = ["std", "derive"] }
+serde_json = { workspace = true, features = ["std"] }
+thiserror = { workspace = true, features = ["std"] }
+time = { workspace = true, features = ["std"] }
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
+url = { workspace = true, features = ["std"] }
+urlencoding = { workspace = true }
 y7dl = { path = "../y7dl", default-features = false }
 
 [dev-dependencies]
-rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
-tokio = { version = "1.53.1", default-features = false, features = ["macros", "rt-multi-thread"] }
+rustls = { workspace = true, features = ["ring", "std"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

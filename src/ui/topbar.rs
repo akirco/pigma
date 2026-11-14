@@ -8,7 +8,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use super::{BlockStyle, block::CornerBlock};
+use super::{BlockStyle, block::StyledBlock};
 use crate::{config::Theme, state::SearchState};
 
 pub(super) fn draw(
@@ -19,7 +19,7 @@ pub(super) fn draw(
     area: Rect,
 ) {
     let colors = bs.colors;
-    let block = CornerBlock::from_color(bs, bs.colors.bg);
+    let block = StyledBlock::from_color(bs, bs.colors.bg);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -38,7 +38,10 @@ pub(super) fn draw(
         .split(inner);
 
     let logo = Line::from(vec![
-        Span::styled("▓ ", Style::default().fg(colors.accent)),
+        Span::styled(
+            format!("{} ", crate::icons::LOGO),
+            Style::default().fg(colors.accent),
+        ),
         Span::styled(
             "PIGMA",
             Style::default()
@@ -59,7 +62,7 @@ pub(super) fn draw(
         match info.vip_type {
             10 | 11 => {
                 right_line.push_span(Span::styled(
-                    "♛VIP",
+                    format!("{}VIP", crate::icons::VIP),
                     Style::default()
                         .fg(colors.accent)
                         .add_modifier(Modifier::BOLD),
@@ -100,7 +103,10 @@ fn render_search(f: &mut Frame, search: &SearchState, colors: &Theme, area: Rect
             .split(area)
     };
 
-    let icon = Line::from(Span::styled("\u{F002}", Style::default().fg(colors.accent)));
+    let icon = Line::from(Span::styled(
+        crate::icons::SEARCH,
+        Style::default().fg(colors.accent),
+    ));
     f.render_widget(Paragraph::new(icon), chunks[0]);
 
     let value = &search.input.value;

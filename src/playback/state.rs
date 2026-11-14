@@ -2,12 +2,9 @@ use std::{sync::Arc, time::Duration};
 
 use ncm_api::SongInfo;
 
-use crate::queue::PlayMode;
+use super::{cover::CoverState, mode::PlayMode};
 
-use super::cover::CoverState;
-
-use super::lyrics::LyricLine;
-use crate::audio::EqualizerConfig;
+use crate::{config::EqualizerConfig, lyrics::LyricLine};
 
 /// Lower bound of the playback speed factor (keyboard `[`).
 pub const MIN_SPEED: f64 = 0.5;

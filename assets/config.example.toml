@@ -83,14 +83,30 @@ timeout_ms = 10000
 [border]
 # 是否显示边框
 enabled = true
-# 是否使用圆角边框
-rounded = false
+# 边框字符类型:
+# plain | rounded | double | thick
+# light_double_dashed | heavy_double_dashed
+# light_triple_dashed | heavy_triple_dashed
+# light_quadruple_dashed | heavy_quadruple_dashed
+# quadrant_inside | quadrant_outside
+style = "plain"
 # 边框颜色是否跟随角落颜色
 follow_corner_color = false
 # 边框渐变效果名称，同歌词渐变名称 (可选, 不设置则无渐变)，优先级最高
 border_gradient = "rainbow"
 # 边框渐变速度 (每秒变化量, 0 表示静态)
 border_gradient_speed = 0.005
+
+# =============================================================================
+# 内容布局
+# =============================================================================
+[content]
+# 每种内容使用表格(table)或双栏封面卡片(cards)
+# playlists 同时作用于歌单和排行榜
+songs = "table"
+playlists = "table"
+singers = "table"
+hot_search = "table"
 
 # =============================================================================
 # 播放器栏配置
@@ -153,6 +169,8 @@ accent = "#ffcc00"
 muted = "#00f0ff"
 border = "0"
 error = "#b000ff"
+# 可选: 选中卡片背景色, 省略时使用 surface/accent 混合色
+selection = "#3a2530"
 
 # =============================================================================
 # 自定义列定义

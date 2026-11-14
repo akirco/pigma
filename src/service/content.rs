@@ -1,10 +1,13 @@
 //! Endpoint content resolution and pagination: navigation endpoints, playlist
 //! detail, album/artist pages, and `load_more` for cloud disk + playlist tracks.
 
-use super::{ApiEndpoint, ApiService, arc_songs, content_result};
+use super::{
+    ApiEndpoint, ApiService,
+    api::{arc_songs, content_result},
+};
 use crate::{
+    lock::lock_recover,
     state::{ContentState, HotSearchKeywords, PaginationInfo},
-    utils::lock_recover,
 };
 
 impl ApiService {

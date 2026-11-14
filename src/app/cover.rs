@@ -1,12 +1,156 @@
 //! Album-cover pipeline: cache lookup → URL resolution (own pic or provider
-//! fallback) → download → decode/mask → apply to the playerbar cover state.
+//! fallback) → download → decode/mask → apply to the playerbar cover state,
+//! plus the in-memory thumbnails used by the content cards.
+
+use std::{
+    collections::{HashMap, HashSet},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use image::GenericImageView;
+use ratatui_image::protocol::StatefulProtocol;
 
 use super::App;
-use crate::{playback::CoverState, utils::lock_recover};
+use crate::{
+    config::ContentStyle, event::AppEvent, lock::lock_recover, playback::CoverState,
+    state::ContentState,
+};
+
+/// Minimum gap between coalesced redraws from one prefetch batch.
+const REDRAW_MIN_INTERVAL: Duration = Duration::from_millis(150);
+
+/// Cover thumbnails for the content cards, keyed by the original cover URL.
+pub(crate) type ContentCovers = Arc<Mutex<HashMap<String, StatefulProtocol>>>;
 
 impl App {
+    /// Fetch and decode thumbnails for the current content cards. Results stay
+    /// in memory for the session; `cover_requests` keeps in-flight URLs from
+    /// being requested twice by consecutive content loads.
+    pub(crate) fn prefetch_content_covers(&mut self) {
+        if self
+            .config
+            .content
+            .style_for(self.state.navigation.content.content_type())
+            != ContentStyle::Cards
+        {
+            return;
+        }
+        let content = self.state.navigation.content.as_ref();
+        let total = content.len();
+        // Short lists are fetched whole so their tails already have covers;
+        // long lists fetch the visible window plus a screen of margin.
+        let range = if total <= 60 {
+            0..total
+        } else {
+            let visible = &self.state.navigation.content_visible;
+            let margin = visible.len().max(8);
+            visible.start.saturating_sub(margin)..visible.end.saturating_add(margin).min(total)
+        };
+        let urls = content_cover_urls(content, range);
+        let covers = Arc::clone(&self.content_covers);
+        let requests = Arc::clone(&self.cover_requests);
+        let retry_after = Arc::clone(&self.cover_retry_after);
+        let now = std::time::Instant::now();
+        let missing: Vec<String> = urls
+            .into_iter()
+            .filter(|url| {
+                if lock_recover(&covers).contains_key(url)
+                    || lock_recover(&retry_after)
+                        .get(url)
+                        .is_some_and(|until| *until > now)
+                {
+                    return false;
+                }
+                lock_recover(&requests).insert(url.clone())
+            })
+            .collect();
+        if missing.is_empty() {
+            return;
+        }
+        log::debug!("content covers: total={total}, fetching={}", missing.len());
+
+        let http = self.cover_http.clone();
+        let picker = self.picker.clone();
+        let sender = self.events.sender();
+
+        tokio::spawn(async move {
+            // Fetch a few at a time: one slow/broken URL must not hold up every
+            // cover after it, and a whole screenful of requests at once makes
+            // image hosts rate-limit the tail.
+            let semaphore = Arc::new(tokio::sync::Semaphore::new(4));
+            let mut tasks = tokio::task::JoinSet::new();
+            // The event loop has no tick: every Redraw repaints the whole UI, so
+            // coalesce the per-cover signals into at most one per interval
+            // instead of one per thumbnail (up to 60 at once).
+            let pending_redraw = Arc::new(AtomicBool::new(false));
+            for url in missing {
+                let Ok(permit) = Arc::clone(&semaphore).acquire_owned().await else {
+                    break;
+                };
+                let http = http.clone();
+                let picker = picker.clone();
+                let covers = Arc::clone(&covers);
+                let requests = Arc::clone(&requests);
+                let retry_after = Arc::clone(&retry_after);
+                let pending_redraw = Arc::clone(&pending_redraw);
+                tasks.spawn(async move {
+                    let _permit = permit;
+                    let fetched =
+                        tokio::time::timeout(Duration::from_secs(15), fetch_cover(&http, &url))
+                            .await
+                            .ok()
+                            .flatten();
+                    let Some(bytes) = fetched else {
+                        log::warn!("content cover failed: {url}");
+                        lock_recover(&requests).remove(&url);
+                        lock_recover(&retry_after)
+                            .insert(url, std::time::Instant::now() + Duration::from_secs(30));
+                        return;
+                    };
+                    let protocol =
+                        tokio::task::spawn_blocking(move || thumb_protocol(&bytes, picker))
+                            .await
+                            .ok()
+                            .flatten();
+                    match protocol {
+                        Some(protocol) => {
+                            // Success must also clear the in-flight marker: the
+                            // covers map already prevents re-fetching, but
+                            // leaving the URL behind grows `requests` forever.
+                            lock_recover(&requests).remove(&url);
+                            lock_recover(&retry_after).remove(&url);
+                            lock_recover(&covers).insert(url, protocol);
+                            pending_redraw.store(true, Ordering::SeqCst);
+                        }
+                        None => {
+                            log::warn!("content cover decode failed: {url}");
+                            lock_recover(&requests).remove(&url);
+                            lock_recover(&retry_after)
+                                .insert(url, std::time::Instant::now() + Duration::from_secs(30));
+                        }
+                    }
+                });
+            }
+            let mut last_redraw: Option<std::time::Instant> = None;
+            while tasks.join_next().await.is_some() {
+                let due = last_redraw.is_none_or(|t| t.elapsed() >= REDRAW_MIN_INTERVAL);
+                if pending_redraw.load(Ordering::SeqCst) && due {
+                    pending_redraw.store(false, Ordering::SeqCst);
+                    let _ = sender.send(AppEvent::Redraw.into());
+                    last_redraw = Some(std::time::Instant::now());
+                }
+            }
+            // Flush a signal left over from the last throttled window.
+            if pending_redraw.swap(false, Ordering::SeqCst) {
+                let _ = sender.send(AppEvent::Redraw.into());
+            }
+        });
+    }
+
     /// Spawn the background cover pipeline for `song_id` (`own_pic` is the
     /// song's own cover URL, empty for sonar songs resolved via fallback
     /// search). Stale loaders are dropped by `apply_cover` when the song
@@ -116,6 +260,60 @@ impl App {
     }
 }
 
+/// Cover URLs around the selected card: a small window before it and enough
+/// after it to fill a screen and a half. Keeping this windowed means a long
+/// playlist only downloads the covers the user is actually approaching.
+fn content_cover_urls(content: &ContentState, range: std::ops::Range<usize>) -> Vec<String> {
+    let count = range.end.saturating_sub(range.start);
+    let mut seen = HashSet::new();
+    let mut urls = Vec::new();
+    let mut push = |url: &str| {
+        if !url.is_empty() && seen.insert(url.to_string()) {
+            urls.push(url.to_string());
+        }
+    };
+    match content {
+        ContentState::Songs(songs) => {
+            for song in songs.iter().skip(range.start).take(count) {
+                push(&song.pic_url);
+            }
+        }
+        ContentState::SongLists(lists) => {
+            for list in lists.iter().skip(range.start).take(count) {
+                push(&list.cover_img_url);
+            }
+        }
+        ContentState::TopLists(lists) => {
+            for list in lists.iter().skip(range.start).take(count) {
+                push(&list.cover);
+            }
+        }
+        ContentState::Singers(singers) => {
+            for singer in singers.iter().skip(range.start).take(count) {
+                push(&singer.pic_url);
+            }
+        }
+        _ => {}
+    }
+    urls
+}
+
+async fn fetch_cover(http: &reqwest::Client, url: &str) -> Option<Vec<u8>> {
+    let url = sized_cover_url(url, 120);
+    let response = http.get(url).send().await.ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    response.bytes().await.ok().map(|bytes| bytes.to_vec())
+}
+
+fn thumb_protocol(data: &[u8], picker: ratatui_image::picker::Picker) -> Option<StatefulProtocol> {
+    let image = image::load_from_memory(data).ok()?;
+    // Keep the whole image so the card shows its subject; the card sizes the
+    // cover by the real terminal font ratio and uses `Resize::Fit` to scale.
+    Some(picker.new_resize_protocol(image.thumbnail(256, 256)))
+}
+
 /// Longest side a cover is decoded at. The playerbar cover is only a handful of
 /// terminal cells, and third-party URLs (Bilibili) ignore NetEase's
 /// `?param=200y200`, so a 3240x2025 cover would otherwise be decoded at full
@@ -140,7 +338,7 @@ fn build_cover_protocol(
     // The inner call has dropped the decoded buffers by now. glibc keeps freed
     // pages on its free lists, so return them to the OS instead of leaving RSS
     // at the decode peak for the rest of the session.
-    crate::utils::process::trim_heap();
+    crate::playback::memory::trim_heap();
     prepared
 }
 

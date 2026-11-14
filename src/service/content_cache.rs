@@ -16,9 +16,9 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    lock::lock_recover,
     state::{ContentState, PaginationInfo},
     time::unix_secs,
-    utils::lock_recover,
 };
 
 #[derive(Serialize, Deserialize)]
@@ -132,7 +132,7 @@ impl ContentCache {
 
     /// [`Self::save_content_cache`] for callers that already hold `write_lock`.
     fn write_content_cache_locked(&self, api: &str, json: &str) {
-        if let Err(e) = crate::store::write_atomic(&self.content_path(api), json.as_bytes()) {
+        if let Err(e) = crate::persist::write_atomic(&self.content_path(api), json.as_bytes()) {
             log::warn!("Failed to write content cache for {api}: {e}");
         }
     }
@@ -220,8 +220,8 @@ mod tests {
 
     use super::ContentCache;
     use crate::{
+        lock::lock_recover,
         state::{ContentState, PaginationInfo},
-        utils::lock_recover,
     };
 
     #[test]
