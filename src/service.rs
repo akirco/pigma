@@ -6,15 +6,13 @@
 //! - `content`: navigation endpoints, playlist/album/artist pages, `load_more`
 //! - `liked`: liked songs and the lazy playlist `trackIds` cache
 //! - `lyrics`: NetEase + sonar lyrics with cache integration
-//! - `library`: local music library scan (`local` + `scan`)
+//! - `library`: local music library (`~/Music` scan)
 //! - `search`: NCM song search, shared TUI/IPC execution and result registries
-//! - `auth`: QR login and login-status lookups
-//! - `songs`: playable song URLs and heartbeat recommendations
-//! - `cloud`: cloud-disk upload
+//!
+//! `api` holds `ApiService` itself, its thin NCM passthroughs (login, song
+//! URLs, heartbeat, cloud upload) and the shared mapping helpers.
 
 mod api;
-mod auth;
-mod cloud;
 mod content;
 mod content_cache;
 mod endpoint;
@@ -22,7 +20,6 @@ mod library;
 mod liked;
 mod lyrics;
 mod search;
-mod songs;
 
 pub use api::ApiService;
 pub use content_cache::ContentCache;
