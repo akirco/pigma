@@ -101,8 +101,13 @@ pub enum PlaybackEvent {
         lyrics: Vec<LyricLine>,
         translated_lyrics: Vec<LyricLine>,
     },
-    HeartbeatSong(SongInfo),
-    HeartbeatFallback,
+    HeartbeatSong {
+        request: u64,
+        song: SongInfo,
+    },
+    HeartbeatFallback {
+        request: u64,
+    },
     SetPlaylistId(u64),
     LikeSong(u64, bool),
     DislikeSong(u64),

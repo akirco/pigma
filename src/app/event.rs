@@ -216,11 +216,11 @@ impl App {
             } => self
                 .playback
                 .on_lyrics_loaded(song_id, lyrics, translated_lyrics),
-            PlaybackEvent::HeartbeatSong(song) => {
-                self.playback.play_heartbeat_song(song);
+            PlaybackEvent::HeartbeatSong { request, song } => {
+                self.playback.play_heartbeat_song(request, song);
             }
-            PlaybackEvent::HeartbeatFallback => {
-                self.playback.on_heartbeat_fallback();
+            PlaybackEvent::HeartbeatFallback { request } => {
+                self.playback.on_heartbeat_fallback(request);
             }
             PlaybackEvent::SetPlaylistId(id) => {
                 // After the content (re)loads, the previous "全量已入队" marker is stale.

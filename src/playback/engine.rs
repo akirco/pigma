@@ -8,6 +8,8 @@ mod queueing;
 mod session;
 mod transport;
 
+use heartbeat::HeartbeatGate;
+
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -86,6 +88,8 @@ pub struct PlaybackEngine {
     /// switches songs so a stale resolve neither consumes bandwidth nor sends a
     /// `Play` command for a song that is no longer current.
     current_resolve: Option<tokio::task::JoinHandle<()>>,
+    /// Invalidates late heartbeat API responses (see `heartbeat::HeartbeatGate`).
+    heartbeat: HeartbeatGate,
 }
 
 impl PlaybackEngine {
@@ -132,6 +136,7 @@ impl PlaybackEngine {
             consecutive_errors: 0,
             liked_ids,
             current_resolve: None,
+            heartbeat: HeartbeatGate::default(),
         };
         this.restore_session();
         this
@@ -242,7 +247,15 @@ impl PlaybackEngine {
         self.queue.replace_with(queue);
     }
 
+    /// Drop any in-flight heartbeat response: a song change, pause, manual
+    /// navigation or mode switch means the response is no longer wanted.
+    pub(super) fn invalidate_heartbeat_request(&mut self) {
+        self.heartbeat.invalidate();
+    }
+
     pub(super) fn start_current_song(&mut self, seek_time: Option<Duration>) {
+        // Starting any song makes an in-flight heartbeat response stale.
+        self.invalidate_heartbeat_request();
         // Cancel any in-flight resolve for a previously requested song before
         // starting a new one, so a stale network request cannot finish late and
         // send a `Play` command for the wrong song (or waste bandwidth).

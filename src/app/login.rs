@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 
 use tokio::time::{Duration, sleep};
 
@@ -9,17 +12,30 @@ use crate::{
     utils::lock_recover,
 };
 
+/// Whether a QR-login task is still the newest one the user started.
+fn qr_generation_is_current(generation: &AtomicU64, expected: u64) -> bool {
+    generation.load(Ordering::SeqCst) == expected
+}
+
 impl App {
     pub(super) fn handle_login(&mut self) {
         let login = &mut self.state.login;
         login.loading = true;
         login.error = None;
 
+        // A new login attempt invalidates any QR polling still running from a
+        // previous attempt (and any older in-flight QR-create request).
+        let generation = self.qr_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let qr_generation = Arc::clone(&self.qr_generation);
         let service = self.service.clone();
         let sender = self.state.events.sender();
 
         tokio::spawn(async move {
-            match service.login_qr_create().await {
+            let result = service.login_qr_create().await;
+            if !qr_generation_is_current(&qr_generation, generation) {
+                return;
+            }
+            match result {
                 Ok((url, key)) => {
                     send_event(&sender, AuthEvent::QRCreated { url, key }.into());
                 }
@@ -31,6 +47,8 @@ impl App {
     }
 
     pub(super) fn handle_login_success(&mut self, info: ncm_api::LoginInfo) {
+        // Stop any QR poll still in flight; the login is complete.
+        self.qr_generation.fetch_add(1, Ordering::SeqCst);
         self.toast(format!("登录成功: {}", info.nickname));
         let uid = info.uid;
         let was_logged_in = self.state.navigation.user.is_some();
@@ -66,6 +84,8 @@ impl App {
     }
 
     pub(super) fn handle_login_error(&mut self, e: String) {
+        // A terminal error also ends any QR polling still running.
+        self.qr_generation.fetch_add(1, Ordering::SeqCst);
         self.toast(format!("登录失败: {}", e));
         self.state.login.loading = false;
         self.state.login.error = Some(e);
@@ -80,49 +100,72 @@ impl App {
         self.state.login.qr_key = key.clone();
         self.state.login.qr_status_text = "等待扫码...".to_string();
 
+        // Starting to poll this QR supersedes any previous polling task.
+        let generation = self.qr_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let qr_generation = Arc::clone(&self.qr_generation);
         let service = self.service.clone();
         let sender = self.state.events.sender();
         tokio::spawn(async move {
             let mut scanned = false;
             for _ in 0..150 {
                 sleep(Duration::from_secs(2)).await;
+                if !qr_generation_is_current(&qr_generation, generation) {
+                    return;
+                }
                 match service.login_qr_check(&key).await {
-                    Ok(resp) => match resp.code {
-                        803 => {
-                            match service.login_status().await {
-                                Ok(info) => {
-                                    send_event(&sender, AuthEvent::Success(info).into());
+                    Ok(resp) => {
+                        if !qr_generation_is_current(&qr_generation, generation) {
+                            return;
+                        }
+                        match resp.code {
+                            803 => {
+                                match service.login_status().await {
+                                    Ok(info) => {
+                                        if !qr_generation_is_current(&qr_generation, generation) {
+                                            return;
+                                        }
+                                        send_event(&sender, AuthEvent::Success(info).into());
+                                    }
+                                    Err(e) => {
+                                        if !qr_generation_is_current(&qr_generation, generation) {
+                                            return;
+                                        }
+                                        send_event(&sender, AuthEvent::Error(e.to_string()).into());
+                                    }
                                 }
-                                Err(e) => {
-                                    send_event(&sender, AuthEvent::Error(e.to_string()).into());
-                                }
+                                return;
                             }
-                            return;
+                            800 => {
+                                send_event(
+                                    &sender,
+                                    AuthEvent::Error("二维码已过期，请重新生成".to_string()).into(),
+                                );
+                                return;
+                            }
+                            802 if !scanned => {
+                                scanned = true;
+                                send_event(
+                                    &sender,
+                                    AuthEvent::QRStatus("已扫码，请在手机上确认...".to_string())
+                                        .into(),
+                                );
+                            }
+                            802 => {}
+                            _ => {}
                         }
-                        800 => {
-                            send_event(
-                                &sender,
-                                AuthEvent::Error("二维码已过期，请重新生成".to_string()).into(),
-                            );
-                            return;
-                        }
-                        802 if !scanned => {
-                            scanned = true;
-                            send_event(
-                                &sender,
-                                AuthEvent::QRStatus("已扫码，请在手机上确认...".to_string()).into(),
-                            );
-                        }
-                        802 => {}
-                        _ => {}
-                    },
+                    }
                     Err(e) => {
+                        if !qr_generation_is_current(&qr_generation, generation) {
+                            return;
+                        }
                         send_event(&sender, AuthEvent::Error(e.to_string()).into());
                         return;
                     }
                 }
             }
-            send_event(&sender, AuthEvent::Error("登录超时".to_string()).into());
+            if qr_generation_is_current(&qr_generation, generation) {
+                send_event(&sender, AuthEvent::Error("登录超时".to_string()).into());
+            }
         });
     }
 

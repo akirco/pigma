@@ -21,7 +21,7 @@ use search::SearchHost;
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, atomic::AtomicU64},
     time::Instant,
 };
 
@@ -75,6 +75,9 @@ pub struct App {
     /// once, so later events (IPC, mouse...) cannot spawn duplicate requests
     /// that would double-toast and re-fetch liked IDs.
     login_status_requested: bool,
+    /// Invalidates late QR-login polling responses when the user starts a new
+    /// login or the flow finishes.
+    qr_generation: Arc<AtomicU64>,
 }
 
 impl App {
@@ -226,6 +229,7 @@ impl App {
             ipc: IpcState::new(),
             playerbar_area: Rect::default(),
             login_status_requested: false,
+            qr_generation: Arc::new(AtomicU64::new(0)),
         })
     }
 

@@ -84,6 +84,9 @@ impl PlaybackEngine {
         if songs.is_empty() || index >= songs.len() {
             return;
         }
+        // Loading a different queue must drop any heartbeat response still in
+        // flight; otherwise it could start playing behind this loaded queue.
+        self.invalidate_heartbeat_request();
         let key = self.dated_key(key);
         self.activate_queue(&key);
         self.playing_queue_key = self.active_queue_key.clone();
@@ -214,6 +217,8 @@ impl PlaybackEngine {
     }
 
     pub fn prev(&mut self) {
+        // Manual navigation invalidates any heartbeat response in flight.
+        self.invalidate_heartbeat_request();
         if self.queue.is_empty() {
             return;
         }
@@ -257,12 +262,16 @@ impl PlaybackEngine {
             // Pausing stops progress events; a seek that was still in flight
             // would otherwise leave the 32ms seeking poll spinning forever.
             self.state.seeking = false;
+            // Do not let a pending heartbeat response start the next song while
+            // the user is trying to pause.
+            self.invalidate_heartbeat_request();
             self.controller.pause();
         }
         self.state.paused = !self.state.paused;
     }
 
     pub(super) fn stop(&mut self) {
+        self.invalidate_heartbeat_request();
         self.controller.stop();
         self.queue.current_index = None;
         self.state.playing = false;
@@ -275,6 +284,7 @@ impl PlaybackEngine {
     }
 
     pub fn clear_queue(&mut self) {
+        self.invalidate_heartbeat_request();
         // Only stop the current playback when the cleared queue is the one the
         // playing song came from. Clearing a different queue (viewed on the
         // Playlist page after switching) must not kill the current song.

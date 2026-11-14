@@ -109,6 +109,8 @@ impl PlaybackEngine {
     }
 
     pub(in crate::playback) fn set_mode(&mut self, mode: PlayMode) {
+        // Any response for the previous mode is no longer relevant.
+        self.invalidate_heartbeat_request();
         self.state.mode = mode;
         self.strategy =
             mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);
