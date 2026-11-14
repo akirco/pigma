@@ -141,8 +141,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
     // Recorded after `colors` (borrowed from `app.theme_registry`) is last
     // used: the setter takes `&mut App` and cannot overlap that borrow.
+    //
+    // Rendering stays side-effect free: cover prefetching reads the visible
+    // window and hits the network, so it belongs to the caller (`App::draw`),
+    // not here.
     app.set_playerbar_area(playerbar_rect);
-    app.prefetch_content_covers();
 }
 
 /// Main content page: navigation sidebar/topbar, content title block and table.

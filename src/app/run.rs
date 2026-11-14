@@ -73,5 +73,11 @@ impl App {
 
     fn draw(&mut self, frame: &mut Frame) {
         ui::draw(frame, self);
+        // Prefetch after the frame: the renderer is what settles on the visible
+        // window this pass, so the URL list is only accurate once `ui::draw`
+        // has returned. Keeping it here leaves `ui` free of network work.
+        // `prefetch_content_covers` skips URLs already cached or in flight, so
+        // one call per frame costs a pass over the visible window at most.
+        self.prefetch_content_covers();
     }
 }
