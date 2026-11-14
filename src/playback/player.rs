@@ -162,6 +162,14 @@ struct PlayerTask {
     sink_dev_id: Option<String>,
     follow_poll: u32,
     follow_diff: u32,
+    /// Whether a device failure was reported to the UI; throttles the 200ms
+    /// rebuild retries so a missing device logs/toasts once, not five times a
+    /// second.
+    device_error_reported: bool,
+    /// Playback to restore once a sink can be opened. Kept across failed
+    /// rebuild retries so a device that comes back still resumes the current
+    /// song at the same position.
+    pending_resume: Option<(Option<Duration>, bool)>,
     event_tx: mpsc::UnboundedSender<Event>,
 }
 
@@ -200,6 +208,8 @@ impl PlayerTask {
             sink_dev_id: None,
             follow_poll: 0,
             follow_diff: 0,
+            device_error_reported: false,
+            pending_resume: None,
             event_tx,
         }
     }
@@ -212,6 +222,9 @@ impl PlayerTask {
         // Lazy-init the audio sink before first playback.
         if self.ensure_sink() {
             self.player = self.start_playback(initial_seek_time);
+        } else {
+            // No device yet; remember what to start once the retry loop gets one.
+            self.pending_resume = Some((initial_seek_time, false));
         }
 
         loop {
@@ -255,15 +268,48 @@ impl PlayerTask {
         self.seek_offset + self.speed.position()
     }
 
-    fn ensure_sink(&mut self) -> bool {
-        if self.sink.is_none()
-            && let Ok(mut s) = create_sink(self.health.clone())
-        {
-            s.log_on_drop(false);
-            self.sink = Some(s);
-            self.sink_dev_id = current_default_id();
+    /// Report a missing/broken output device once. Rebuild retries happen every
+    /// progress tick; without this guard each retry would log and toast.
+    fn report_device_error(&mut self, message: String) {
+        if self.device_error_reported {
+            return;
         }
-        self.sink.is_some()
+        self.device_error_reported = true;
+        log::warn!("{message}");
+        let _ = self
+            .event_tx
+            .send(PlaybackEvent::DeviceError(Some(message)).into());
+    }
+
+    fn clear_device_error(&mut self) {
+        if !self.device_error_reported {
+            return;
+        }
+        self.device_error_reported = false;
+        let _ = self.event_tx.send(PlaybackEvent::DeviceError(None).into());
+    }
+
+    fn ensure_sink(&mut self) -> bool {
+        if self.sink.is_some() {
+            return true;
+        }
+        match create_sink(self.health.clone()) {
+            Ok(mut s) => {
+                s.log_on_drop(false);
+                self.sink = Some(s);
+                self.sink_dev_id = current_default_id();
+                self.health.device_lost.store(false, Ordering::Relaxed);
+                self.clear_device_error();
+                true
+            }
+            Err(e) => {
+                // Make the main loop retry opening the device; the pending
+                // playback state (if any) is retained by the caller.
+                self.health.device_lost.store(true, Ordering::Relaxed);
+                self.report_device_error(format!("音频设备不可用: {e}"));
+                false
+            }
+        }
     }
 
     fn start_playback(&mut self, seek_time: Option<Duration>) -> Option<rodio::Player> {
@@ -311,6 +357,12 @@ impl PlayerTask {
     /// device. If `resume_at`/`was_paused` are provided, playback continues from
     /// there on the fresh stream.
     fn rebuild_sink(&mut self, resume_at: Option<Duration>, was_paused: bool) {
+        // Retries arrive with `resume_at == None` once the failed attempt has
+        // dropped the player; keep the first position so a device that comes
+        // back still resumes the song instead of silently stopping.
+        if resume_at.is_some() {
+            self.pending_resume = Some((resume_at, was_paused));
+        }
         self.player = None;
         self.sink = None;
         match create_sink(self.health.clone()) {
@@ -320,24 +372,30 @@ impl PlayerTask {
                 self.sink_dev_id = current_default_id();
                 self.health.device_lost.store(false, Ordering::Relaxed);
                 self.stall_ticks = 0;
+                self.clear_device_error();
+                let resume = self.pending_resume.take();
                 log::info!(
                     "音频设备已重建{}",
-                    resume_at
+                    resume
+                        .as_ref()
+                        .and_then(|(at, _)| *at)
                         .map(|t| format!("，从 {t:?} 继续"))
                         .unwrap_or_default()
                 );
-                if let Some(t) = resume_at {
+                if let Some((seek_time, was_paused)) = resume {
                     let _ = lock_recover(&self.reader.0).seek(SeekFrom::Start(0));
-                    self.player = self.start_playback(Some(t));
-                }
-                if was_paused && let Some(ref p) = self.player {
-                    p.pause();
+                    self.player = self.start_playback(seek_time);
+                    if was_paused && let Some(ref p) = self.player {
+                        p.pause();
+                    }
                 }
             }
             Err(e) => {
                 // Keep device_lost set so the loop retries next tick
-                // (e.g. device still reconnecting).
-                log::warn!("重建音频设备失败，稍后重试: {e}");
+                // (e.g. device still reconnecting). The error is reported once;
+                // progress-tick retries stay quiet.
+                self.health.device_lost.store(true, Ordering::Relaxed);
+                self.report_device_error(format!("音频设备不可用: {e}"));
             }
         }
     }
@@ -352,9 +410,11 @@ impl PlayerTask {
                 }
                 self.player = None;
                 self.reader = input;
+                self.pending_resume = None;
                 self.player = if self.ensure_sink() {
                     self.start_playback(seek_time)
                 } else {
+                    self.pending_resume = Some((seek_time, false));
                     None
                 };
             }
@@ -371,9 +431,11 @@ impl PlayerTask {
                 }
                 self.player = None;
                 let _ = lock_recover(&self.reader.0).seek(SeekFrom::Start(0));
+                self.pending_resume = None;
                 self.player = if self.ensure_sink() {
                     self.start_playback(Some(seek_time))
                 } else {
+                    self.pending_resume = Some((Some(seek_time), was_paused));
                     None
                 };
                 if was_paused && let Some(ref p) = self.player {
@@ -385,6 +447,9 @@ impl PlayerTask {
                     p.stop();
                 }
                 self.player = None;
+                self.pending_resume = None;
+                self.health.device_lost.store(false, Ordering::Relaxed);
+                self.clear_device_error();
                 self.reader = SharedReader(Arc::new(Mutex::new(Box::new(std::io::empty()))));
                 self.total_duration = None;
                 self.seek_offset = Duration::default();
@@ -393,10 +458,18 @@ impl PlayerTask {
                 if let Some(ref p) = self.player {
                     p.pause();
                 }
+                // A pause arriving while the device is being reopened must
+                // survive into the pending restart.
+                if let Some((_, paused)) = self.pending_resume.as_mut() {
+                    *paused = true;
+                }
             }
             ControlCmd::Resume => {
                 if let Some(ref p) = self.player {
                     p.play();
+                }
+                if let Some((_, paused)) = self.pending_resume.as_mut() {
+                    *paused = false;
                 }
             }
             ControlCmd::SetVolume(v) => {

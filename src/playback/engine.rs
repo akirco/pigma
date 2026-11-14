@@ -194,6 +194,10 @@ impl PlaybackEngine {
         self.state.on_progress(position, total);
     }
 
+    pub fn on_device_error(&mut self, message: Option<String>) {
+        self.state.on_device_error(message);
+    }
+
     pub fn on_playback_error(&mut self, err: String) {
         // Buffer underruns/overruns are transient events (e.g. YouTube streams downloading
         // slower than playback), and rodio recovers automatically, so ignore them to avoid

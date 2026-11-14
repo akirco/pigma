@@ -96,6 +96,9 @@ pub enum PlaybackEvent {
     },
     Finished,
     Error(String),
+    /// Output-device failure (`Some`) or recovery (`None`); never advances the
+    /// queue, unlike a decode error.
+    DeviceError(Option<String>),
     LyricsLoaded {
         song_id: u64,
         lyrics: Vec<LyricLine>,

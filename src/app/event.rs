@@ -209,6 +209,9 @@ impl App {
             PlaybackEvent::Error(e) => {
                 self.playback.on_playback_error(e);
             }
+            PlaybackEvent::DeviceError(message) => {
+                self.playback.on_device_error(message);
+            }
             PlaybackEvent::LyricsLoaded {
                 song_id,
                 lyrics,

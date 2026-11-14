@@ -89,7 +89,7 @@ pub(super) trait Playerbar {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        if let Some(err) = &player.error {
+        if let Some(err) = player.device_error.as_ref().or(player.error.as_ref()) {
             f.render_widget(
                 Paragraph::new(format!(" ⚠  {}", err)).style(Style::default().fg(colors.error)),
                 inner,
