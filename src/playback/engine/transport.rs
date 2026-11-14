@@ -3,11 +3,11 @@
 
 use std::time::Duration;
 
-use super::{
-    PlaybackEngine,
-    mode::{self, PlayMode},
+use super::PlaybackEngine;
+use crate::{
+    audio::{EqualizerConfig, SpeedMode},
+    queue::mode::{self, PlayMode},
 };
-use crate::{config::EqualizerConfig, playback::stretch::SpeedMode};
 
 impl PlaybackEngine {
     pub fn seek_relative(&mut self, delta_secs: f64) {

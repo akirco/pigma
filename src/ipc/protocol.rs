@@ -71,31 +71,3 @@ pub enum MsgAction {
         playlist: Option<usize>,
     },
 }
-
-/// Runtime event dispatched to the app loop for a `msg` action.
-///
-/// The enum itself lives in [`crate::event`] (as the payload of
-/// `AppEvent::Ipc`); only the wire-to-runtime conversion stays here so the
-/// event module does not depend on `ipc`.
-impl From<MsgAction> for crate::event::IpcEvent {
-    fn from(action: MsgAction) -> Self {
-        use crate::event::IpcEvent;
-        match action {
-            MsgAction::Previous => IpcEvent::Previous,
-            MsgAction::Next => IpcEvent::Next,
-            MsgAction::Pause => IpcEvent::Pause,
-            MsgAction::Play { song_id } => IpcEvent::Play { song_id },
-            MsgAction::TogglePlay => IpcEvent::TogglePlay,
-            MsgAction::Volume { delta, absolute } => IpcEvent::Volume { delta, absolute },
-            MsgAction::Speed { delta, absolute } => IpcEvent::Speed { delta, absolute },
-            MsgAction::Pitch { locked } => IpcEvent::Pitch { locked },
-            MsgAction::Mode => IpcEvent::Mode,
-            MsgAction::Like => IpcEvent::Like,
-            MsgAction::Dislike => IpcEvent::Dislike,
-            MsgAction::ToggleLike => IpcEvent::ToggleLike,
-            MsgAction::SwitchList { endpoint, playlist } => {
-                IpcEvent::SwitchList { endpoint, playlist }
-            }
-        }
-    }
-}

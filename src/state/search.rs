@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::text_input::TextInput;
+use crate::tui::TextInput;
 
 /// A search backend selectable in the search bar. `Ncm` is the default and
 /// searches NetEase Cloud Music; the rest delegate to sonar providers.

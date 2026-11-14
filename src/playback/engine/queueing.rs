@@ -5,12 +5,12 @@ use std::{sync::Arc, time::Duration};
 
 use ncm_api::SongInfo;
 
-use super::{
-    PlaybackEngine,
-    mode::{self, PlayMode},
-};
+use super::PlaybackEngine;
 use crate::{
-    playback::{queue::PlaylistQueue, storage::PlaylistStorage},
+    queue::{
+        PlaylistQueue, PlaylistStorage,
+        mode::{self, PlayMode},
+    },
     utils::lock_recover,
 };
 

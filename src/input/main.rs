@@ -5,7 +5,7 @@ use crate::{
     event::{CommandEvent, NavigationEvent, PlaybackEvent},
     service::ApiEndpoint,
     state::{ContentState, Page, TableMode},
-    text_input::TextInput,
+    tui::TextInput,
 };
 
 pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Result<()> {

@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use super::App;
+use super::{App, start_server};
 use crate::{state::Page, utils::lock_recover};
 
 impl App {
@@ -17,7 +17,7 @@ impl App {
         playlist_index: Option<usize>,
     ) -> eyre::Result<()> {
         self.state.navigation.page = Page::Main;
-        let _ipc_guard = crate::ipc::start_server(
+        let _ipc_guard = start_server(
             Arc::clone(&self.ipc.status),
             Arc::clone(&self.ipc.queue),
             self.ipc.status_tx.clone(),

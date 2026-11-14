@@ -1,0 +1,605 @@
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
+};
+
+use ncm_api::SongInfo;
+use serde::{Deserialize, Serialize};
+
+use super::{NCM_SEARCH_QUEUE_KEY, PlayMode, THIRD_PARTY_QUEUE_KEY};
+use crate::store::sanitize_filename;
+
+/// File name for the unified NCM search queue.
+pub(crate) const NCM_SEARCH_FILE: &str = "ncm_search.json";
+/// Stable id for the NCM search queue: a single shared file, no date/hash.
+const NCM_SEARCH_ID: &str = "q_ncm_search";
+
+/// File name for the unified third-party (sonar) search queue.
+pub(crate) const THIRD_PARTY_FILE: &str = "thirdparty_source.json";
+/// Stable id for the third-party queue: a single shared file, no date/hash.
+const THIRD_PARTY_ID: &str = "q_thirdparty";
+
+/// Map a fixed search-queue key to its stable `(id, file)` pair.
+fn special_queue(key: &str) -> Option<(&'static str, &'static str)> {
+    match key {
+        NCM_SEARCH_QUEUE_KEY => Some((NCM_SEARCH_ID, NCM_SEARCH_FILE)),
+        THIRD_PARTY_QUEUE_KEY => Some((THIRD_PARTY_ID, THIRD_PARTY_FILE)),
+        _ => None,
+    }
+}
+
+/// Reverse lookup: a fixed queue `id` to its `(display name, file)` pair.
+fn special_queue_by_id(id: &str) -> Option<(&'static str, &'static str)> {
+    match id {
+        NCM_SEARCH_ID => Some((NCM_SEARCH_QUEUE_KEY, NCM_SEARCH_FILE)),
+        THIRD_PARTY_ID => Some((THIRD_PARTY_QUEUE_KEY, THIRD_PARTY_FILE)),
+        _ => None,
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct SavedQueue {
+    /// Legacy display key, only present in queues written before the
+    /// `q_<hash>-<display>.json` naming was introduced. New files keep the
+    /// display name in the file name instead.
+    #[serde(default)]
+    pub key: String,
+    pub queue: Vec<SongInfo>,
+    #[serde(deserialize_with = "deserialize_history")]
+    pub history: Vec<u64>,
+    pub current_index: Option<usize>,
+    pub mode: PlayMode,
+    pub volume: f64,
+    /// Persisted playback speed factor. Absent in files written before speed
+    /// support, where the default is normal (1.0x).
+    #[serde(default = "default_speed")]
+    pub speed: f64,
+    /// Whether the speed keeps the pitch (WSOLA). Absent in files written
+    /// before the mode existed, where pitch keeping is the default.
+    #[serde(default = "default_true")]
+    pub pitch_locked: bool,
+    #[serde(default)]
+    pub progress: f64,
+}
+
+fn default_speed() -> f64 {
+    1.0
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Deserialize the on-disk `history` field, which may be either the new
+/// compact format (`[u64]`) or the legacy format (`[SongInfo]`). In the legacy
+/// case we keep only the song ids; if a value is malformed we drop it so the
+/// rest of the queue still loads.
+fn deserialize_history<'de, D>(deserializer: D) -> Result<Vec<u64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::Array(items) => {
+            let mut ids = Vec::with_capacity(items.len());
+            for item in items {
+                match item {
+                    serde_json::Value::Number(n) => {
+                        if let Some(id) = n.as_u64() {
+                            ids.push(id);
+                        }
+                    }
+                    serde_json::Value::Object(obj) => {
+                        if let Some(serde_json::Value::Number(n)) = obj.get("id")
+                            && let Some(id) = n.as_u64()
+                        {
+                            ids.push(id);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Ok(ids)
+        }
+        _ => Err(Error::custom("history must be an array")),
+    }
+}
+
+struct SavedQueueRef<'a> {
+    queue: &'a [Arc<SongInfo>],
+    history: &'a [u64],
+    current_index: Option<usize>,
+    mode: &'a PlayMode,
+    volume: f64,
+    speed: f64,
+    pitch_locked: bool,
+    progress: f64,
+}
+
+impl Serialize for SavedQueueRef<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut s = serializer.serialize_struct("SavedQueueRef", 8)?;
+        let queue: Vec<&SongInfo> = self.queue.iter().map(|s| s.as_ref()).collect();
+        s.serialize_field("queue", &queue)?;
+        s.serialize_field("history", &self.history)?;
+        s.serialize_field("current_index", &self.current_index)?;
+        s.serialize_field("mode", self.mode)?;
+        s.serialize_field("volume", &self.volume)?;
+        s.serialize_field("speed", &self.speed)?;
+        s.serialize_field("pitch_locked", &self.pitch_locked)?;
+        s.serialize_field("progress", &self.progress)?;
+        s.end()
+    }
+}
+
+/// Write a queue file and its active-queue marker atomically.
+///
+/// Both go through [`crate::store::write_atomic`] (temp file + fsync + rename),
+/// so a crash mid-save leaves the previous queue/session loadable instead of a
+/// truncated JSON file that fails to restore on the next start.
+fn write_queue_files(queue_path: &Path, active_path: &Path, id: &str, json: &str) -> bool {
+    let queue_ok = match crate::store::write_atomic(queue_path, json.as_bytes()) {
+        Ok(()) => true,
+        Err(e) => {
+            log::warn!("Failed to save queue {}: {e}", queue_path.display());
+            false
+        }
+    };
+    let active_ok = match crate::store::write_atomic(active_path, id.as_bytes()) {
+        Ok(()) => true,
+        Err(e) => {
+            log::warn!("Failed to save active queue marker: {e}");
+            false
+        }
+    };
+    // Both files must match: advancing the save sequence after a partial write
+    // would let a stale queue stay paired with a newer active-queue marker.
+    queue_ok && active_ok
+}
+
+/// Serializes queue snapshots so disk order always follows save order.
+///
+/// `save_queue` snapshots are written from detached blocking tasks, which may
+/// finish in any order; without a guard an older snapshot can land after a
+/// newer one (and after the shutdown save), so the next start restores the
+/// wrong queue or playhead. Each save takes a monotonically increasing sequence
+/// and only the highest sequence is allowed to write.
+#[derive(Default)]
+struct SaveGate {
+    next_seq: AtomicU64,
+    last_written: Mutex<u64>,
+}
+
+impl SaveGate {
+    fn next_seq(&self) -> u64 {
+        self.next_seq.fetch_add(1, Ordering::Relaxed) + 1
+    }
+
+    /// Skip work for a snapshot that is already superseded.
+    fn is_stale(&self, seq: u64) -> bool {
+        seq <= *self.last_written.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn commit(&self, seq: u64, queue_path: &Path, active_path: &Path, id: &str, json: &str) {
+        // Hold the lock across the check + write: a lower sequence that reaches
+        // the lock later must not overwrite the newer snapshot.
+        let mut last = self.last_written.lock().unwrap_or_else(|e| e.into_inner());
+        if seq <= *last {
+            return;
+        }
+        if write_queue_files(queue_path, active_path, id, json) {
+            *last = seq;
+        }
+    }
+}
+
+pub(crate) struct PlaylistStorage {
+    base_dir: PathBuf,
+    save_gate: Arc<SaveGate>,
+}
+
+impl PlaylistStorage {
+    /// `base_dir` is the pigma cache root (`~/.cache/pigma`); playlists live in
+    /// its `playlists/` subdirectory.
+    pub(crate) fn new(base_dir: PathBuf) -> Self {
+        let base_dir = base_dir.join("playlists");
+        let _ = fs::create_dir_all(&base_dir);
+        Self {
+            base_dir,
+            save_gate: Arc::new(SaveGate::default()),
+        }
+    }
+
+    /// Records which per-key queue was active at last shutdown.
+    fn active_path(&self) -> PathBuf {
+        self.base_dir.join("active_queue.txt")
+    }
+
+    /// Stable id for a queue: `q_<fnv1a64(key)>`, or a fixed id for the unified
+    /// search queues. This is the real index used by `active_queue.txt` and for
+    /// loading/saving; display names are only for humans and must never be
+    /// re-hashed as the id.
+    pub(crate) fn queue_id(key: &str) -> String {
+        if let Some((id, _)) = special_queue(key) {
+            id.to_string()
+        } else {
+            format!("q_{}", Self::queue_hash(key))
+        }
+    }
+
+    /// File for a queue, `q_<hash>-<display>.json`. The `q_<hash>` prefix is
+    /// the real index; the display suffix is only for humans. Search queues
+    /// always land in their single shared file.
+    fn queue_path(&self, id: &str, display: &str) -> PathBuf {
+        if let Some((_, file)) = special_queue_by_id(id) {
+            return self.base_dir.join(file);
+        }
+        self.base_dir
+            .join(format!("{id}-{}.json", sanitize_filename(display)))
+    }
+
+    fn queue_hash(key: &str) -> String {
+        let mut hash: u64 = 0xcbf29ce484222325;
+        for b in key.bytes() {
+            hash ^= u64::from(b);
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+        format!("{hash:016x}")
+    }
+
+    /// All persisted queues as `(id, display)` pairs, for the Playlist page tab
+    /// bar and queue switching. The id is canonical; display is for humans.
+    pub(crate) fn list_queues(&self) -> Vec<(String, String)> {
+        let mut queues = Vec::new();
+        if let Ok(entries) = fs::read_dir(&self.base_dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if let Some(pair) = self.queue_id_display_from_name(&name) {
+                    queues.push(pair);
+                }
+            }
+        }
+        for (id, file) in [NCM_SEARCH_ID, THIRD_PARTY_ID]
+            .into_iter()
+            .zip([NCM_SEARCH_FILE, THIRD_PARTY_FILE])
+        {
+            if self.base_dir.join(file).exists() {
+                let display = special_queue_by_id(id).map(|(d, _)| d).unwrap_or(id);
+                queues.push((id.to_string(), display.to_string()));
+            }
+        }
+        queues.sort();
+        queues
+    }
+
+    /// Parse `q_<hash>-<display>.json` into `(q_<hash>, display)`. Tolerates
+    /// legacy `q_<hash>.json` files by reading their embedded key.
+    fn queue_id_display_from_name(&self, name: &str) -> Option<(String, String)> {
+        let rest = name.strip_prefix("q_")?.strip_suffix(".json")?;
+        match rest.split_once('-') {
+            Some((hash, display)) if !display.is_empty() => {
+                Some((format!("q_{hash}"), display.to_string()))
+            }
+            _ => {
+                let content = fs::read_to_string(self.base_dir.join(name)).ok()?;
+                let saved: SavedQueue = serde_json::from_str(&content).ok()?;
+                (!saved.key.is_empty()).then(|| (format!("q_{rest}"), saved.key))
+            }
+        }
+    }
+
+    /// Resolve a `q_<hash>` id to its display name (or a fixed search label).
+    pub(crate) fn display_for_id(&self, id: &str) -> Option<String> {
+        if let Some((display, file)) = special_queue_by_id(id) {
+            return self
+                .base_dir
+                .join(file)
+                .exists()
+                .then(|| display.to_string());
+        }
+        let prefix = format!("{id}-");
+        if let Ok(entries) = fs::read_dir(&self.base_dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with(&prefix) && name.ends_with(".json") {
+                    return Some(name[prefix.len()..name.len() - 5].to_string());
+                }
+            }
+        }
+        let legacy = self.base_dir.join(format!("{id}.json"));
+        let content = fs::read_to_string(legacy).ok()?;
+        let saved: SavedQueue = serde_json::from_str(&content).ok()?;
+        (!saved.key.is_empty()).then_some(saved.key)
+    }
+
+    /// The id that was active at last shutdown, if any. Tolerates legacy files
+    /// that recorded the display name directly.
+    pub(crate) fn load_active_id(&self) -> Option<String> {
+        let path = self.active_path();
+        if !path.exists() {
+            return None;
+        }
+        let value = fs::read_to_string(&path).ok()?.trim().to_string();
+        if value.is_empty() {
+            return None;
+        }
+        if value.starts_with("q_") {
+            Some(value)
+        } else {
+            Some(Self::queue_id(&value))
+        }
+    }
+
+    /// Persist `id`'s queue (displayed as `display`) and record its id as the
+    /// active one.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn save_queue(
+        &self,
+        id: &str,
+        display: &str,
+        queue: &[Arc<SongInfo>],
+        history: &[u64],
+        current_index: Option<usize>,
+        mode: &PlayMode,
+        volume: f64,
+        speed: f64,
+        pitch_locked: bool,
+        progress: f64,
+    ) {
+        if id.is_empty() {
+            return;
+        }
+        // Take the sequence before snapshotting: save order must follow call
+        // order even if two callers ever race.
+        let seq = self.save_gate.next_seq();
+        // Move owned (cheap Arc) copies into the blocking task so both the
+        // JSON serialization and the disk writes run off the UI thread.
+        let queue = queue.to_vec();
+        let history = history.to_vec();
+        let mode = *mode;
+        let queue_path = self.queue_path(id, display);
+        let active_path = self.active_path();
+        let id = id.to_string();
+        let gate = Arc::clone(&self.save_gate);
+        tokio::task::spawn_blocking(move || {
+            // A newer save already reached disk; skip the (expensive)
+            // serialization of a snapshot that can never be used.
+            if gate.is_stale(seq) {
+                return;
+            }
+            let saved = SavedQueueRef {
+                queue: &queue,
+                history: &history,
+                current_index,
+                mode: &mode,
+                volume,
+                speed,
+                pitch_locked,
+                progress,
+            };
+            if let Ok(json) = serde_json::to_string(&saved) {
+                gate.commit(seq, &queue_path, &active_path, &id, &json);
+            }
+        });
+    }
+
+    /// Blocking variant of [`Self::save_queue`], used on the shutdown path where
+    /// a detached `spawn_blocking` task might not run before the runtime is torn
+    /// down. Serializes then writes on the calling thread.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn save_queue_sync(
+        &self,
+        id: &str,
+        display: &str,
+        queue: &[Arc<SongInfo>],
+        history: &[u64],
+        current_index: Option<usize>,
+        mode: &PlayMode,
+        volume: f64,
+        speed: f64,
+        pitch_locked: bool,
+        progress: f64,
+    ) {
+        if id.is_empty() {
+            return;
+        }
+        let seq = self.save_gate.next_seq();
+        let saved = SavedQueueRef {
+            queue,
+            history,
+            current_index,
+            mode,
+            volume,
+            speed,
+            pitch_locked,
+            progress,
+        };
+        let queue_path = self.queue_path(id, display);
+        let active_path = self.active_path();
+        if let Ok(json) = serde_json::to_string(&saved) {
+            self.save_gate
+                .commit(seq, &queue_path, &active_path, id, &json);
+        }
+    }
+
+    /// Load a queue by its canonical id (returns `None` when unknown).
+    pub(crate) fn load_queue_by_id(&self, id: &str) -> Option<SavedQueue> {
+        let path = if let Some((_, file)) = special_queue_by_id(id) {
+            self.base_dir.join(file)
+        } else {
+            let prefix = format!("{id}-");
+            let mut found = None;
+            if let Ok(entries) = fs::read_dir(&self.base_dir) {
+                for entry in entries.filter_map(|e| e.ok()) {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if name.starts_with(&prefix) && name.ends_with(".json") {
+                        found = Some(entry.path());
+                        break;
+                    }
+                }
+            }
+            // Legacy `q_<hash>.json` (pre display-suffix naming).
+            found.unwrap_or_else(|| self.base_dir.join(format!("{id}.json")))
+        };
+        if !path.exists() {
+            return None;
+        }
+        let content = fs::read_to_string(&path).ok()?;
+        serde_json::from_str(&content).ok()
+    }
+
+    /// Remove a queue file. If it was the active queue, clear the
+    /// `active_queue.txt` marker so a later restart doesn't point at it.
+    ///
+    /// Synchronous deletion: the caller (e.g. `clear_queue`) immediately calls
+    /// `refresh_queue_keys()` to rescan from disk; if this deleted asynchronously via
+    /// `spawn_blocking`, the file might still exist during the scan and cause a just-cleared
+    /// queue tab to reappear.
+    pub(crate) fn delete_queue(&self, id: &str, display: &str) {
+        if id.is_empty() {
+            return;
+        }
+        let queue_path = self.queue_path(id, display);
+        let active_path = self.active_path();
+        let _ = fs::remove_file(&queue_path);
+        if fs::read_to_string(&active_path).ok().as_deref() == Some(id) {
+            let _ = fs::remove_file(&active_path);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deserialize_history_accepts_new_format() {
+        let json = r#"{
+            "queue": [],
+            "history": [1, 2, 3],
+            "current_index": null,
+            "mode": "Sequential",
+            "volume": 50.0
+        }"#;
+        let saved: SavedQueue = serde_json::from_str(json).unwrap();
+        assert_eq!(saved.history, vec![1, 2, 3]);
+        // Legacy files carry no `speed`/`pitch_locked`; both defaults must keep
+        // the previous behaviour (normal speed, pitch-keeping stretch).
+        assert_eq!(saved.speed, 1.0);
+        assert!(saved.pitch_locked);
+    }
+
+    #[test]
+    fn deserialize_history_accepts_legacy_format() {
+        let json = r#"{
+            "queue": [],
+            "history": [{"id": 11, "name": "a"}, {"id": 22, "name": "b"}],
+            "current_index": null,
+            "mode": "Sequential",
+            "volume": 50.0
+        }"#;
+        let saved: SavedQueue = serde_json::from_str(json).unwrap();
+        assert_eq!(saved.history, vec![11, 22]);
+    }
+
+    /// The save path must round-trip through the atomic writer (temp file +
+    /// rename) without leaving temp files behind.
+    #[test]
+    fn save_queue_sync_round_trips_without_temp_files() {
+        let dir = std::env::temp_dir().join(format!(
+            "pigma_storage_test_{}_{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        let storage = PlaylistStorage::new(dir.clone());
+        let song = Arc::new(SongInfo {
+            id: 42,
+            name: "song".into(),
+            singer: "artist".into(),
+            artist_id: 0,
+            album: String::new(),
+            album_id: 0,
+            pic_url: String::new(),
+            duration: 1_000,
+            copyright: ncm_api::SongCopyright::Unknown,
+        });
+
+        storage.save_queue_sync(
+            "q_test",
+            "测试",
+            &[song],
+            &[],
+            Some(0),
+            &PlayMode::Sequential,
+            0.5,
+            1.2,
+            true,
+            0.25,
+        );
+
+        let saved = storage
+            .load_queue_by_id("q_test")
+            .expect("queue should load after an atomic save");
+        assert_eq!(saved.queue.len(), 1);
+        assert_eq!(saved.queue[0].id, 42);
+        assert_eq!(saved.volume, 0.5);
+        assert_eq!(saved.speed, 1.2);
+        assert_eq!(storage.load_active_id().as_deref(), Some("q_test"));
+
+        let temp_files: Vec<_> = fs::read_dir(&storage.base_dir)
+            .expect("read playlists dir")
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
+            .collect();
+        assert!(
+            temp_files.is_empty(),
+            "temp files left behind: {temp_files:?}"
+        );
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// Detached save tasks may finish out of order; only the newest sequence
+    /// may reach disk, otherwise a restart restores an older queue/playhead.
+    #[test]
+    fn save_gate_keeps_the_newest_snapshot() {
+        let dir = std::env::temp_dir().join(format!(
+            "pigma_storage_gate_test_{}_{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        let storage = PlaylistStorage::new(dir.clone());
+        let queue_path = storage.queue_path("q_test", "测试");
+        let active_path = storage.active_path();
+
+        // Simulate the newer task acquiring the lock first...
+        storage
+            .save_gate
+            .commit(2, &queue_path, &active_path, "q_test", r#"{"new":true}"#);
+        // ...then an older task reaching it late must be skipped.
+        storage
+            .save_gate
+            .commit(1, &queue_path, &active_path, "q_test", r#"{"old":true}"#);
+
+        assert_eq!(
+            fs::read_to_string(&queue_path).expect("read queue"),
+            r#"{"new":true}"#
+        );
+        assert_eq!(
+            fs::read_to_string(&active_path).expect("read active marker"),
+            "q_test"
+        );
+
+        let _ = fs::remove_dir_all(dir);
+    }
+}

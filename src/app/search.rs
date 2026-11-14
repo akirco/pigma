@@ -15,7 +15,7 @@ use crate::{
     event::NavigationEvent,
     service::{ApiEndpoint, SearchEngine, SearchResults, search_ncm, search_sonar},
     state::{ContentState, SearchProvider},
-    text_input::TextInput,
+    tui::TextInput,
 };
 
 /// Search subsystem owned by `App`: the shared sonar finder and synthetic-id

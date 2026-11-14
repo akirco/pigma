@@ -14,11 +14,9 @@ use stream_download::{
 };
 use tokio::sync::{mpsc, watch};
 
-use super::{
-    player::{AudioInput, AudioReader, SharedReader},
-    stream_client::HeadersClient,
-};
+use super::stream_client::HeadersClient;
 use crate::{
+    audio::{AudioInput, AudioReader, SharedReader},
     cache::CacheManager,
     event::{Event, PlaybackEvent},
     service::ApiService,
@@ -244,7 +242,7 @@ impl AudioSource {
                     .and_then(|mut s| s.next_back().map(|s| s.to_string()))
             })
             .unwrap_or_default();
-        crate::utils::audio::canonical_ext(path.rsplit('.').nth(1).unwrap_or(""))
+        crate::audio::canonical_ext(path.rsplit('.').nth(1).unwrap_or(""))
     }
 
     fn to_sonar_quality(quality: SongQuality) -> Quality {

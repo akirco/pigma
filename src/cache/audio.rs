@@ -12,7 +12,7 @@ use super::{
     CacheManager,
     index::{CacheEntry, CacheIndex},
 };
-use crate::{persist::sanitize_filename, utils::unix_secs};
+use crate::{store::sanitize_filename, utils::unix_secs};
 
 impl CacheManager {
     fn resolve_filename(&self, song: &SongInfo, ext: &str) -> String {
@@ -87,7 +87,7 @@ impl CacheManager {
             return None;
         }
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        Some(crate::utils::audio::canonical_ext(ext))
+        Some(crate::audio::canonical_ext(ext))
     }
 
     fn ensure_dir(&self) -> io::Result<()> {

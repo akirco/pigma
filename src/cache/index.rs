@@ -177,7 +177,7 @@ impl CacheManager {
             }
         };
         let path = Self::index_path(downloads_dir);
-        if let Err(e) = crate::persist::write_atomic(&path, snapshot.as_bytes()) {
+        if let Err(e) = crate::store::write_atomic(&path, snapshot.as_bytes()) {
             log::warn!("Failed to write cache index: {e}");
         }
     }

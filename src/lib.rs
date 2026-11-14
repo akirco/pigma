@@ -6,18 +6,20 @@
 //! dispatch); everything else lives here.
 
 pub mod app;
+pub mod audio;
 pub mod cache;
 pub mod cli;
 pub mod config;
-pub mod content_cache;
 pub mod event;
 pub mod input;
 pub mod ipc;
 pub mod logger;
-mod persist;
 pub mod playback;
+pub mod queue;
 pub mod service;
 pub mod state;
-pub mod text_input;
+mod store;
+pub mod theme;
+pub mod tui;
 pub mod ui;
 pub mod utils;

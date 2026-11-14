@@ -3,9 +3,9 @@
 
 use std::sync::Arc;
 
-use super::{PlaybackEngine, mode};
+use super::PlaybackEngine;
 use crate::{
-    playback::{queue::PlaylistQueue, storage::PlaylistStorage},
+    queue::{PlaylistQueue, PlaylistStorage, mode},
     utils::time::local_month_day,
 };
 
@@ -209,9 +209,9 @@ impl PlaybackEngine {
                 self.controller.set_volume(saved.volume as f32);
                 self.controller.set_speed(self.state.speed as f32);
                 self.controller.set_speed_mode(if self.state.pitch_locked {
-                    crate::playback::stretch::SpeedMode::PreservePitch
+                    crate::audio::SpeedMode::PreservePitch
                 } else {
-                    crate::playback::stretch::SpeedMode::ShiftPitch
+                    crate::audio::SpeedMode::ShiftPitch
                 });
 
                 if saved.current_index.is_some() {

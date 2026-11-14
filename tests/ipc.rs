@@ -27,7 +27,7 @@ fn stub_searcher() -> Arc<pigma::service::SearchEngine> {
         cache_dir.clone(),
         String::new(),
     ));
-    let content_cache = Arc::new(pigma::content_cache::ContentCache::new(cache_dir));
+    let content_cache = Arc::new(pigma::service::ContentCache::new(cache_dir));
     let api = Arc::new(ncm_api::NcmClient::builder().build().expect("client"));
     let service = pigma::service::ApiService::new(api, cache, content_cache);
     let finder = Arc::new(
@@ -78,7 +78,7 @@ async fn status_round_trip() {
 
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
     let (status_tx, _status_rx) = channel();
-    let _guard = ipc::start_server(
+    let _guard = pigma::app::start_server(
         Arc::clone(&snapshot),
         Arc::new(Mutex::new(QueueSnapshot::default())),
         status_tx,
@@ -122,7 +122,7 @@ async fn queue_round_trip() {
             },
         ],
     };
-    let _guard = ipc::start_server(
+    let _guard = pigma::app::start_server(
         Arc::new(Mutex::new(StatusSnapshot::default())),
         Arc::new(Mutex::new(queue)),
         channel().0,
@@ -144,7 +144,7 @@ async fn msg_round_trip_forwards_event() {
     ipc::set_socket_path_override(Some(tmp_socket("msg")));
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    let _guard = ipc::start_server(
+    let _guard = pigma::app::start_server(
         Arc::new(Mutex::new(StatusSnapshot::default())),
         Arc::new(Mutex::new(QueueSnapshot::default())),
         channel().0,
@@ -170,7 +170,7 @@ async fn msg_switch_list_round_trip() {
     ipc::set_socket_path_override(Some(tmp_socket("switch_list")));
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    let _guard = ipc::start_server(
+    let _guard = pigma::app::start_server(
         Arc::new(Mutex::new(StatusSnapshot::default())),
         Arc::new(Mutex::new(QueueSnapshot::default())),
         channel().0,
@@ -205,7 +205,7 @@ async fn msg_play_song_id_forwards_event() {
     ipc::set_socket_path_override(Some(tmp_socket("play_id")));
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    let _guard = ipc::start_server(
+    let _guard = pigma::app::start_server(
         Arc::new(Mutex::new(StatusSnapshot::default())),
         Arc::new(Mutex::new(QueueSnapshot::default())),
         channel().0,
@@ -235,7 +235,7 @@ async fn msg_toggle_play_forwards_event() {
     ipc::set_socket_path_override(Some(tmp_socket("toggle_play")));
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    let _guard = ipc::start_server(
+    let _guard = pigma::app::start_server(
         Arc::new(Mutex::new(StatusSnapshot::default())),
         Arc::new(Mutex::new(QueueSnapshot::default())),
         channel().0,
@@ -266,7 +266,7 @@ async fn subscribe_streams_updates() {
         ..Default::default()
     }));
     let (status_tx, _status_rx) = channel();
-    let _guard = ipc::start_server(
+    let _guard = pigma::app::start_server(
         Arc::clone(&snapshot),
         Arc::new(Mutex::new(QueueSnapshot::default())),
         status_tx.clone(),
@@ -310,7 +310,7 @@ async fn subscribe_streams_updates() {
 async fn search_round_trip() {
     ipc::set_socket_path_override(Some(tmp_socket("search")));
 
-    let _guard = ipc::start_server(
+    let _guard = pigma::app::start_server(
         Arc::new(Mutex::new(StatusSnapshot::default())),
         Arc::new(Mutex::new(QueueSnapshot::default())),
         channel().0,
@@ -335,7 +335,7 @@ async fn unix_socket_is_owner_only() {
 
     let path = tmp_socket("mode");
     ipc::set_socket_path_override(Some(path.clone()));
-    let _guard = ipc::start_server(
+    let _guard = pigma::app::start_server(
         Arc::new(Mutex::new(StatusSnapshot::default())),
         Arc::new(Mutex::new(QueueSnapshot::default())),
         channel().0,
