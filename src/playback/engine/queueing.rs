@@ -108,17 +108,22 @@ impl PlaybackEngine {
     /// the active queue (the user switched elsewhere mid-load), the target
     /// queue is loaded, appended, persisted, then the previous one restored.
     /// Duplicate ids are skipped. `songs` are already shared `Arc`s, so no
-    /// deep clone happens.
+    /// deep clone happens. Returns whether anything was actually appended.
     pub fn append_songs_to_key(&mut self, key: &str, songs: Vec<Arc<SongInfo>>) -> bool {
         if songs.is_empty() {
             return false;
         }
         let id = PlaylistStorage::queue_id(key);
         if self.active_queue_id == id {
-            self.queue.append(&songs);
-            self.strategy =
-                mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);
-            return true;
+            let appended = self.queue.append(&songs).is_some();
+            if appended {
+                self.strategy = mode::create_strategy(
+                    &self.state.mode,
+                    self.queue.len(),
+                    self.queue.current_index,
+                );
+            }
+            return appended;
         }
         let prev = (self.active_queue_id.clone(), self.active_queue_key.clone());
         // Persist the previous queue once, then switch without a redundant
@@ -126,14 +131,16 @@ impl PlaybackEngine {
         // back without another redundant save (2 serializations total instead of 4).
         self.persist_active_queue();
         self.activate_by_id(key, &id, false);
-        self.queue.append(&songs);
-        self.strategy =
-            mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);
-        self.persist_active_queue();
+        let appended = self.queue.append(&songs).is_some();
+        if appended {
+            self.strategy =
+                mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);
+            self.persist_active_queue();
+        }
         if !prev.0.is_empty() {
             self.activate_by_id(&prev.1, &prev.0, false);
         }
-        true
+        appended
     }
 
     /// Append `songs` to a fixed, non-dated queue key and start playing
@@ -152,8 +159,16 @@ impl PlaybackEngine {
             return;
         }
         self.controller.stop();
-        let offset = self.queue.append(songs);
-        self.queue.current_index = Some(offset + index);
+        if self.queue.append(songs).is_none() {
+            return;
+        }
+        // `append` dedupes by id, so locate the selected song rather than
+        // assuming it landed at `old_len + index` (incoming duplicates or an
+        // intra-batch duplicate would shift that position).
+        let Some(pos) = self.queue.find_song_index(songs[index].id) else {
+            return;
+        };
+        self.queue.current_index = Some(pos);
         self.strategy =
             mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);
         self.start_current_song(None);
@@ -187,8 +202,11 @@ impl PlaybackEngine {
     /// Keeps the rest of the queue intact. Does not interrupt the currently
     /// playing song.
     pub fn add_next(&mut self, song: Arc<SongInfo>) {
-        self.queue.insert_next(vec![song]);
-        self.persist_active_queue();
+        // Already queued: leave the queue untouched (and avoid a redundant
+        // save) instead of creating a duplicate id.
+        if self.queue.insert_next(vec![song]).is_some() {
+            self.persist_active_queue();
+        }
     }
 
     pub fn next(&mut self) {

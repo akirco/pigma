@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use ncm_api::SongInfo;
 
@@ -76,6 +79,9 @@ impl PlaylistQueue {
         history: Vec<u64>,
         current_index: Option<usize>,
     ) -> Self {
+        // A queue file written by an older build may hold an out-of-range
+        // playhead; never let that panic a later insert/navigation.
+        let current_index = current_index.filter(|index| *index < songs.len());
         let mut q = Self {
             songs,
             id_index: HashMap::new(),
@@ -128,30 +134,52 @@ impl PlaylistQueue {
         self.history.pop()
     }
 
-    pub(super) fn append(&mut self, songs: &[Arc<SongInfo>]) -> usize {
-        let offset = self.songs.len();
+    /// Append songs that are not already in the queue. Duplicates (against the
+    /// existing queue *and* within `songs`) are skipped. Returns the index of
+    /// the first inserted song, or `None` when nothing was added.
+    pub(super) fn append(&mut self, songs: &[Arc<SongInfo>]) -> Option<usize> {
+        let start = self.songs.len();
+        let mut seen = HashSet::with_capacity(songs.len());
         self.songs.extend(
             songs
                 .iter()
-                .filter(|s| !self.id_index.contains_key(&s.id))
+                .filter(|s| !self.id_index.contains_key(&s.id) && seen.insert(s.id))
                 .map(Arc::clone),
         );
-        self.rebuild_index();
-        self.bump();
-        offset
-    }
-
-    /// Insert `songs` right after the currently playing song so they play next.
-    /// When nothing is playing, insert at the front. Returns the index of the
-    /// first inserted song.
-    pub(super) fn insert_next(&mut self, songs: Vec<Arc<SongInfo>>) -> usize {
-        let insert_at = self.current_index.map(|i| i + 1).unwrap_or(0);
-        for (n, s) in songs.into_iter().enumerate() {
-            self.songs.insert(insert_at + n, s);
+        if self.songs.len() == start {
+            return None;
         }
         self.rebuild_index();
         self.bump();
-        insert_at
+        Some(start)
+    }
+
+    /// Insert `songs` right after the currently playing song so they play next.
+    /// When nothing is playing, insert at the front. Duplicate ids (existing
+    /// queue or within `songs`) are skipped so `id_index` stays unambiguous.
+    /// Returns the index of the first inserted song, or `None` when everything
+    /// was already present.
+    pub(super) fn insert_next(&mut self, songs: Vec<Arc<SongInfo>>) -> Option<usize> {
+        let insert_at = self
+            .current_index
+            .map(|i| i + 1)
+            .unwrap_or(0)
+            .min(self.songs.len());
+        let mut seen = HashSet::with_capacity(songs.len());
+        let mut added = 0usize;
+        for song in songs {
+            if self.id_index.contains_key(&song.id) || !seen.insert(song.id) {
+                continue;
+            }
+            self.songs.insert(insert_at + added, song);
+            added += 1;
+        }
+        if added == 0 {
+            return None;
+        }
+        self.rebuild_index();
+        self.bump();
+        Some(insert_at)
     }
 
     pub(super) fn find_song_index(&self, song_id: u64) -> Option<usize> {
@@ -208,9 +236,27 @@ mod tests {
     #[test]
     fn index_stays_correct_after_append() {
         let mut q = PlaylistQueue::from_songs(vec![song(1), song(2)], 0);
-        q.append(&[song(3)]);
+        assert_eq!(q.append(&[song(3)]), Some(2));
         assert_eq!(q.find_song_index(3), Some(2));
         assert_eq!(q.find_song_index(1), Some(0));
+    }
+
+    /// The returned index is where the first *inserted* song landed; duplicates
+    /// inside the incoming batch must not shift it, and a fully-duplicate batch
+    /// is a no-op.
+    #[test]
+    fn append_dedupes_the_incoming_batch() {
+        let mut q = PlaylistQueue::from_songs(vec![song(1)], 0);
+
+        assert_eq!(q.append(&[song(2), song(2), song(3)]), Some(1));
+        assert_eq!(q.len(), 3);
+        assert_eq!(q.find_song_index(2), Some(1));
+        assert_eq!(q.find_song_index(3), Some(2));
+
+        let version = q.version();
+        assert_eq!(q.append(&[song(1), song(2), song(3)]), None);
+        assert_eq!(q.len(), 3);
+        assert_eq!(q.version(), version, "a no-op append must not bump");
     }
 
     /// Filtering the queue (and widening it again) must keep the playhead on
@@ -236,10 +282,30 @@ mod tests {
     fn index_stays_correct_after_insert_next() {
         let mut q = PlaylistQueue::from_songs(vec![song(1), song(2), song(3)], 1);
         // insert after current (index 1): new songs land at 2, old 3 shifts to 3
-        let at = q.insert_next(vec![song(9)]);
+        let at = q
+            .insert_next(vec![song(9)])
+            .expect("a new song must be inserted");
         assert_eq!(at, 2);
         assert_eq!(q.find_song_index(9), Some(2));
         assert_eq!(q.find_song_index(3), Some(3));
+    }
+
+    /// `insert_next` must keep the queue's duplicate-free invariant; otherwise
+    /// `id_index` can point at a stale instance of the song.
+    #[test]
+    fn insert_next_skips_existing_and_incoming_duplicates() {
+        let mut q = PlaylistQueue::from_songs(vec![song(1), song(2), song(3)], 1);
+
+        let at = q
+            .insert_next(vec![song(9), song(9), song(2), song(4)])
+            .expect("new songs must be inserted");
+        assert_eq!(at, 2);
+        let ids: Vec<u64> = q.songs.iter().map(|s| s.id).collect();
+        assert_eq!(ids, vec![1, 2, 9, 4, 3]);
+
+        let version = q.version();
+        assert!(q.insert_next(vec![song(1), song(3)]).is_none());
+        assert_eq!(q.version(), version, "a no-op insert must not bump");
     }
 
     #[test]
@@ -247,6 +313,12 @@ mod tests {
         let q = PlaylistQueue::from_parts(vec![song(7), song(8)], vec![7], Some(0));
         assert_eq!(q.find_song_index(8), Some(1));
         assert_eq!(q.history, vec![7]);
+    }
+
+    #[test]
+    fn from_parts_drops_an_out_of_range_playhead() {
+        let q = PlaylistQueue::from_parts(vec![song(7)], vec![], Some(3));
+        assert_eq!(q.current_index, None);
     }
 
     /// A replacement queue must not reset the change counter: the IPC queue
