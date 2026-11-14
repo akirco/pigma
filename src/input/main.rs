@@ -2,10 +2,9 @@ use crossterm::event::{KeyCode, KeyEvent, MouseEventKind};
 
 use crate::{
     app::App,
-    event::{CommandEvent, NavigationEvent, PlaybackEvent},
+    event::{CommandEvent, NavigationEvent},
     service::ApiEndpoint,
-    state::{ContentState, Page, TableMode},
-    text_input::TextInput,
+    state::{Page, TableMode},
 };
 
 pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Result<()> {
@@ -18,19 +17,9 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Resul
         KeyCode::Esc => {
             app.events.send(NavigationEvent::ContentRestore);
         }
-        KeyCode::Tab if app.state.navigation.page == Page::Playlist => {
-            if let Some(key) = app.playback.switch_queue(true) {
-                app.state.navigation.playlist_selected =
-                    app.playback.queue_current_index().unwrap_or(0);
-                app.toast(format!("{} 队列: {key}", crate::icons::QUEUE));
-            }
-        }
+        KeyCode::Tab if app.state.navigation.page == Page::Playlist => app.switch_queue_page(true),
         KeyCode::BackTab if app.state.navigation.page == Page::Playlist => {
-            if let Some(key) = app.playback.switch_queue(false) {
-                app.state.navigation.playlist_selected =
-                    app.playback.queue_current_index().unwrap_or(0);
-                app.toast(format!("{} 队列: {key}", crate::icons::QUEUE));
-            }
+            app.switch_queue_page(false)
         }
         KeyCode::Tab => app.nav_select_next(),
         KeyCode::BackTab => app.nav_select_prev(),
@@ -108,11 +97,7 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Resul
         }
         KeyCode::Char('/') => {
             if app.state.navigation.page == Page::Playlist {
-                app.state.navigation.search.filter_queue_only = true;
-                let songs = app.playback.queue_songs();
-                app.state.navigation.search.unfiltered_songs = Some(songs.to_vec());
-                app.state.navigation.search.active = true;
-                app.state.navigation.search.input = TextInput::new();
+                app.begin_queue_filter();
             } else if app.state.navigation.page == Page::Lyrics {
                 return Ok(());
             } else {
@@ -122,67 +107,11 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Resul
         KeyCode::Char('b' | 'B') => {
             app.events.send(CommandEvent::ToggleBordered);
         }
-        KeyCode::Char('S') => {
-            if let Some(song) = app.playback.current_song() {
-                app.events.send(PlaybackEvent::LikeSong(song.id, true));
-                app.toast(format!("{}  {}", crate::icons::HEART_FILLED, song.name));
-            }
-        }
-        KeyCode::Char('s') => {
-            if let ContentState::Songs(songs) = app.state.navigation.content.as_ref() {
-                let sel = app.state.navigation.content_selected;
-                if let Some(song) = songs.get(sel) {
-                    app.events.send(PlaybackEvent::LikeSong(song.id, true));
-                    app.toast(format!("{}  {}", crate::icons::HEART_FILLED, song.name));
-                }
-            }
-        }
-        KeyCode::Char('a' | 'A') => {
-            let song = if let ContentState::Songs(songs) = app.state.navigation.content.as_ref() {
-                songs.get(app.state.navigation.content_selected).cloned()
-            } else {
-                None
-            };
-            if let Some(song) = song {
-                app.playback.add_next(song.clone());
-                app.toast(format!(
-                    "{}  下一首: {}",
-                    crate::icons::NEXT_INDICATOR,
-                    song.name
-                ));
-            }
-        }
-        KeyCode::Char('d') => {
-            if app.selected_endpoint() == Some(ApiEndpoint::RecommendSongs)
-                && let ContentState::Songs(songs) = app.state.navigation.content.as_ref()
-            {
-                let sel = app.state.navigation.content_selected;
-                if let Some(song) = songs.get(sel) {
-                    app.events.send(PlaybackEvent::DislikeSong(song.id));
-                    app.toast(format!("{}  {}", crate::icons::ERROR_MARK, song.name));
-                }
-            } else if let ContentState::Songs(songs) = app.state.navigation.content.as_ref() {
-                let sel = app.state.navigation.content_selected;
-                if let Some(song) = songs.get(sel) {
-                    app.events.send(PlaybackEvent::LikeSong(song.id, false));
-                    app.toast(format!(
-                        "{} 已取消喜欢: {}",
-                        crate::icons::HEART_OUTLINE,
-                        song.name
-                    ));
-                }
-            }
-        }
-        KeyCode::Char('D') => {
-            if let Some(song) = app.playback.current_song() {
-                app.events.send(PlaybackEvent::LikeSong(song.id, false));
-                app.toast(format!(
-                    "{} 已取消喜欢: {}",
-                    crate::icons::HEART_OUTLINE,
-                    song.name
-                ));
-            }
-        }
+        KeyCode::Char('S') => app.like_current_song(),
+        KeyCode::Char('s') => app.like_selected_song(),
+        KeyCode::Char('a' | 'A') => app.add_selected_next(),
+        KeyCode::Char('d') => app.dislike_selected_song(),
+        KeyCode::Char('D') => app.unlike_current_song(),
         KeyCode::Char('r' | 'R') => {
             if matches!(app.state.navigation.page, Page::Main | Page::Lyrics) {
                 app.reload_current_nav();
@@ -209,26 +138,9 @@ pub(super) fn handle_main_mouse(app: &mut App, kind: MouseEventKind, col: u16, r
     // Volume scroll: if mouse is over playerbar area
     let area = app.playerbar_area();
     if row >= area.y && row < area.y + area.height && col >= area.x && col < area.x + area.width {
-        let vol = app.playback.state.volume;
         match kind {
-            MouseEventKind::ScrollUp => {
-                let new = (vol + 0.05).clamp(0.0, 1.0);
-                app.playback.set_volume(new);
-                app.toast(format!(
-                    " {}  {:.0}%",
-                    crate::icons::VOLUME_HIGH,
-                    new * 100.0
-                ));
-            }
-            MouseEventKind::ScrollDown => {
-                let new = (vol - 0.05).clamp(0.0, 1.0);
-                app.playback.set_volume(new);
-                app.toast(format!(
-                    " {}  {:.0}%",
-                    crate::icons::VOLUME_HIGH,
-                    new * 100.0
-                ));
-            }
+            MouseEventKind::ScrollUp => app.adjust_volume(0.05),
+            MouseEventKind::ScrollDown => app.adjust_volume(-0.05),
             _ => {}
         }
         return;

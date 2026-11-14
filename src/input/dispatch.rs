@@ -70,23 +70,7 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> eyre::Result<()>
         && c.eq_ignore_ascii_case(&'w')
         && key_event.modifiers == KeyModifiers::NONE
     {
-        app.playback.clear_queue();
-        app.toast(format!(" {}  已清空播放队列", crate::icons::CLEAR_QUEUE));
-        if app.state.navigation.page == Page::Playlist {
-            if let Some(key) = app.playback.switch_queue(false) {
-                app.state.navigation.playlist_selected =
-                    app.playback.queue_current_index().unwrap_or(0);
-                app.toast(format!("{} 队列: {key}", crate::icons::QUEUE));
-            } else if let Some(key) = app.playback.queue_keys().last().cloned() {
-                // After clearing, only one queue remains: switch_queue returns None when only
-                // one is left, so explicitly focus it here (the rightmost/last tab) to avoid
-                // an empty focus.
-                app.playback.activate_queue(&key);
-                app.state.navigation.playlist_selected =
-                    app.playback.queue_current_index().unwrap_or(0);
-                app.toast(format!("{} 队列: {key}", crate::icons::QUEUE));
-            }
-        }
+        app.clear_play_queue();
         return Ok(());
     }
 

@@ -2,7 +2,12 @@
 //! Keeping them here means the input layer only maps keys to actions.
 
 use super::App;
-use crate::{event::CommandPanelAction, state::CommandAction};
+use crate::{
+    event::{CommandPanelAction, PlaybackEvent},
+    service::ApiEndpoint,
+    state::{CommandAction, ContentState, Page},
+    text_input::TextInput,
+};
 
 impl App {
     pub(crate) fn toggle_playback(&mut self) {
@@ -78,6 +83,117 @@ impl App {
             crate::icons::NAV_POSITION,
             pos.label()
         ));
+    }
+
+    /// The song under the cursor in the content list, when the page shows songs.
+    fn selected_song(&self) -> Option<&std::sync::Arc<ncm_api::SongInfo>> {
+        match self.state.navigation.content.as_ref() {
+            ContentState::Songs(songs) => songs.get(self.state.navigation.content_selected),
+            _ => None,
+        }
+    }
+
+    /// Like the playing song (`S`).
+    pub(crate) fn like_current_song(&mut self) {
+        let Some((id, name)) = self.playback.current_song().map(|s| (s.id, s.name.clone())) else {
+            return;
+        };
+        self.events.send(PlaybackEvent::LikeSong(id, true));
+        self.toast(format!("{}  {}", crate::icons::HEART_FILLED, name));
+    }
+
+    /// Like the selected row (`s`).
+    pub(crate) fn like_selected_song(&mut self) {
+        let Some((id, name)) = self.selected_song().map(|s| (s.id, s.name.clone())) else {
+            return;
+        };
+        self.events.send(PlaybackEvent::LikeSong(id, true));
+        self.toast(format!("{}  {}", crate::icons::HEART_FILLED, name));
+    }
+
+    /// Unlike the playing song (`D`).
+    pub(crate) fn unlike_current_song(&mut self) {
+        let Some((id, name)) = self.playback.current_song().map(|s| (s.id, s.name.clone())) else {
+            return;
+        };
+        self.events.send(PlaybackEvent::LikeSong(id, false));
+        self.toast(format!(
+            "{} 已取消喜欢: {}",
+            crate::icons::HEART_OUTLINE,
+            name
+        ));
+    }
+
+    /// `d` on the selected row: dislike it on the recommendation page so it
+    /// stops being suggested, otherwise read the key as "unlike".
+    pub(crate) fn dislike_selected_song(&mut self) {
+        let Some((id, name)) = self.selected_song().map(|s| (s.id, s.name.clone())) else {
+            return;
+        };
+        if self.selected_endpoint() == Some(ApiEndpoint::RecommendSongs) {
+            self.events.send(PlaybackEvent::DislikeSong(id));
+            self.toast(format!("{}  {}", crate::icons::ERROR_MARK, name));
+        } else {
+            self.events.send(PlaybackEvent::LikeSong(id, false));
+            self.toast(format!(
+                "{} 已取消喜欢: {}",
+                crate::icons::HEART_OUTLINE,
+                name
+            ));
+        }
+    }
+
+    /// Queue the selected row right after the current song (`a`).
+    pub(crate) fn add_selected_next(&mut self) {
+        let Some(song) = self.selected_song().cloned() else {
+            return;
+        };
+        let name = song.name.clone();
+        self.playback.add_next(song);
+        self.toast(format!("{}  下一首: {name}", crate::icons::NEXT_INDICATOR));
+    }
+
+    /// Cycle the queues listed on the playlist page (`Tab`/`BackTab`), moving
+    /// the cursor to whatever that queue is playing.
+    pub(crate) fn switch_queue_page(&mut self, forward: bool) {
+        if let Some(key) = self.playback.switch_queue(forward) {
+            self.state.navigation.playlist_selected =
+                self.playback.queue_current_index().unwrap_or(0);
+            self.toast(format!("{} 队列: {key}", crate::icons::QUEUE));
+        }
+    }
+
+    /// Empty every queue but the active one (`w`), then focus whichever tab is
+    /// left so the playlist page never ends up with no focus.
+    pub(crate) fn clear_play_queue(&mut self) {
+        self.playback.clear_queue();
+        self.toast(format!(" {}  已清空播放队列", crate::icons::CLEAR_QUEUE));
+        if self.state.navigation.page != Page::Playlist {
+            return;
+        }
+        if let Some(key) = self.playback.switch_queue(false) {
+            self.state.navigation.playlist_selected =
+                self.playback.queue_current_index().unwrap_or(0);
+            self.toast(format!("{} 队列: {key}", crate::icons::QUEUE));
+        } else if let Some(key) = self.playback.queue_keys().last().cloned() {
+            // After clearing, only one queue remains: switch_queue returns None
+            // when only one is left, so focus it explicitly (the last/rightmost
+            // tab) to avoid an empty focus.
+            self.playback.activate_queue(&key);
+            self.state.navigation.playlist_selected =
+                self.playback.queue_current_index().unwrap_or(0);
+            self.toast(format!("{} 队列: {key}", crate::icons::QUEUE));
+        }
+    }
+
+    /// Start filtering the playlist page queue (`/`): snapshot the queue so
+    /// leaving the filter can restore it, then open an empty input.
+    pub(crate) fn begin_queue_filter(&mut self) {
+        let songs = self.playback.queue_songs();
+        self.state.navigation.search.unfiltered_songs = Some(songs.to_vec());
+        self.state.navigation.search.filter_queue_only = true;
+        self.state.navigation.search.active = true;
+        self.state.navigation.search.input = TextInput::new();
     }
 
     /// Command-panel navigation state machine. Called from the event router in
