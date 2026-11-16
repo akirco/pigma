@@ -231,11 +231,14 @@ mod tests {
     fn content_cache_path_is_valid_on_windows() {
         let cache = ContentCache::new(std::env::temp_dir());
         let path = cache.content_path("playlist:7");
-        assert_eq!(
-            path.file_name().and_then(|n| n.to_str()),
-            Some("playlist_7.json")
-        );
-        assert!(!path.to_string_lossy().contains(':'));
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .expect("cached path has a UTF-8 file name");
+        assert_eq!(name, "playlist_7.json");
+        // Only the file name is ours to sanitize: the temp directory itself may
+        // legitimately contain a colon (e.g. the `C:` drive prefix).
+        assert!(!name.contains(':'));
     }
 
     #[test]
