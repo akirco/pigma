@@ -45,15 +45,7 @@ rustls = { workspace = true, features = ["ring", "std"] }
 libc = { workspace = true, features = ["std"] }
 
 [target."cfg(windows)".dependencies]
-windows-sys = {
-  version = "0.61.2",
-  default-features = false,
-  features = [
-    "Win32_Foundation",
-    "Win32_Security",
-    "Win32_Security_Authorization",
-  ]
-}
+windows-sys = {version = "0.61.2",default-features = false,features = ["Win32_Foundation","Win32_Security","Win32_Security_Authorization"]}
 
 [lints]
 workspace = true
