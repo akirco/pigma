@@ -66,6 +66,26 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
+    /// A corrupt index must not orphan existing downloads: the id is encoded in
+    /// the default filename suffix, so it can be recovered.
+    #[test]
+    fn corrupt_index_is_rebuilt_from_downloads() {
+        let dir = std::env::temp_dir().join(format!(
+            "pigma_cache_rebuild_test_{}_{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        let downloads = dir.join("downloads");
+        fs::create_dir_all(&downloads).expect("create downloads");
+        fs::write(downloads.join("夜曲-周杰伦-42.mp3"), b"audio").expect("write audio");
+        fs::write(downloads.join("cache_index.json"), b"not json").expect("write bad index");
+
+        let cache = CacheManager::new(downloads, dir.clone(), "{name}-{singer}".into());
+
+        assert_eq!(cache.find_cached_extension(42), Some("mp3"));
+        let _ = fs::remove_dir_all(dir);
+    }
+
     /// A completed download is moved from its hidden `.part` file to the final
     /// path only when `mark_cached` is called; the index then points at it.
     #[tokio::test]

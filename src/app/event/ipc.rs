@@ -9,7 +9,7 @@ use crate::{
 
 impl App {
     /// Apply a control request received over the IPC socket (`pigma msg`).
-    pub(super) async fn handle_ipc_event(&mut self, event: IpcEvent) {
+    pub(super) fn handle_ipc_event(&mut self, event: IpcEvent) {
         match event {
             IpcEvent::Previous => self.playback.prev(),
             IpcEvent::Next => self.playback.next(),
@@ -109,12 +109,10 @@ impl App {
                 }
             }
             IpcEvent::SwitchList { endpoint, playlist } => {
-                let loaded = self.load_endpoint(&endpoint, playlist).await;
-                self.toast(if loaded {
-                    format!("已切换到: {endpoint}")
-                } else {
-                    format!("切换失败: {endpoint}")
-                });
+                // Resolve in the background; the completion arrives as
+                // `NavigationEvent::EndpointResolved`, so a slow network cannot
+                // freeze the render loop.
+                self.spawn_endpoint_load(endpoint, playlist);
             }
         }
     }

@@ -1,34 +1,57 @@
 //! Top-level frame rendering: picks the theme, dispatches on the active page
 //! and overlays the command panel, help view and toast.
+//!
+//! The render pass is read-only for application state. Widget-owned state
+//! (`TableState` / `ListState`) is borrowed mutably because ratatui requires it,
+//! but every geometry-derived value is returned in a [`RenderOutcome`] and
+//! applied by `App::draw` at one explicit write-back point.
 
-use std::time::Duration;
+use std::ops::Range;
 
 use ratatui::{Frame, layout::Rect};
 
 use crate::{
     app::App,
     config::{Config, NavPosition},
-    state::{NavigationState, Page},
+    state::{NavigationState, Page, QueueTabHit},
 };
 
 use super::{
-    BlockStyle, block::StyledBlock, breadcrumb, command_panel, content, equalizer, help, layout,
-    login, lyrics, navigation, playerbar, queue, splash, title, toast, topbar,
+    BlockStyle, PlayerbarHits, block::StyledBlock, breadcrumb, cards, command_panel, content,
+    equalizer, help, layout, login, lyrics, navigation, playerbar, queue, splash, title, toast,
+    topbar,
 };
 
-pub fn draw(f: &mut Frame, app: &mut App) {
-    let now = std::time::Instant::now();
-    let steps = (now.duration_since(app.state.last_tick).as_millis() / 80).max(1) as u64;
-    app.state.last_tick = now;
-    app.state.tick = app.state.tick.wrapping_add(steps);
+/// Geometry-derived values produced by one frame. `None` means the matching
+/// view was not drawn, so its previous value stays valid.
+#[derive(Debug, Default)]
+pub(crate) struct RenderOutcome {
+    pub content_layout: Option<ContentLayout>,
+    pub playerbar_area: Rect,
+    /// Clickable player-bar controls from this frame.
+    pub playerbar_hits: PlayerbarHits,
+    pub help_max_scroll: Option<usize>,
+    pub queue_tab_scroll_x: Option<u16>,
+    /// Queue tab bar and its clickable tabs, for mouse hit-testing.
+    pub queue_tabs: Option<(Rect, Vec<QueueTabHit>)>,
+    /// Queue table body and its first visible song, for mouse hit-testing.
+    pub queue_body: Option<(Rect, usize)>,
+}
 
-    if let Some(t) = app.state.toast_time
-        && t.elapsed() > Duration::from_secs(2)
-    {
-        app.state.toast_time = None;
-    }
+/// Layout of the content viewport, stored on `NavigationState` after the frame
+/// so navigation and cover prefetch read the numbers the renderer actually used.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ContentLayout {
+    pub columns: usize,
+    pub scroll: usize,
+    pub visible: Range<usize>,
+    /// Item under the pointer, when the grid could map the pointer to a card.
+    pub hovered: Option<usize>,
+}
 
+pub(crate) fn draw(f: &mut Frame, app: &mut App) -> RenderOutcome {
     let area = f.area();
+    let mut outcome = RenderOutcome::default();
 
     let colors = app.theme_registry.resolve(&app.config.default_theme);
 
@@ -40,7 +63,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     let content_covers = app.content_covers();
     let font_size = app.picker_font_size();
-    let mut playerbar_rect = Rect::default();
+    // Overlays sit on top of the page, so a stale pointer must not light up
+    // controls behind them.
+    let live_mouse = if app.state.help.open || app.state.command_panel.open {
+        None
+    } else {
+        app.state.mouse
+    };
     match app.state.navigation.page {
         Page::Splash => {
             let lay = layout::splash(area);
@@ -60,9 +89,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 &bs,
                 lay.topbar,
             );
-            playerbar_rect = lay.playerbar;
+            outcome.playerbar_area = lay.playerbar;
             let is_sixel = app.picker_protocol() == ratatui_image::picker::ProtocolType::Sixel;
-            playerbar::draw(
+            outcome.playerbar_hits = playerbar::draw(
                 f,
                 &app.playback.state,
                 app.state.tick,
@@ -70,18 +99,30 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 &app.config.playerbar,
                 lay.playerbar,
                 is_sixel,
+                live_mouse,
             );
 
             match page {
-                Page::Main => draw_main(
-                    f,
-                    &mut app.state.navigation,
-                    &app.config,
-                    &bs,
-                    &lay,
-                    &content_covers,
-                    font_size,
-                ),
+                Page::Main => {
+                    // Overlays sit on top of the cards, so a stale pointer must
+                    // not light one up behind them.
+                    let live = cards::LiveInputs {
+                        mouse: live_mouse,
+                        playing_song: app.playback.current_song().map(|song| song.id),
+                        playing: app.playback.state.playing,
+                        tick: app.state.tick,
+                    };
+                    outcome.content_layout = Some(draw_main(
+                        f,
+                        &mut app.state.navigation,
+                        &app.config,
+                        &bs,
+                        &lay,
+                        &content_covers,
+                        font_size,
+                        live,
+                    ));
+                }
                 Page::Lyrics => {
                     lyrics::draw(
                         f,
@@ -93,15 +134,18 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     );
                 }
                 Page::Playlist => {
-                    queue::draw_queue_table(
+                    let queue = queue::draw_queue_table(
                         f,
                         &app.playback,
                         app.state.navigation.playlist_selected,
                         &bs,
                         &app.config.titles.playlist,
-                        &mut app.state.navigation.queue_tab_scroll_x,
+                        app.state.navigation.queue_tab_scroll_x,
                         lay.content,
                     );
+                    outcome.queue_tab_scroll_x = Some(queue.tab_scroll);
+                    outcome.queue_tabs = Some((queue.tab_area, queue.tab_hits));
+                    outcome.queue_body = Some((queue.body, queue.offset));
                 }
                 Page::Equalizer => {
                     equalizer::draw(
@@ -129,26 +173,21 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
 
     if app.state.help.open {
-        // Persist the rendered scroll limit so scroll_down clamps at the real
-        // bottom; clamping scroll here also heals drift after a resize.
-        let max_scroll = help::draw(f, app.state.help.scroll, &bs, area);
-        app.state.help.max_scroll = max_scroll;
-        app.state.help.scroll = app.state.help.scroll.min(max_scroll);
+        outcome.help_max_scroll = Some(help::draw(f, app.state.help.scroll, &bs, area));
     }
 
-    if let Some(time) = app.state.toast_time {
-        toast::draw_toast(f, &app.state.toast_msg, time.elapsed(), colors);
+    if app.state.toast_time.is_some() {
+        toast::draw_toast(f, &app.state.toast_msg, colors);
     }
-    // Recorded after `colors` (borrowed from `app.theme_registry`) is last
-    // used: the setter takes `&mut App` and cannot overlap that borrow.
-    //
-    // Rendering stays side-effect free: cover prefetching reads the visible
-    // window and hits the network, so it belongs to the caller (`App::draw`),
-    // not here.
-    app.set_playerbar_area(playerbar_rect);
+    outcome
 }
 
 /// Main content page: navigation sidebar/topbar, content title block and table.
+/// Returns the layout the renderer settled on instead of writing it back.
+// Argument count is already at clippy's default limit; the card live inputs
+// are one more rendering input, and grouping them into another struct here
+// would only move the same fields around.
+#[allow(clippy::too_many_arguments)]
 fn draw_main(
     f: &mut Frame,
     nav: &mut NavigationState,
@@ -157,17 +196,25 @@ fn draw_main(
     lay: &layout::LayoutAreas,
     covers: &crate::app::cover::ContentCovers,
     font_size: ratatui_image::FontSize,
-) {
+    live: cards::LiveInputs,
+) -> ContentLayout {
     match config.navigation_position {
         NavPosition::Left | NavPosition::Right => {
             if lay.sidebar.width > 0 {
-                navigation::draw(f, &mut nav.nav, bs, &config.titles.sidebar, lay.sidebar);
+                navigation::draw(
+                    f,
+                    &mut nav.nav,
+                    bs,
+                    &config.titles.sidebar,
+                    live.mouse,
+                    lay.sidebar,
+                );
             }
 
             breadcrumb::render_breadcrumb(f, &nav.nav, bs, lay.breadcrumb);
         }
         NavPosition::Top | NavPosition::Bottom => {
-            navigation::draw_top(f, &mut nav.nav, bs, lay.nav);
+            navigation::draw_top(f, &mut nav.nav, bs, live.mouse, lay.nav);
         }
     }
 
@@ -187,11 +234,10 @@ fn draw_main(
         nav.content_selected,
         nav.table_mode,
         &config.content,
-        &mut nav.content_columns,
-        &mut nav.content_scroll,
-        &mut nav.content_visible,
+        nav.content_scroll,
         covers,
         font_size,
+        live,
         inner,
-    );
+    )
 }

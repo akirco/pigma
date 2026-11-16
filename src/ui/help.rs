@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use ratatui::{
     Frame,
     layout::{Constraint, Rect},
@@ -21,7 +23,7 @@ const HELP_ITEMS: &[(&str, &str)] = &[
     ("Enter", "播放选中 / 进入"),
     ("Space", "播放 / 暂停"),
     ("n / p", "下一首 / 上一首"),
-    ("← / →", "平铺卡片左右 / 快退快进 / 均衡器调节"),
+    ("← / →", "快退快进 / 均衡器调节"),
     ("+ / -", "音量增大 / 减小"),
     ("[ / ]", "播放速度 -0.1 / +0.1"),
     ("t", "切换变速模式"),
@@ -47,6 +49,29 @@ const POPUP_WIDTH: u16 = 64;
 const POPUP_HEIGHT: u16 = 24;
 const KEY_COL_WIDTH: usize = 16;
 
+static HELP_TITLE: LazyLock<String> = LazyLock::new(|| {
+    format!(
+        "{} HELP {}",
+        crate::icons::TITLE_START,
+        crate::icons::TITLE_END
+    )
+});
+
+static HELP_FOOTER: LazyLock<String> = LazyLock::new(|| {
+    format!(
+        "{:>width$}",
+        "↑/↓ 或 j/k 滚动  Esc 关闭",
+        width = (POPUP_WIDTH - 4) as usize
+    )
+});
+
+static HELP_LINES: LazyLock<Vec<String>> = LazyLock::new(|| {
+    HELP_ITEMS
+        .iter()
+        .map(|(key, desc)| format!("  {:<width$}  {}", key, desc, width = KEY_COL_WIDTH))
+        .collect()
+});
+
 /// Renders the popup and returns the scroll limit implied by the rendered
 /// geometry, for the caller to persist into [`crate::state::HelpState`].
 pub(super) fn draw(f: &mut Frame, scroll: usize, bs: &BlockStyle<'_>, area: Rect) -> usize {
@@ -57,48 +82,37 @@ pub(super) fn draw(f: &mut Frame, scroll: usize, bs: &BlockStyle<'_>, area: Rect
         Constraint::Length(POPUP_HEIGHT),
     );
 
-    let title = format!(
-        "{} HELP {}",
-        crate::icons::TITLE_START,
-        crate::icons::TITLE_END
-    );
-    let block = StyledBlock::from_color(bs, colors.surface).title(&title, colors);
+    let block = StyledBlock::from_color(bs, colors.surface).title(HELP_TITLE.as_str(), colors);
     let inner = block.inner(popup_area);
 
     f.render_widget(Clear, popup_area);
     block.render(popup_area, f.buffer_mut());
 
-    let footer = format!(
-        "{:>width$}",
-        "↑/↓ 或 j/k 滚动  Esc 关闭",
-        width = (POPUP_WIDTH - 4) as usize
-    );
     let footer_area = Rect {
         y: inner.y + inner.height.saturating_sub(1),
         height: 1,
         ..inner
     };
     f.render_widget(
-        Paragraph::new(footer).style(Style::default().fg(colors.muted)),
+        Paragraph::new(HELP_FOOTER.as_str()).style(Style::default().fg(colors.muted)),
         footer_area,
     );
 
     let visible = (inner.height.saturating_sub(1)) as usize;
     let max_scroll = HELP_ITEMS.len().saturating_sub(visible);
     let scroll = scroll.min(max_scroll);
-    for (i, (key, desc)) in HELP_ITEMS.iter().enumerate().skip(scroll).take(visible) {
+    for (i, line) in HELP_LINES.iter().enumerate().skip(scroll).take(visible) {
         let line_area = Rect {
             y: inner.y + (i - scroll) as u16,
             height: 1,
             ..inner
         };
-        let line = format!("  {:<width$}  {}", key, desc, width = KEY_COL_WIDTH);
-        let style = if *key == "?" {
+        let style = if HELP_ITEMS[i].0 == "?" {
             Style::default().fg(colors.accent)
         } else {
             Style::default().fg(colors.text)
         };
-        f.render_widget(Paragraph::new(line).style(style), line_area);
+        f.render_widget(Paragraph::new(line.as_str()).style(style), line_area);
     }
     max_scroll
 }

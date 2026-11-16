@@ -19,6 +19,7 @@ use crate::{
     playback::PlaybackEngine,
     service::ApiService,
     state::State,
+    ui::{PageTransition, PlayerbarHits},
 };
 
 pub struct App {
@@ -48,6 +49,15 @@ pub struct App {
     pub(super) ipc: IpcState,
     /// Playerbar hit-test rect of the last draw, used by mouse input handling.
     pub(super) playerbar_area: Rect,
+    /// Clickable player-bar controls of the last draw.
+    pub(super) playerbar_hits: PlayerbarHits,
+    /// Active animated page transition, if any.
+    pub(crate) page_transition: Option<PageTransition>,
+    /// Whether page changes should animate. Disabled for the headless daemon,
+    /// which has no render loop to advance the effect.
+    pub(crate) animate_pages: bool,
+    /// Rolling frame-time window for the debug draw log.
+    pub(super) draw_stats: DrawStats,
     /// Guards the startup splash branch: `login_status` is requested exactly
     /// once, so later events (IPC, mouse...) cannot spawn duplicate requests
     /// that would double-toast and re-fetch liked IDs.
@@ -87,9 +97,19 @@ impl App {
         self.playerbar_area
     }
 
+    /// Clickable player-bar controls recorded by the last draw.
+    pub(crate) fn playerbar_hits(&self) -> PlayerbarHits {
+        self.playerbar_hits
+    }
+
     /// Record the playerbar hit-test rect for the frame just drawn.
     pub(crate) fn set_playerbar_area(&mut self, area: Rect) {
         self.playerbar_area = area;
+    }
+
+    /// Record the playerbar click targets for the frame just drawn.
+    pub(crate) fn set_playerbar_hits(&mut self, hits: PlayerbarHits) {
+        self.playerbar_hits = hits;
     }
 
     pub fn quit(&mut self) {
@@ -105,5 +125,42 @@ impl App {
     pub fn toast(&mut self, msg: String) {
         self.state.toast_msg = msg;
         self.state.toast_time = Some(Instant::now());
+    }
+}
+
+/// Frame-time accounting for the debug draw log: redraw rate plus the time
+/// spent rendering and prefetching covers. Logged at debug level once a second
+/// so a CPU regression can be traced without a profiler.
+#[derive(Default)]
+pub(super) struct DrawStats {
+    frames: u32,
+    render: std::time::Duration,
+    prefetch: std::time::Duration,
+    since: Option<Instant>,
+}
+
+impl DrawStats {
+    pub(super) fn record(&mut self, render: std::time::Duration, prefetch: std::time::Duration) {
+        let now = Instant::now();
+        let since = *self.since.get_or_insert(now);
+        self.frames += 1;
+        self.render += render;
+        self.prefetch += prefetch;
+
+        let window = now.duration_since(since);
+        if window < std::time::Duration::from_secs(1) {
+            return;
+        }
+        let frames = f64::from(self.frames);
+        log::debug!(
+            "draw: {:.1}/s, render {:.1} ms, prefetch {:.1} ms",
+            frames / window.as_secs_f64(),
+            self.render.as_secs_f64() * 1000.0 / frames,
+            self.prefetch.as_secs_f64() * 1000.0 / frames,
+        );
+        self.frames = 0;
+        self.render = std::time::Duration::ZERO;
+        self.prefetch = std::time::Duration::ZERO;
+        self.since = Some(now);
     }
 }

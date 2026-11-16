@@ -56,13 +56,21 @@ pub(super) fn draw_song_info(f: &mut Frame, player: &PlaybackState, colors: &The
     }
 }
 
+/// One-cell hit targets for the three transport controls, in screen cells.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct ControlHits {
+    pub prev: Rect,
+    pub play: Rect,
+    pub next: Rect,
+}
+
 pub(super) fn draw_controls(
     f: &mut Frame,
     player: &PlaybackState,
     colors: &Theme,
     area: Rect,
     is_default: bool,
-) {
+) -> ControlHits {
     let play_icon = if player.paused || !player.playing {
         crate::icons::CONTROL_PAUSE
     } else {
@@ -92,7 +100,22 @@ pub(super) fn draw_controls(
         ),
     ])
     .alignment(alignment);
+
+    // Ratatui centres with `(area / 2) - (line / 2)`, and icon widths can
+    // differ from the cell each glyph occupies. Mirror that for the start
+    // column, then step one cell per glyph and three per gap.
+    let start = if is_default {
+        area.x + (area.width / 2).saturating_sub(controls.width() as u16 / 2)
+    } else {
+        area.x
+    };
     f.render_widget(Paragraph::new(controls), area);
+
+    ControlHits {
+        prev: Rect::new(start, area.y, 1, 1),
+        play: Rect::new(start.saturating_add(4), area.y, 1, 1),
+        next: Rect::new(start.saturating_add(8), area.y, 1, 1),
+    }
 }
 
 pub(super) fn draw_mode_icon(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {

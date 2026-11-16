@@ -5,7 +5,7 @@ use std::{
 
 use ncm_api::SongInfo;
 
-use super::mode::PlayStrategy;
+use super::mode::Strategy;
 
 const MAX_HISTORY: usize = 200;
 
@@ -194,11 +194,11 @@ impl PlaylistQueue {
         self.id_index.get(&song_id).copied()
     }
 
-    pub(super) fn next_index(&self, strategy: &mut dyn PlayStrategy) -> Option<usize> {
+    pub(super) fn next_index(&self, strategy: &mut Strategy) -> Option<usize> {
         strategy.next(self.current_index, self.songs.len())
     }
 
-    pub(super) fn prev_index(&self, strategy: &mut dyn PlayStrategy) -> Option<usize> {
+    pub(super) fn prev_index(&self, strategy: &mut Strategy) -> Option<usize> {
         strategy.prev(self.current_index, self.songs.len())
     }
 

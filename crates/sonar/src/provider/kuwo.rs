@@ -85,7 +85,7 @@ impl SonarProvider for KuwoProvider {
                 let pic_url = item["web_albumpic_short"]
                     .as_str()
                     .filter(|s| !s.is_empty())
-                    .map(|s| format!("http://img3.kuwo.cn/star/albumcover/{s}"))
+                    .map(|s| format!("https://img3.kuwo.cn/star/albumcover/{s}"))
                     .unwrap_or_default();
 
                 Some(Song {

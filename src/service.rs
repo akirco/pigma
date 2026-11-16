@@ -24,5 +24,7 @@ mod search;
 pub use api::ApiService;
 pub use content_cache::ContentCache;
 pub use endpoint::ApiEndpoint;
-pub use search::{SearchEngine, SearchHit, SearchResults};
+pub use search::{
+    SEARCH_REGISTRY_CAPACITY, SearchEngine, SearchHit, SearchRegistry, SearchResults, SonarSongs,
+};
 pub(crate) use search::{search_ncm, search_sonar};

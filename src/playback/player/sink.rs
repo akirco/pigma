@@ -73,7 +73,7 @@ impl PlayerTask {
             Err(e) => {
                 let _ = self
                     .event_tx
-                    .send(PlaybackEvent::Error(format!("decode: {e}")).into());
+                    .send(PlaybackEvent::Error(format!("decode: {e}")));
                 None
             }
         }

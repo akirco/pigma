@@ -62,13 +62,10 @@ impl PlaybackEngine {
                     );
                     if let Some(next_song) = songs.into_iter().next() {
                         if event_tx
-                            .send(
-                                PlaybackEvent::HeartbeatSong {
-                                    request,
-                                    song: next_song,
-                                }
-                                .into(),
-                            )
+                            .send(PlaybackEvent::HeartbeatSong {
+                                request,
+                                song: Arc::new(next_song),
+                            })
                             .is_err()
                         {
                             log::error!("Failed to send HeartbeatSong: receiver dropped");
@@ -80,7 +77,7 @@ impl PlaybackEngine {
                             playlist_id
                         );
                         if event_tx
-                            .send(PlaybackEvent::HeartbeatFallback { request }.into())
+                            .send(PlaybackEvent::HeartbeatFallback { request })
                             .is_err()
                         {
                             log::error!("Failed to send HeartbeatFallback: receiver dropped");
@@ -90,7 +87,7 @@ impl PlaybackEngine {
                 Err(e) => {
                     log::warn!("Heartbeat failed: {e}, falling back to queue");
                     if event_tx
-                        .send(PlaybackEvent::HeartbeatFallback { request }.into())
+                        .send(PlaybackEvent::HeartbeatFallback { request })
                         .is_err()
                     {
                         log::error!("Failed to send HeartbeatFallback: receiver dropped");
@@ -100,7 +97,7 @@ impl PlaybackEngine {
         });
     }
 
-    pub fn play_heartbeat_song(&mut self, request: u64, song: SongInfo) {
+    pub fn play_heartbeat_song(&mut self, request: u64, song: Arc<SongInfo>) {
         if !self.heartbeat.is_current(request) {
             log::debug!("Heartbeat: ignoring stale song response");
             return;
@@ -121,7 +118,7 @@ impl PlaybackEngine {
             }
         }
 
-        self.queue.songs.push(Arc::new(song));
+        self.queue.songs.push(song);
         self.queue.rebuild_index();
         self.queue.current_index = Some(self.queue.len() - 1);
         // Appending outside the queue's own mutation helpers must still bump the

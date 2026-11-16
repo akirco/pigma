@@ -11,11 +11,6 @@ pub enum PlayMode {
     Heartbeat { playlist_id: u64 },
 }
 
-pub(super) trait PlayStrategy: Send {
-    fn next(&mut self, current_index: Option<usize>, queue_len: usize) -> Option<usize>;
-    fn prev(&mut self, current_index: Option<usize>, queue_len: usize) -> Option<usize>;
-}
-
 #[derive(Clone)]
 pub(super) enum Strategy {
     Sequential,
@@ -25,8 +20,8 @@ pub(super) enum Strategy {
     Heartbeat,
 }
 
-impl PlayStrategy for Strategy {
-    fn next(&mut self, ci: Option<usize>, queue_len: usize) -> Option<usize> {
+impl Strategy {
+    pub(super) fn next(&mut self, ci: Option<usize>, queue_len: usize) -> Option<usize> {
         match self {
             Strategy::Sequential => match ci {
                 Some(i) if i + 1 < queue_len => Some(i + 1),
@@ -51,7 +46,7 @@ impl PlayStrategy for Strategy {
         }
     }
 
-    fn prev(&mut self, ci: Option<usize>, queue_len: usize) -> Option<usize> {
+    pub(super) fn prev(&mut self, ci: Option<usize>, queue_len: usize) -> Option<usize> {
         match self {
             Strategy::Sequential => match ci {
                 Some(i) if i > 0 => Some(i - 1),

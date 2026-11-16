@@ -3,27 +3,36 @@
 //! The execution shared with the IPC `search` server lives in
 //! [`crate::service::search`].
 
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::sync::Arc;
 
-use sonar::{SonarFinder, Song};
+use sonar::SonarFinder;
 
-use super::{App, event::send_event};
+use super::{App, builder::ProxyKind, event::send_event};
 use crate::{
+    config::Config,
     event::NavigationEvent,
-    service::{ApiEndpoint, SearchEngine, SearchResults, search_ncm, search_sonar},
+    service::{ApiEndpoint, SearchEngine, SearchResults, SonarSongs, search_ncm, search_sonar},
     state::{ContentState, SearchProvider},
     text_input::TextInput,
 };
+
+/// Build a single-provider search config that still honours the configured
+/// proxies and timeout. The shared finder used for playback already has these,
+/// but the TUI creates a one-provider finder for the search bar.
+fn sonar_search_config(config: &Config, source: sonar::SonarSource) -> sonar::SearchConfig {
+    sonar::SearchConfig::new()
+        .with_providers(vec![source])
+        .with_timeout(config.source_fallback.timeout_ms)
+        .with_search_proxy(App::proxy_for(config, ProxyKind::NonYoutube))
+        .with_youtube_proxy(App::proxy_for(config, ProxyKind::Youtube))
+}
 
 /// Search subsystem owned by `App`: the shared sonar finder and synthetic-id
 /// registry, the recently-searched result registry backing `pigma msg play
 /// <id>`, and the cross-provider engine serving `pigma msg search <keyword>`.
 pub(super) struct SearchHost {
     pub(super) finder: Arc<SonarFinder>,
-    pub(super) sonar_songs: Arc<Mutex<HashMap<u64, Arc<Song>>>>,
+    pub(super) sonar_songs: SonarSongs,
     pub(super) results: SearchResults,
     pub(super) engine: Arc<SearchEngine>,
 }
@@ -79,10 +88,8 @@ impl App {
         let registry = self.search.sonar_songs.clone();
         let search_results = self.search.results.clone();
         let limit = self.config.search_limit as usize;
+        let config = sonar_search_config(&self.config, source);
         tokio::spawn(async move {
-            let config = sonar::SearchConfig::new()
-                .with_providers(vec![source])
-                .with_timeout(15000);
             let finder = match sonar::SonarFinder::new(config) {
                 Ok(f) => f,
                 Err(e) => {
@@ -101,7 +108,7 @@ impl App {
                 match search_sonar(&finder, &registry, &search_results, &keyword, limit).await {
                     Ok(hits) => {
                         let songs: Vec<Arc<ncm_api::SongInfo>> =
-                            hits.into_iter().map(|h| Arc::new(h.info)).collect();
+                            hits.into_iter().map(|h| h.info).collect();
                         if songs.is_empty() {
                             ContentState::Error("没有找到结果".into())
                         } else {
@@ -214,5 +221,31 @@ impl App {
         };
         self.playback.set_queue_indices(full, &indices);
         self.state.navigation.playlist_selected = 0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::ProxyTarget;
+
+    #[test]
+    fn one_provider_search_keeps_proxies_and_configured_timeout() {
+        let config = Config {
+            proxy: "http://127.0.0.1:7890".into(),
+            proxy_target: ProxyTarget::Both,
+            source_fallback: crate::config::SonarConfig {
+                timeout_ms: 1234,
+                ..Default::default()
+            },
+            ..Config::default()
+        };
+
+        let search = sonar_search_config(&config, sonar::SonarSource::Youtube);
+
+        assert_eq!(search.timeout_ms, 1234);
+        assert_eq!(search.search_proxy, "http://127.0.0.1:7890");
+        assert_eq!(search.youtube_proxy, "http://127.0.0.1:7890");
+        assert_eq!(search.providers, vec![sonar::SonarSource::Youtube]);
     }
 }

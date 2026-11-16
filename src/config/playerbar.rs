@@ -1,14 +1,36 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use super::{GradientPreset, deserialize_optional};
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum LayoutType {
+    Classic,
     #[default]
-    Default,
     Modern,
-    Minimal,
+}
+
+impl LayoutType {
+    fn from_name(name: &str) -> Option<Self> {
+        match name {
+            // `default` is the pre-rename spelling of `classic`.
+            "classic" | "default" => Some(Self::Classic),
+            "modern" => Some(Self::Modern),
+            _ => None,
+        }
+    }
+}
+
+/// Unknown layouts fall back to the default layout instead of failing the
+/// whole config.
+impl<'de> Deserialize<'de> for LayoutType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        Ok(Self::from_name(&raw).unwrap_or_default())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,5 +102,23 @@ impl Default for PlayerbarConfig {
             layout: LayoutType::default(),
             visible: PlayerbarVisible::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LayoutType;
+
+    #[test]
+    fn modern_is_the_default_layout() {
+        assert_eq!(LayoutType::default(), LayoutType::Modern);
+    }
+
+    #[test]
+    fn layout_names_are_classic_and_modern() {
+        assert_eq!(LayoutType::from_name("classic"), Some(LayoutType::Classic));
+        assert_eq!(LayoutType::from_name("default"), Some(LayoutType::Classic));
+        assert_eq!(LayoutType::from_name("modern"), Some(LayoutType::Modern));
+        assert_eq!(LayoutType::from_name("minimal"), None);
     }
 }

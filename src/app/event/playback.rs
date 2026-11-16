@@ -1,8 +1,8 @@
 //! Playback event handling: engine progress/state changes, queue updates and
 //! liked-state updates from background tasks.
 
-use super::super::App;
-use crate::event::PlaybackEvent;
+use super::{super::App, dispatch::send_event};
+use crate::event::{AppEvent, PlaybackEvent};
 
 impl App {
     pub(super) fn handle_playback_event(&mut self, event: PlaybackEvent) {
@@ -45,10 +45,18 @@ impl App {
             }
             PlaybackEvent::DislikeSong(id) => {
                 let service = self.service.clone();
+                let sender = self.events.sender();
                 tokio::spawn(async move {
-                    match service.dislike_song(id).await {
-                        Ok(_) => {}
-                        Err(e) => log::warn!("Dislike failed: {e}"),
+                    if let Err(e) = service.dislike_song(id).await {
+                        log::warn!("Dislike failed: {e}");
+                        send_event(
+                            &sender,
+                            AppEvent::Toast(format!(
+                                "{} 不感兴趣失败: {e}",
+                                crate::icons::ERROR_MARK
+                            ))
+                            .into(),
+                        );
                     }
                 });
             }

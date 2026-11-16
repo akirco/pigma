@@ -38,10 +38,8 @@ pub(super) fn draw(
         .split(inner);
 
     let logo = Line::from(vec![
-        Span::styled(
-            format!("{} ", crate::icons::LOGO),
-            Style::default().fg(colors.accent),
-        ),
+        Span::styled(crate::icons::LOGO, Style::default().fg(colors.accent)),
+        Span::styled(" ", Style::default().fg(colors.accent)),
         Span::styled(
             "PIGMA",
             Style::default()
@@ -61,12 +59,11 @@ pub(super) fn draw(
         right_line.push_span(Span::styled("  ", Style::default()));
         match info.vip_type {
             10 | 11 => {
-                right_line.push_span(Span::styled(
-                    format!("{}VIP", crate::icons::VIP),
-                    Style::default()
-                        .fg(colors.accent)
-                        .add_modifier(Modifier::BOLD),
-                ));
+                let vip_style = Style::default()
+                    .fg(colors.accent)
+                    .add_modifier(Modifier::BOLD);
+                right_line.push_span(Span::styled(crate::icons::VIP, vip_style));
+                right_line.push_span(Span::styled("VIP", vip_style));
                 right_line.push_span(Span::styled("  ", Style::default()));
             }
             _ => {}
@@ -143,5 +140,37 @@ fn render_search(f: &mut Frame, search: &SearchState, colors: &Theme, area: Rect
         ])
         .alignment(Alignment::Right);
         f.render_widget(Paragraph::new(provider), chunks[2]);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{BorderConfig, Theme};
+    use ratatui::{Terminal, backend::TestBackend};
+
+    #[test]
+    fn borderless_topbar_keeps_the_page_background() {
+        let theme = Theme::default();
+        let border = BorderConfig {
+            enabled: false,
+            ..BorderConfig::default()
+        };
+        let bs = BlockStyle {
+            colors: &theme,
+            border: &border,
+            tick: 0,
+        };
+        let search = SearchState::default();
+        let mut term = Terminal::new(TestBackend::new(20, 3)).unwrap();
+        term.draw(|f| {
+            draw(f, None, &search, &bs, Rect::new(0, 0, 20, 3));
+        })
+        .unwrap();
+        assert_eq!(
+            term.backend().buffer()[(0, 0)].style().bg,
+            Some(theme.bg),
+            "borderless topbar keeps the page background"
+        );
     }
 }

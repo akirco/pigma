@@ -1,10 +1,9 @@
 use std::{collections::HashMap, str::FromStr, sync::OnceLock};
 
 use ratatui::style::Color;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Theme {
     pub name: String,
     pub bg: Color,
@@ -14,16 +13,63 @@ pub struct Theme {
     pub muted: Color,
     pub border: Color,
     pub error: Color,
-    /// Background of a selected content card. Missing means a subtle blend of
-    /// `surface` and `accent`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub selection: Option<Color>,
+}
+
+/// Raw theme shape: colors are collected as strings so an invalid color can
+/// fall back to the default theme instead of failing the entire config parse.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct ThemeRaw {
+    name: Option<String>,
+    bg: Option<String>,
+    surface: Option<String>,
+    text: Option<String>,
+    accent: Option<String>,
+    muted: Option<String>,
+    border: Option<String>,
+    error: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for Theme {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = ThemeRaw::deserialize(deserializer)?;
+        let defaults = Theme::default();
+        Ok(Self {
+            name: raw.name.unwrap_or(defaults.name),
+            bg: raw.bg.map_or(defaults.bg, |s| color_or(&s, defaults.bg)),
+            surface: raw
+                .surface
+                .map_or(defaults.surface, |s| color_or(&s, defaults.surface)),
+            text: raw
+                .text
+                .map_or(defaults.text, |s| color_or(&s, defaults.text)),
+            accent: raw
+                .accent
+                .map_or(defaults.accent, |s| color_or(&s, defaults.accent)),
+            muted: raw
+                .muted
+                .map_or(defaults.muted, |s| color_or(&s, defaults.muted)),
+            border: raw
+                .border
+                .map_or(defaults.border, |s| color_or(&s, defaults.border)),
+            error: raw
+                .error
+                .map_or(defaults.error, |s| color_or(&s, defaults.error)),
+        })
+    }
 }
 
 fn cstr(s: &str) -> Color {
+    color_or(s, Color::Reset)
+}
+
+fn color_or(s: &str, fallback: Color) -> Color {
     Color::from_str(s).unwrap_or_else(|e| {
-        log::warn!("Invalid color '{}' in theme, using fallback: {}", s, e);
-        Color::Reset
+        log::warn!("Invalid color '{s}' in theme, using fallback: {e}");
+        fallback
     })
 }
 
@@ -38,7 +84,6 @@ impl Default for Theme {
             muted: cstr("#555555"),
             border: Color::Reset,
             error: cstr("#f4535a"),
-            selection: None,
         }
     }
 }
@@ -51,10 +96,12 @@ impl Theme {
             text: Color::Indexed(15),
             accent: Color::Indexed(5),
             muted: Color::Indexed(4),
-            border: Color::Indexed(1),
+            // Panels stay on the terminal background and borders use the dim
+            // neutral slot. ANSI `1` is red in most palettes, which turned
+            // every card, nav bar and player-bar outline red.
+            border: Color::Indexed(8),
             error: Color::Indexed(9),
-            surface: Color::Indexed(1),
-            selection: None,
+            surface: Color::Indexed(0),
         }
     }
 
@@ -68,7 +115,6 @@ impl Theme {
             muted: cstr("#6272a4"),
             border: cstr("#6272a4"),
             error: cstr("#ff5555"),
-            selection: None,
         }
     }
 
@@ -82,7 +128,6 @@ impl Theme {
             muted: cstr("#616e88"),
             border: cstr("#616e88"),
             error: cstr("#bf616a"),
-            selection: None,
         }
     }
 
@@ -96,7 +141,6 @@ impl Theme {
             muted: cstr("#928374"),
             border: cstr("#928374"),
             error: cstr("#fb4934"),
-            selection: None,
         }
     }
 
@@ -110,7 +154,6 @@ impl Theme {
             muted: cstr("#586e75"),
             border: cstr("#586e75"),
             error: cstr("#dc322f"),
-            selection: None,
         }
     }
 
@@ -124,7 +167,6 @@ impl Theme {
             muted: cstr("#565f89"),
             border: cstr("#565f89"),
             error: cstr("#f7768e"),
-            selection: None,
         }
     }
 
@@ -138,7 +180,6 @@ impl Theme {
             muted: cstr("#6c7086"),
             border: cstr("#6c7086"),
             error: cstr("#f38ba8"),
-            selection: None,
         }
     }
 
@@ -152,7 +193,6 @@ impl Theme {
             muted: cstr("#5c6370"),
             border: cstr("#5c6370"),
             error: cstr("#e06c75"),
-            selection: None,
         }
     }
 
@@ -165,8 +205,7 @@ impl Theme {
             accent: cstr("#f92672"),
             muted: cstr("#75715e"),
             border: cstr("#75715e"),
-            error: cstr("#f92672"),
-            selection: None,
+            error: cstr("#b45c7c"),
         }
     }
 
@@ -180,7 +219,6 @@ impl Theme {
             muted: cstr("#6e6a86"),
             border: cstr("#6e6a86"),
             error: cstr("#eb6f92"),
-            selection: None,
         }
     }
 
@@ -194,7 +232,6 @@ impl Theme {
             muted: cstr("#727169"),
             border: cstr("#727169"),
             error: cstr("#c34043"),
-            selection: None,
         }
     }
 
@@ -209,7 +246,6 @@ impl Theme {
             muted: cstr("#93a1a1"),
             border: cstr("#93a1a1"),
             error: cstr("#dc322f"),
-            selection: None,
         }
     }
 
@@ -223,7 +259,6 @@ impl Theme {
             muted: cstr("#9ca0b0"),
             border: cstr("#9ca0b0"),
             error: cstr("#d20f39"),
-            selection: None,
         }
     }
 
@@ -237,7 +272,6 @@ impl Theme {
             muted: cstr("#a0a1a7"),
             border: cstr("#a0a1a7"),
             error: cstr("#e45649"),
-            selection: None,
         }
     }
 
@@ -251,7 +285,6 @@ impl Theme {
             muted: cstr("#57606a"),
             border: cstr("#57606a"),
             error: cstr("#cf222e"),
-            selection: None,
         }
     }
 
@@ -265,7 +298,6 @@ impl Theme {
             muted: cstr("#928374"),
             border: cstr("#928374"),
             error: cstr("#cc241d"),
-            selection: None,
         }
     }
 
@@ -279,7 +311,6 @@ impl Theme {
             muted: cstr("#00f0ff"),
             border: Color::Reset,
             error: cstr("#b000ff"),
-            selection: None,
         }
     }
 
@@ -293,7 +324,6 @@ impl Theme {
             muted: cstr("#00ccff"),
             border: Color::Reset,
             error: cstr("#ff3300"),
-            selection: None,
         }
     }
 
@@ -307,23 +337,53 @@ impl Theme {
             muted: cstr("#ccff00"),
             border: Color::Reset,
             error: cstr("#00ff66"),
-            selection: None,
         }
     }
 
-    /// Selected-card background: explicit `selection`, or a subtle blend of
-    /// `surface` and `accent` when the theme does not set one.
+    /// Background of a selected borderless card: `surface` tinted toward
+    /// `accent`. Blending `bg` with `surface` cannot work because most themes
+    /// (including the built-in default) keep the two within a few RGB steps,
+    /// so the highlight would be invisible. Terminals without RGB colours
+    /// cannot be blended, so they fall back to `accent`.
     pub fn selection(&self) -> Color {
-        self.selection
-            .filter(|color| *color != Color::Reset)
-            .unwrap_or_else(|| match (self.surface, self.accent) {
-                (Color::Rgb(r, g, b), Color::Rgb(ar, ag, ab)) => {
-                    let mix =
-                        |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * 0.32).round() as u8;
-                    Color::Rgb(mix(r, ar), mix(g, ag), mix(b, ab))
-                }
-                _ => self.accent,
-            })
+        match (self.surface, self.accent) {
+            (Color::Rgb(sr, sg, sb), Color::Rgb(ar, ag, ab)) => {
+                let mix = |base: u8, top: u8| {
+                    (base as f32 + (top as f32 - base as f32) * 0.35).round() as u8
+                };
+                Color::Rgb(mix(sr, ar), mix(sg, ag), mix(sb, ab))
+            }
+            _ => self.accent,
+        }
+    }
+
+    /// Background of a hovered item: the dimmer [`Self::selection`] colour, so
+    /// hover stays visibly distinct from the accent-filled selected item.
+    /// Terminals without RGB colours cannot blend, so fall back to `muted`
+    /// instead of repeating the accent.
+    pub fn hover(&self) -> Color {
+        let selection = self.selection();
+        if selection == self.accent {
+            self.muted
+        } else {
+            selection
+        }
+    }
+
+    /// Background one step above the page: `bg` blended toward `surface`, so a
+    /// borderless panel still separates from the page without a border. Kept
+    /// close to `bg` (20% toward `surface`); terminals without RGB colours
+    /// cannot be blended and fall back to `surface`.
+    pub fn elevated(&self) -> Color {
+        match (self.bg, self.surface) {
+            (Color::Rgb(br, bg_g, bb), Color::Rgb(sr, sg, sb)) => {
+                let mix = |base: u8, top: u8| {
+                    (base as f32 + (top as f32 - base as f32) * 0.2).round() as u8
+                };
+                Color::Rgb(mix(br, sr), mix(bg_g, sg), mix(bb, sb))
+            }
+            _ => self.surface,
+        }
     }
 
     /// Look up a theme color field by name (e.g. "accent", "muted", "error", "border").
@@ -423,4 +483,81 @@ impl ThemeRegistry {
 pub fn theme_fallback() -> &'static Theme {
     static FALLBACK: OnceLock<Theme> = OnceLock::new();
     FALLBACK.get_or_init(Theme::default)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selection_tints_surface_with_accent() {
+        let theme = Theme {
+            surface: Color::Rgb(100, 200, 60),
+            accent: Color::Rgb(255, 0, 0),
+            ..Theme::default()
+        };
+        assert_eq!(theme.selection(), Color::Rgb(154, 130, 39));
+    }
+
+    #[test]
+    fn selection_falls_back_to_accent_without_rgb() {
+        let theme = Theme {
+            surface: Color::Indexed(4),
+            accent: Color::Indexed(1),
+            ..Theme::default()
+        };
+        assert_eq!(theme.selection(), Color::Indexed(1));
+    }
+
+    #[test]
+    fn hover_uses_the_dimmer_selection_colour() {
+        let theme = Theme {
+            surface: Color::Rgb(100, 200, 60),
+            accent: Color::Rgb(255, 0, 0),
+            ..Theme::default()
+        };
+        assert_eq!(theme.hover(), theme.selection());
+        assert_ne!(theme.hover(), theme.accent);
+    }
+
+    #[test]
+    fn hover_falls_back_to_muted_without_rgb() {
+        let theme = Theme {
+            surface: Color::Indexed(4),
+            accent: Color::Indexed(1),
+            muted: Color::Indexed(2),
+            ..Theme::default()
+        };
+        assert_eq!(theme.hover(), Color::Indexed(2));
+    }
+
+    #[test]
+    fn terminal_theme_keeps_panels_and_borders_neutral() {
+        let theme = Theme::terminal();
+        // ANSI 1 is red in most palettes (including the kitty one in use),
+        // which made cards, nav and the player bar look red.
+        assert_ne!(theme.surface, Color::Indexed(1));
+        assert_ne!(theme.border, Color::Indexed(1));
+        assert_eq!(theme.surface, theme.bg);
+    }
+
+    #[test]
+    fn elevated_background_blends_bg_toward_surface() {
+        let theme = Theme {
+            bg: Color::Rgb(0, 0, 0),
+            surface: Color::Rgb(100, 200, 60),
+            ..Theme::default()
+        };
+        assert_eq!(theme.elevated(), Color::Rgb(20, 40, 12));
+    }
+
+    #[test]
+    fn elevated_background_falls_back_to_surface_without_rgb() {
+        let theme = Theme {
+            bg: Color::Indexed(0),
+            surface: Color::Indexed(4),
+            ..Theme::default()
+        };
+        assert_eq!(theme.elevated(), Color::Indexed(4));
+    }
 }

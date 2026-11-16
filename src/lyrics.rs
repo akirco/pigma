@@ -27,7 +27,9 @@ pub fn parse_lyric_lines(raw: &[String]) -> Vec<LyricLine> {
             }
             let mins: f64 = parts[0].parse().ok()?;
             let secs: f64 = parts[1].parse().ok()?;
-            let time = Duration::from_secs_f64(mins * 60.0 + secs);
+            // Lyrics come from a remote API: reject negative, non-finite and
+            // overflowing timestamps instead of panicking in `from_secs_f64`.
+            let time = Duration::try_from_secs_f64(mins * 60.0 + secs).ok()?;
             Some(LyricLine { time, text })
         })
         .collect();
@@ -36,4 +38,33 @@ pub fn parse_lyric_lines(raw: &[String]) -> Vec<LyricLine> {
         lines.sort_by_key(|l| l.time);
     }
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lines(raw: &[&str]) -> Vec<LyricLine> {
+        parse_lyric_lines(&raw.iter().map(|s| s.to_string()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn parses_normal_lrc_and_sorts_out_of_order_lines() {
+        let parsed = lines(&["[00:05.00]later", "[00:01.50]first"]);
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].text, "first");
+        assert_eq!(parsed[0].time, Duration::from_millis(1_500));
+    }
+
+    #[test]
+    fn malformed_timestamps_are_skipped_instead_of_panicking() {
+        let parsed = lines(&[
+            "[-1:00]negative",
+            "[999999999999999999999:00]overflow",
+            "[nan:00]not-a-number",
+            "[00:01]ok",
+        ]);
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].text, "ok");
+    }
 }

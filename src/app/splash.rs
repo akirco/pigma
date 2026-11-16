@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use super::{App, event::send_event};
 use crate::{
     event::SplashEvent,
@@ -31,11 +33,25 @@ async fn check_network(api: &ncm_api::NcmClient) -> bool {
         .is_ok_and(|result| result.is_ok())
 }
 
+fn splash_duration_from_config(secs: f64) -> Duration {
+    if secs.is_finite() && secs >= 0.0 {
+        Duration::try_from_secs_f64(secs).unwrap_or(Duration::from_secs(2))
+    } else {
+        Duration::from_secs(2)
+    }
+}
+
 impl App {
+    /// Minimum splash duration, sanitized against negative/NaN/infinite config
+    /// values (which would panic in `Duration::from_secs_f64`).
+    pub(super) fn splash_duration(&self) -> Duration {
+        splash_duration_from_config(self.config.splash_duration_secs)
+    }
+
     pub(super) fn start_splash_boot(&self) {
         let sender = self.events.sender();
         let client = self.service.client().clone();
-        let duration = std::time::Duration::from_secs_f64(self.config.splash_duration_secs);
+        let duration = self.splash_duration();
 
         tokio::spawn(async move {
             let send = |progress: f64, text: &str, level: LogLevel| {
@@ -115,5 +131,29 @@ impl App {
                 self.state.splash.status = new_status.to_string();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_splash_durations_fall_back_instead_of_panicking() {
+        assert_eq!(splash_duration_from_config(-1.0), Duration::from_secs(2));
+        assert_eq!(
+            splash_duration_from_config(f64::NAN),
+            Duration::from_secs(2)
+        );
+        assert_eq!(
+            splash_duration_from_config(f64::INFINITY),
+            Duration::from_secs(2)
+        );
+        assert_eq!(splash_duration_from_config(1e300), Duration::from_secs(2));
+        assert_eq!(splash_duration_from_config(0.0), Duration::ZERO);
+        assert_eq!(
+            splash_duration_from_config(1.5),
+            Duration::from_millis(1500)
+        );
     }
 }

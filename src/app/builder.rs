@@ -18,7 +18,7 @@ use crate::{
     ipc::IpcState,
     persist::{expand_tilde, pigma_cache_dir, pigma_config_dir},
     playback::PlaybackEngine,
-    service::{ApiService, ContentCache, SearchEngine, SearchResults},
+    service::{ApiService, ContentCache, SearchEngine, SearchRegistry, SearchResults, SonarSongs},
     state::{
         CommandAction, CommandItem, CommandPanel, ContentState, HelpState, LoginState, NavState,
         NavigationState, Page, SearchProvider, SearchState, SplashState, State, TableMode,
@@ -103,16 +103,9 @@ impl App {
         youtube_proxy: &str,
     ) -> eyre::Result<Arc<SonarFinder>> {
         let mut sources: Vec<sonar::SonarSource> = Vec::new();
-        for name in &config.source_fallback.providers {
-            let source = match name.as_str() {
-                "kuwo" => sonar::SonarSource::Kuwo,
-                "kugou" => sonar::SonarSource::Kugou,
-                "bilivideo" => sonar::SonarSource::BiliVideo,
-                "youtube" => sonar::SonarSource::Youtube,
-                _ => continue,
-            };
-            if !sources.contains(&source) {
-                sources.push(source);
+        for source in &config.source_fallback.providers {
+            if !sources.contains(source) {
+                sources.push(*source);
             }
         }
         let search_config = sonar::SearchConfig::new()
@@ -181,8 +174,7 @@ impl App {
         }
         let api = Arc::new(api_builder.build()?);
 
-        let quality = ncm_api::SongQuality::from_level(&config.cache.quality)
-            .unwrap_or(ncm_api::SongQuality::Higher);
+        let quality = config.cache.quality;
         let save_on_play = config.cache.save_on_play;
 
         let cache_dir = {
@@ -225,8 +217,7 @@ impl App {
         let cover_http = Self::build_http_client(search_proxy)?;
 
         let sonar_enabled = config.source_fallback.enabled;
-        let sonar_songs: Arc<Mutex<HashMap<u64, Arc<sonar::Song>>>> =
-            Arc::new(Mutex::new(HashMap::new()));
+        let sonar_songs: SonarSongs = Arc::new(Mutex::new(SearchRegistry::default()));
         let liked_ids: Arc<Mutex<HashSet<u64>>> = Arc::new(Mutex::new(HashSet::new()));
         let mut state = State {
             running: true,
@@ -245,10 +236,15 @@ impl App {
                 content_columns: 1,
                 content_scroll: 0,
                 content_visible: 0..0,
+                content_hovered: None,
                 table_mode: TableMode::Row,
                 table_state: TableState::default(),
                 playlist_selected: 0,
                 queue_tab_scroll_x: 0,
+                queue_body: Rect::default(),
+                queue_offset: 0,
+                queue_tab_area: Rect::default(),
+                queue_tab_hits: Vec::new(),
                 search: SearchState::default(),
                 pagination: None,
                 generation: 0,
@@ -258,13 +254,15 @@ impl App {
             command_panel,
             help: HelpState::default(),
             offline: false,
+            mouse: None,
+            last_click: None,
             tick: 0,
             last_tick: Instant::now(),
             toast_msg: String::new(),
             toast_time: None,
         };
         state.navigation.search.providers = search_providers;
-        let search_results: SearchResults = Arc::new(Mutex::new(HashMap::new()));
+        let search_results: SearchResults = Arc::new(Mutex::new(SearchRegistry::default()));
         let searcher = Arc::new(SearchEngine::new(
             service.clone(),
             Arc::clone(&finder),
@@ -297,7 +295,7 @@ impl App {
             theme_registry,
             picker,
             cover_http,
-            content_covers: Arc::new(Mutex::new(HashMap::new())),
+            content_covers: super::cover::ContentCovers::default(),
             cover_requests: Arc::new(Mutex::new(HashSet::new())),
             cover_retry_after: Arc::new(Mutex::new(HashMap::new())),
             search: SearchHost {
@@ -310,6 +308,10 @@ impl App {
             queued_playlists: HashSet::new(),
             ipc: IpcState::new(),
             playerbar_area: Rect::default(),
+            playerbar_hits: Default::default(),
+            page_transition: None,
+            animate_pages: with_terminal,
+            draw_stats: Default::default(),
             login_status_requested: false,
             awaiting_login_status: false,
             qr_generation: Arc::new(AtomicU64::new(0)),

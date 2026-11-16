@@ -2,8 +2,10 @@
 //! fallback) → download → decode/mask → apply to the playerbar cover state,
 //! plus the in-memory thumbnails used by the content cards.
 
+mod cache;
+
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -14,22 +16,39 @@ use std::{
 use image::GenericImageView;
 use ratatui_image::protocol::StatefulProtocol;
 
+use cache::CoverCache;
+
 use super::App;
 use crate::{
-    config::ContentStyle, event::AppEvent, lock::lock_recover, playback::CoverState,
+    config::{ContentStyle, ContentType},
+    event::AppEvent,
+    lock::lock_recover,
+    playback::CoverState,
     state::ContentState,
 };
 
 /// Minimum gap between coalesced redraws from one prefetch batch.
 const REDRAW_MIN_INTERVAL: Duration = Duration::from_millis(150);
 
+/// Covers fetched before/after the visible window. One screen of slack lets a
+/// scroll step render without waiting for a request.
+const PREFETCH_MARGIN_MIN: usize = 8;
+
+/// Lists up to this length are prefetched whole. A couple of screens of covers
+/// is cheap and keeps the cache independent of the renderer's visible range.
+const PREFETCH_WHOLE_LIST_MAX: usize = 60;
+
+/// Rows prefetched on each side of the cursor in long lists.
+const PREFETCH_ROWS: usize = 3;
+
 /// Cover thumbnails for the content cards, keyed by the original cover URL.
-pub(crate) type ContentCovers = Arc<Mutex<HashMap<String, StatefulProtocol>>>;
+pub(crate) type ContentCovers = Arc<Mutex<CoverCache>>;
 
 impl App {
     /// Fetch and decode thumbnails for the current content cards. Results stay
-    /// in memory for the session; `cover_requests` keeps in-flight URLs from
-    /// being requested twice by consecutive content loads.
+    /// in the bounded `ContentCovers` cache for the session; `cover_requests`
+    /// keeps in-flight URLs from being requested twice by consecutive content
+    /// loads.
     pub(crate) fn prefetch_content_covers(&mut self) {
         if self
             .config
@@ -41,20 +60,33 @@ impl App {
         }
         let content = self.state.navigation.content.as_ref();
         let total = content.len();
-        // Short lists are fetched whole so their tails already have covers;
-        // long lists fetch the visible window plus a screen of margin.
-        let range = if total <= 60 {
-            0..total
+        // Singer portraits are shown as circles; every other content type keeps
+        // its square cover.
+        let round = content.content_type() == ContentType::Singers;
+        let px = if round {
+            SINGER_COVER_MAX_PX
         } else {
-            let visible = &self.state.navigation.content_visible;
-            let margin = visible.len().max(8);
-            visible.start.saturating_sub(margin)..visible.end.saturating_add(margin).min(total)
+            CONTENT_COVER_MAX_PX
         };
+        // Prefetch the visible window plus a margin. Fetching a short list in
+        // full used to look harmless, but the thumbnail cache is session-wide:
+        // every visited list added its covers on top of the previous ones. A
+        // window keeps both requests and retained thumbnails proportional to
+        // what the user can actually see.
+        let range = prefetch_range(
+            total,
+            &self.state.navigation.content_visible,
+            self.state.navigation.content_selected,
+            self.state.navigation.content_columns,
+        );
         let urls = content_cover_urls(content, range);
         let covers = Arc::clone(&self.content_covers);
         let requests = Arc::clone(&self.cover_requests);
         let retry_after = Arc::clone(&self.cover_retry_after);
         let now = std::time::Instant::now();
+        // Drop expired backoff entries; otherwise every failed cover URL stays
+        // in this map for the whole session.
+        lock_recover(&retry_after).retain(|_, until| *until > now);
         let missing: Vec<String> = urls
             .into_iter()
             .filter(|url| {
@@ -100,7 +132,7 @@ impl App {
                 tasks.spawn(async move {
                     let _permit = permit;
                     let fetched =
-                        tokio::time::timeout(Duration::from_secs(15), fetch_cover(&http, &url))
+                        tokio::time::timeout(Duration::from_secs(15), fetch_cover(&http, &url, px))
                             .await
                             .ok()
                             .flatten();
@@ -111,11 +143,12 @@ impl App {
                             .insert(url, std::time::Instant::now() + Duration::from_secs(30));
                         return;
                     };
-                    let protocol =
-                        tokio::task::spawn_blocking(move || thumb_protocol(&bytes, picker))
-                            .await
-                            .ok()
-                            .flatten();
+                    let protocol = tokio::task::spawn_blocking(move || {
+                        thumb_protocol(&bytes, picker, round, px)
+                    })
+                    .await
+                    .ok()
+                    .flatten();
                     match protocol {
                         Some(protocol) => {
                             // Success must also clear the in-flight marker: the
@@ -140,13 +173,13 @@ impl App {
                 let due = last_redraw.is_none_or(|t| t.elapsed() >= REDRAW_MIN_INTERVAL);
                 if pending_redraw.load(Ordering::SeqCst) && due {
                     pending_redraw.store(false, Ordering::SeqCst);
-                    let _ = sender.send(AppEvent::Redraw.into());
+                    let _ = sender.send(AppEvent::Redraw);
                     last_redraw = Some(std::time::Instant::now());
                 }
             }
             // Flush a signal left over from the last throttled window.
             if pending_redraw.swap(false, Ordering::SeqCst) {
-                let _ = sender.send(AppEvent::Redraw.into());
+                let _ = sender.send(AppEvent::Redraw);
             }
         });
     }
@@ -260,15 +293,50 @@ impl App {
     }
 }
 
-/// Cover URLs around the selected card: a small window before it and enough
-/// after it to fill a screen and a half. Keeping this windowed means a long
-/// playlist only downloads the covers the user is actually approaching.
-fn content_cover_urls(content: &ContentState, range: std::ops::Range<usize>) -> Vec<String> {
+/// Cover URLs around the visible cards: one screen of margin on both sides.
+/// Keeping this windowed means a long playlist only downloads the covers the
+/// user is actually approaching.
+fn prefetch_range(
+    total: usize,
+    visible: &std::ops::Range<usize>,
+    selected: usize,
+    columns: usize,
+) -> std::ops::Range<usize> {
+    // Short lists are cheap enough to fetch whole, and that removes the
+    // dependency on the renderer's visible range entirely.
+    if total <= PREFETCH_WHOLE_LIST_MAX {
+        return 0..total;
+    }
+
+    // Always include a window around the cursor: the renderer's visible range
+    // can lag a frame behind while scrolling, and the cursor never does.
+    let around = columns.max(1) * PREFETCH_ROWS;
+    if visible.is_empty() {
+        return selected.saturating_sub(around)
+            ..selected.saturating_add(around).saturating_add(1).min(total);
+    }
+
+    let margin = visible.len().max(PREFETCH_MARGIN_MIN);
+    let start = visible
+        .start
+        .saturating_sub(margin)
+        .min(selected.saturating_sub(around));
+    let end = visible
+        .end
+        .saturating_add(margin)
+        .max(selected.saturating_add(around).saturating_add(1))
+        .min(total);
+    start..end
+}
+
+/// Cover URLs in the prefetch range, de-duplicated while preserving order.
+fn content_cover_urls<'a>(content: &'a ContentState, range: std::ops::Range<usize>) -> Vec<String> {
     let count = range.end.saturating_sub(range.start);
-    let mut seen = HashSet::new();
-    let mut urls = Vec::new();
-    let mut push = |url: &str| {
-        if !url.is_empty() && seen.insert(url.to_string()) {
+    // Borrow URLs for de-duplication and allocate only the returned strings.
+    let mut seen: HashSet<&'a str> = HashSet::with_capacity(count);
+    let mut urls = Vec::with_capacity(count);
+    let mut push = |url: &'a str| {
+        if !url.is_empty() && seen.insert(url) {
             urls.push(url.to_string());
         }
     };
@@ -298,8 +366,8 @@ fn content_cover_urls(content: &ContentState, range: std::ops::Range<usize>) -> 
     urls
 }
 
-async fn fetch_cover(http: &reqwest::Client, url: &str) -> Option<Vec<u8>> {
-    let url = sized_cover_url(url, 120);
+async fn fetch_cover(http: &reqwest::Client, url: &str, px: u32) -> Option<Vec<u8>> {
+    let url = sized_cover_url(url, px);
     let response = http.get(url).send().await.ok()?;
     if !response.status().is_success() {
         return None;
@@ -307,12 +375,49 @@ async fn fetch_cover(http: &reqwest::Client, url: &str) -> Option<Vec<u8>> {
     response.bytes().await.ok().map(|bytes| bytes.to_vec())
 }
 
-fn thumb_protocol(data: &[u8], picker: ratatui_image::picker::Picker) -> Option<StatefulProtocol> {
+fn thumb_protocol(
+    data: &[u8],
+    picker: ratatui_image::picker::Picker,
+    round: bool,
+    px: u32,
+) -> Option<StatefulProtocol> {
     let image = image::load_from_memory(data).ok()?;
     // Keep the whole image so the card shows its subject; the card sizes the
     // cover by the real terminal font ratio and uses `Resize::Fit` to scale.
-    Some(picker.new_resize_protocol(image.thumbnail(256, 256)))
+    let small = image.thumbnail(px, px);
+    Some(picker.new_resize_protocol(if round { round_thumbnail(small) } else { small }))
 }
+
+/// Crop to a square and fade everything outside the inscribed circle to
+/// transparent, with a soft edge. Used for singer portraits.
+fn round_thumbnail(img: image::DynamicImage) -> image::DynamicImage {
+    let (width, height) = img.dimensions();
+    let size = width.min(height);
+    let x = (width - size) / 2;
+    let y = (height - size) / 2;
+    let mut square = img.crop_imm(x, y, size, size).to_rgba8();
+
+    let radius = size as f32 / 2.0;
+    for (px, py, pixel) in square.enumerate_pixels_mut() {
+        let dx = px as f32 + 0.5 - radius;
+        let dy = py as f32 + 0.5 - radius;
+        let coverage = (radius - (dx * dx + dy * dy).sqrt() + 0.5).clamp(0.0, 1.0);
+        pixel.0[3] = (pixel.0[3] as f32 * coverage) as u8;
+    }
+    image::DynamicImage::ImageRgba8(square)
+}
+
+/// Longest side decoded for content-card thumbnails. A card's cover area is at
+/// most 12 cells wide and a few rows tall, so a typical 8×16 cell font only
+/// needs a ~48px square; 96px leaves 2× headroom for larger fonts and
+/// high-DPI terminals. This also caps sources that ignore the CDN's resize
+/// parameters.
+pub(crate) const CONTENT_COVER_MAX_PX: u32 = 96;
+
+/// Singer portraits are shown as big circles, so they are fetched and decoded
+/// larger than song covers. 128px (≈65 KiB RGBA) keeps the cache cheap while
+/// still covering a 16-cell-wide portrait on common fonts.
+pub(crate) const SINGER_COVER_MAX_PX: u32 = 128;
 
 /// Longest side a cover is decoded at. The playerbar cover is only a handful of
 /// terminal cells, and third-party URLs (Bilibili) ignore NetEase's
@@ -441,7 +546,48 @@ fn apply_cover(
 
 #[cfg(test)]
 mod tests {
-    use super::{COVER_MAX_PX, downscale_cover, sized_cover_url};
+    use super::{
+        COVER_MAX_PX, PREFETCH_ROWS, downscale_cover, prefetch_range, round_thumbnail,
+        sized_cover_url,
+    };
+
+    #[test]
+    fn round_thumbnail_masks_the_corners() {
+        let img = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+            20,
+            10,
+            image::Rgba([200, 100, 50, 255]),
+        ));
+        let round = round_thumbnail(img);
+        assert_eq!((round.width(), round.height()), (10, 10));
+        let rgba = round.to_rgba8();
+        assert_eq!(rgba.get_pixel(0, 0)[3], 0, "corner must be transparent");
+        assert_eq!(rgba.get_pixel(5, 5)[3], 255, "centre must stay opaque");
+    }
+
+    #[test]
+    fn prefetch_range_fetches_short_lists_whole() {
+        assert_eq!(prefetch_range(31, &(0..6), 0, 2), 0..31);
+        assert_eq!(prefetch_range(60, &(0..6), 0, 2), 0..60);
+    }
+
+    #[test]
+    fn prefetch_range_adds_a_margin_around_the_viewport() {
+        assert_eq!(prefetch_range(1000, &(100..110), 100, 2), 90..120);
+    }
+
+    #[test]
+    fn prefetch_range_always_covers_the_cursor() {
+        let around = 2 * PREFETCH_ROWS;
+        let range = prefetch_range(1000, &(0..0), 50, 2);
+        assert_eq!(range, 50 - around..50 + around + 1);
+        assert!(range.contains(&50));
+    }
+
+    #[test]
+    fn prefetch_range_clamps_to_the_list() {
+        assert_eq!(prefetch_range(200, &(185..200), 199, 2), 170..200);
+    }
 
     #[test]
     fn large_covers_are_downscaled_before_cropping() {

@@ -196,23 +196,29 @@ async fn handle_connection<S>(
             return;
         }
     };
-    let mut stream = reader.into_inner();
+    let stream = reader.into_inner();
     match request {
         IpcRequest::Status => {
             let reply = {
                 // Clone under the lock, serialize outside it so a slow client
                 // never blocks the app loop's `IpcState::update`.
                 let snapshot = lock_recover(&snapshot).clone();
-                serde_json::to_string(&snapshot).unwrap_or_default()
+                let Some(reply) = serialize_reply(&snapshot, "status snapshot") else {
+                    return;
+                };
+                reply
             };
-            let _ = write_reply(&mut stream, &reply).await;
+            write_reply_logged(stream, &reply).await;
         }
         IpcRequest::List => {
             let reply = {
                 let queue = lock_recover(&queue).clone();
-                serde_json::to_string(&queue).unwrap_or_default()
+                let Some(reply) = serialize_reply(&queue, "queue snapshot") else {
+                    return;
+                };
+                reply
             };
-            let _ = write_reply(&mut stream, &reply).await;
+            write_reply_logged(stream, &reply).await;
         }
         IpcRequest::Msg { action } => {
             let event: IpcEvent = action.into();
@@ -220,19 +226,43 @@ async fn handle_connection<S>(
             if sent.is_err() {
                 log::error!("ipc: failed to forward msg event: receiver dropped");
             }
-            let _ = write_reply(&mut stream, r#"{"ok":true}"#).await;
+            write_reply_logged(stream, r#"{"ok":true}"#).await;
         }
         IpcRequest::Search { keyword } => {
             let results: Vec<SearchEntry> = searcher
                 .search(&keyword)
                 .await
                 .into_iter()
-                .map(|hit| SearchEntry::from_song(&hit.info, &hit.source))
+                .map(|hit| SearchEntry::from_song(&hit.info, hit.source.display_name()))
                 .collect();
-            let reply = serde_json::to_string(&results).unwrap_or_default();
-            let _ = write_reply(&mut stream, &reply).await;
+            let Some(reply) = serialize_reply(&results, "search results") else {
+                return;
+            };
+            write_reply_logged(stream, &reply).await;
         }
         IpcRequest::Subscribe => stream_updates(stream, snapshot, status_tx).await,
+    }
+}
+
+/// Serialize an IPC reply, logging (rather than silently sending an empty
+/// line) if the payload cannot be represented as JSON.
+fn serialize_reply<T: serde::Serialize>(value: &T, what: &str) -> Option<String> {
+    match serde_json::to_string(value) {
+        Ok(reply) => Some(reply),
+        Err(e) => {
+            log::error!("ipc: failed to serialize {what}: {e}");
+            None
+        }
+    }
+}
+
+/// Write a one-shot reply, logging transient client disconnects at debug level.
+async fn write_reply_logged<S>(stream: S, reply: &str)
+where
+    S: AsyncWrite + Unpin,
+{
+    if let Err(e) = write_reply(stream, reply).await {
+        log::debug!("ipc: failed to write reply: {e}");
     }
 }
 
@@ -262,15 +292,21 @@ async fn stream_updates<S>(
 {
     let mut rx = status_tx.subscribe();
     let initial = lock_recover(&snapshot).clone();
-    let line = serde_json::to_string(&initial).unwrap_or_default();
-    if write_reply(&mut stream, &line).await.is_err() {
+    let Some(line) = serialize_reply(&initial, "status snapshot") else {
+        return;
+    };
+    if let Err(e) = write_reply(&mut stream, &line).await {
+        log::debug!("ipc: subscribe write failed: {e}");
         return;
     }
     loop {
         match rx.recv().await {
             Ok(s) => {
-                let line = serde_json::to_string(&s).unwrap_or_default();
-                if write_reply(&mut stream, &line).await.is_err() {
+                let Some(line) = serialize_reply(&s, "status snapshot") else {
+                    return;
+                };
+                if let Err(e) = write_reply(&mut stream, &line).await {
+                    log::debug!("ipc: subscribe write failed: {e}");
                     return;
                 }
             }
@@ -278,8 +314,11 @@ async fn stream_updates<S>(
             // catches up instead of missing the intermediate state.
             Err(broadcast::error::RecvError::Lagged(_)) => {
                 let current = lock_recover(&snapshot).clone();
-                let line = serde_json::to_string(&current).unwrap_or_default();
-                if write_reply(&mut stream, &line).await.is_err() {
+                let Some(line) = serialize_reply(&current, "status snapshot") else {
+                    return;
+                };
+                if let Err(e) = write_reply(&mut stream, &line).await {
+                    log::debug!("ipc: subscribe write failed: {e}");
                     return;
                 }
             }

@@ -5,7 +5,7 @@ use crate::{config::Config, ipc, ipc::StatusSnapshot, time::format_duration};
 
 /// `pigma status` handler.
 pub async fn status(template: &str, json: bool, list: bool) -> eyre::Result<()> {
-    let config = Config::load();
+    let config = Config::load_read_only();
     if list {
         let queue = ipc::fetch_queue().await?;
         if json {
@@ -16,7 +16,7 @@ pub async fn status(template: &str, json: bool, list: bool) -> eyre::Result<()> 
         return Ok(());
     }
     let snapshot = ipc::fetch_status().await?;
-    if json || config.cli_status_format == "json" {
+    if json || config.cli_status_format.is_json() {
         println!("{}", serde_json::to_string_pretty(&snapshot)?);
     } else {
         let template = if template.is_empty() {

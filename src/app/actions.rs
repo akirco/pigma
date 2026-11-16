@@ -1,6 +1,8 @@
 //! User-facing playback/UI actions shared by keyboard, mouse and IPC input.
 //! Keeping them here means the input layer only maps keys to actions.
 
+use ratatui::layout::Rect;
+
 use super::App;
 use crate::{
     event::{CommandPanelAction, PlaybackEvent},
@@ -163,27 +165,107 @@ impl App {
         }
     }
 
+    /// Switch to the queue tab under the pointer on the playlist page. Returns
+    /// whether the click landed on the tab bar, so the row handler does not
+    /// also run.
+    pub(crate) fn queue_tab_click(&mut self, col: u16, row: u16) -> bool {
+        let nav = &self.state.navigation;
+        if nav.queue_tab_area.width == 0 || !nav.queue_tab_area.contains((col, row).into()) {
+            return false;
+        }
+        let x = (col - nav.queue_tab_area.x) as usize + nav.queue_tab_scroll_x as usize;
+        let tab = nav
+            .queue_tab_hits
+            .iter()
+            .find(|hit| hit.columns.contains(&x))
+            .map(|hit| hit.index);
+        if let Some(tab) = tab {
+            self.switch_queue_index(tab);
+        }
+        true
+    }
+
+    /// Switch to the queue tab at `index` (mouse click on its name).
+    pub(crate) fn switch_queue_index(&mut self, index: usize) {
+        if let Some(key) = self.playback.switch_to_queue(index) {
+            self.state.navigation.playlist_selected =
+                self.playback.queue_current_index().unwrap_or(0);
+            self.toast(format!("{} 队列: {key}", crate::icons::QUEUE));
+        }
+    }
+
+    /// A left click on the player bar: play/pause, previous/next, like toggle,
+    /// play-mode cycle, or seek to the clicked point on the progress gauge.
+    pub(crate) fn playerbar_click(&mut self, col: u16, row: u16) {
+        let hits = self.playerbar_hits();
+        let point = (col, row).into();
+        if hits.play.contains(point) {
+            self.toggle_playback();
+        } else if hits.prev.contains(point) {
+            self.playback.prev();
+        } else if hits.next.contains(point) {
+            self.playback.next();
+        } else if hits.cover.contains(point) {
+            self.toggle_lyrics_transition();
+        } else if hits.like.contains(point) {
+            if self.playback.state.liked {
+                self.unlike_current_song();
+            } else {
+                self.like_current_song();
+            }
+        } else if hits.mode.contains(point) {
+            self.cycle_play_mode();
+        } else if hits.progress.contains(point) {
+            self.seek_to_point(col, hits.progress);
+        }
+    }
+
+    /// Seek to the fraction of the current song under `col` in the progress
+    /// gauge. `seek_relative` is the only seek entry point, so pass the delta.
+    fn seek_to_point(&mut self, col: u16, area: Rect) {
+        if area.width == 0 {
+            return;
+        }
+        let Some(song) = self.playback.current_song() else {
+            return;
+        };
+        let total_secs = song.duration as f64 / 1000.0;
+        if total_secs <= 0.0 {
+            return;
+        }
+        let ratio = ((col - area.x) as f64 / area.width as f64).clamp(0.0, 1.0);
+        let current = self.playback.state.progress * total_secs;
+        self.playback.seek_relative(ratio * total_secs - current);
+    }
+
     /// Empty every queue but the active one (`w`), then focus whichever tab is
     /// left so the playlist page never ends up with no focus.
     pub(crate) fn clear_play_queue(&mut self) {
         self.playback.clear_queue();
-        self.toast(format!(" {}  已清空播放队列", crate::icons::CLEAR_QUEUE));
-        if self.state.navigation.page != Page::Playlist {
-            return;
-        }
-        if let Some(key) = self.playback.switch_queue(false) {
-            self.state.navigation.playlist_selected =
-                self.playback.queue_current_index().unwrap_or(0);
-            self.toast(format!("{} 队列: {key}", crate::icons::QUEUE));
-        } else if let Some(key) = self.playback.queue_keys().last().cloned() {
+        let mut message = format!(" {}  已清空播放队列", crate::icons::CLEAR_QUEUE);
+        if self.state.navigation.page == Page::Playlist {
             // After clearing, only one queue remains: switch_queue returns None
             // when only one is left, so focus it explicitly (the last/rightmost
             // tab) to avoid an empty focus.
-            self.playback.activate_queue(&key);
-            self.state.navigation.playlist_selected =
-                self.playback.queue_current_index().unwrap_or(0);
-            self.toast(format!("{} 队列: {key}", crate::icons::QUEUE));
+            let key = match self.playback.switch_queue(false) {
+                Some(key) => Some(key),
+                None => {
+                    let last = self.playback.queue_keys().last().cloned();
+                    if let Some(ref key) = last {
+                        self.playback.activate_queue(key);
+                    }
+                    last
+                }
+            };
+            if let Some(key) = key {
+                self.state.navigation.playlist_selected =
+                    self.playback.queue_current_index().unwrap_or(0);
+                message = format!("{} 已清空播放队列 · 队列: {key}", crate::icons::QUEUE);
+            }
         }
+        // One toast only: a second one would overwrite `toast_msg` before the
+        // frame is drawn, so the "cleared" feedback was never visible.
+        self.toast(message);
     }
 
     /// Start filtering the playlist page queue (`/`): snapshot the queue so
@@ -209,13 +291,19 @@ impl App {
             CommandPanelAction::Previous => {
                 if let Some(items) = panel.current_items() {
                     let len = items.len();
-                    panel.selected = (panel.selected + len - 1) % len;
+                    if len > 0 {
+                        // `% len` first, so a stale selected index from a
+                        // previous menu level cannot overflow the addition.
+                        panel.selected = (panel.selected % len + len - 1) % len;
+                    }
                 }
             }
             CommandPanelAction::Next => {
                 if let Some(items) = panel.current_items() {
                     let len = items.len();
-                    panel.selected = (panel.selected + 1) % len;
+                    if len > 0 {
+                        panel.selected = (panel.selected + 1) % len;
+                    }
                 }
             }
             CommandPanelAction::Select => {
@@ -230,7 +318,9 @@ impl App {
         }
     }
 
-    fn execute_command(&mut self, action: CommandAction) {
+    /// Shared by the command panel and the `b` shortcut, so the border toggle
+    /// has one implementation (and one toast) instead of two divergent paths.
+    pub(super) fn execute_command(&mut self, action: CommandAction) {
         match action {
             CommandAction::ToggleBordered => {
                 self.state.border.enabled = !self.state.border.enabled;

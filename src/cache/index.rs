@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    fs,
+    fs, io,
     path::{Path, PathBuf},
     sync::{
         Arc, RwLock,
@@ -36,6 +36,19 @@ fn is_zero(value: &u64) -> bool {
     *value == 0
 }
 
+/// Saturating atomic subtraction, MSRV-safe (`AtomicU64::try_update` is newer
+/// than our declared rust-version).
+pub(super) fn saturating_sub_total(total: &AtomicU64, bytes: u64) {
+    let mut current = total.load(Ordering::Relaxed);
+    loop {
+        let next = current.saturating_sub(bytes);
+        match total.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => return,
+            Err(actual) => current = actual,
+        }
+    }
+}
+
 pub(super) type CacheIndex = HashMap<u64, CacheEntry>;
 
 #[derive(Serialize, Default, Deserialize)]
@@ -56,7 +69,8 @@ impl CacheManager {
         let lyrics_dir = base_dir.join("lyrics");
         let covers_dir = base_dir.join("covers");
         cleanup_stale_partials(&downloads_dir);
-        let index_file = Self::load_index_static(&downloads_dir);
+        let index_file = Self::load_index_static(&downloads_dir)
+            .unwrap_or_else(|| Self::rebuild_index_static(&downloads_dir, &template));
         let total = Self::compute_total_bytes(&downloads_dir, &index_file.songs);
         Self {
             downloads_dir,
@@ -85,15 +99,86 @@ impl CacheManager {
         dir.join("cache_index.json")
     }
 
-    fn load_index_static(dir: &Path) -> CacheIndexFile {
+    /// Load the index. `None` means the file exists but could not be read or
+    /// parsed; the caller then rebuilds it from the download directory instead
+    /// of silently dropping every cached file.
+    fn load_index_static(dir: &Path) -> Option<CacheIndexFile> {
         let path = Self::index_path(dir);
-        if !path.exists() {
-            return CacheIndexFile::default();
+        let data = match fs::read_to_string(&path) {
+            Ok(data) => data,
+            // A missing index is treated like a corrupt one: rebuild from the
+            // download directory so existing audio files are not orphaned.
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return None,
+            Err(e) => {
+                log::warn!("Failed to read cache index {}: {e}", path.display());
+                return None;
+            }
+        };
+        match serde_json::from_str(&data) {
+            Ok(index) => Some(index),
+            Err(e) => {
+                log::warn!("Failed to parse cache index {}: {e}", path.display());
+                None
+            }
         }
-        fs::read_to_string(&path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+    }
+
+    /// Best-effort index recovery after a corrupt/missing index. The song id is
+    /// encoded in the filename, so it can be parsed for the common templates:
+    /// `{id}` and any template without `{id}` (which appends `-<id>`).
+    fn rebuild_index_static(dir: &Path, template: &str) -> CacheIndexFile {
+        let mut songs = HashMap::new();
+        let idless_template = !template.contains("{id}");
+        if !idless_template && template != "{id}" {
+            log::warn!(
+                "Cannot recover cache ids for template `{template}`; downloads remain on disk unindexed"
+            );
+            return CacheIndexFile { songs };
+        }
+
+        let Ok(entries) = fs::read_dir(dir) else {
+            return CacheIndexFile { songs };
+        };
+        let now = unix_secs();
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !entry.file_type().is_ok_and(|t| t.is_file()) {
+                continue;
+            }
+            let Some(filename) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if filename.starts_with('.') || filename == "cache_index.json" {
+                continue;
+            }
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let id = if template == "{id}" {
+                stem.parse::<u64>().ok()
+            } else {
+                stem.rsplit_once('-')
+                    .and_then(|(_, id)| id.parse::<u64>().ok())
+            };
+            let Some(id) = id else {
+                continue;
+            };
+            songs.insert(
+                id,
+                CacheEntry {
+                    filename: filename.to_string(),
+                    duration: 0,
+                    accessed_at: now,
+                    pic_url: String::new(),
+                    uploaded_at: 0,
+                    thirdparty: None,
+                },
+            );
+        }
+        if !songs.is_empty() {
+            log::warn!("Recovered {} cache entries from disk", songs.len());
+        }
+        CacheIndexFile { songs }
     }
 
     /// Coalesced snapshot of the index to disk. Marks the index dirty and hands
@@ -211,11 +296,7 @@ impl CacheManager {
         {
             log::warn!("Failed to remove cached file {}: {e}", path.display());
         }
-        let _ = self
-            .cached_total_bytes
-            .try_update(Ordering::Relaxed, Ordering::Relaxed, |total| {
-                Some(total.saturating_sub(bytes))
-            });
+        saturating_sub_total(&self.cached_total_bytes, bytes);
     }
 
     /// Remove a cached song completely (index entry + file). Used by tests and

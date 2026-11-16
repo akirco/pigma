@@ -25,6 +25,12 @@ pub struct State {
     pub command_panel: CommandPanel,
     pub help: HelpState,
     pub offline: bool,
+    /// Last pointer position reported by the terminal, used for card hover
+    /// highlights. `None` until the mouse first moves.
+    pub mouse: Option<(u16, u16)>,
+    /// Last left-button press: when it happened and where, for double-click
+    /// detection (terminals report presses, not clicks).
+    pub last_click: Option<(Instant, u16, u16)>,
     pub tick: u64,
     pub last_tick: Instant,
     pub toast_msg: String,

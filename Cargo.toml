@@ -2,12 +2,64 @@
 name = "pigma"
 version = "0.2.16"
 edition = "2024"
+# Highest requirement in the dependency graph is stream-download 0.24.4
+rust-version = "1.91.0"
 description = "A netease cloud music client"
 repository = "https://github.com/akirco/pigma.git"
 license = "Apache-2.0"
 # authors = ["akirco <earlfx@163.com>"]
 
+[dependencies]
+biquad = { workspace = true }
+clap = { workspace = true, features = ["color", "derive", "error-context", "help", "std", "suggestions", "usage"] }
+clap_complete = { workspace = true }
+crossterm = { workspace = true, features = ["event-stream", "events", "windows"] }
+dirs = { workspace = true }
+eyre = { workspace = true, features = ["auto-install", "track-caller"] }
+futures = { workspace = true, features = ["std"] }
+image = { workspace = true, features = ["jpeg"] }
+log = { workspace = true, features = ["serde", "std"] }
+ncm-api = { workspace = true }
+qrcode = { workspace = true }
+rand = { workspace = true, features = ["std", "thread_rng"] }
+ratatui = { workspace = true, features = ["crossterm_0_29", "layout-cache", "serde"] }
+ratatui-image = { workspace = true, features = ["crossterm"] }
+reqwest = { workspace = true, features = ["rustls-no-provider"] }
+rodio = { workspace = true, features = ["playback", "symphonia-aac", "symphonia-flac", "symphonia-isomp4", "symphonia-mp3", "symphonia-vorbis", "symphonia-wav"] }
+rustls = { workspace = true, features = ["ring", "std"] }
+serde = { workspace = true, features = ["derive", "rc", "std"] }
+serde_json = { workspace = true, features = ["std"] }
+sonar = { workspace = true }
+stream-download = { workspace = true, features = ["async-read", "reqwest", "temp-storage"] }
+tachyonfx = "0.25.2"
+time = { workspace = true, features = ["formatting", "local-offset", "macros", "std"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+toml_edit = { workspace = true, features = ["display", "parse", "serde"] }
+unicode-width = { workspace = true, features = ["cjk"] }
+url = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+rustls = { workspace = true, features = ["ring", "std"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = { workspace = true, features = ["std"] }
+
+[target."cfg(windows)".dependencies]
+windows-sys = {
+  version = "0.61.2",
+  default-features = false,
+  features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+  ]
+}
+
+[lints]
+workspace = true
+
 [workspace]
+resolver = "3"
 members = ["crates/*"]
 # y7dl is a git submodule with its own formatting/lockfile; making it a
 # workspace member would make root `cargo fmt` rewrite the submodule and
@@ -17,7 +69,6 @@ exclude = ["crates/y7dl"]
 # Release builds and plain `cargo build` still operate on pigma itself; CI
 # runs `--workspace` explicitly to include ncm-api and sonar.
 default-members = ["."]
-resolver = "3"
 
 [workspace.dependencies]
 # Unified declarations. `default-features = false` is a workspace-wide vote:
@@ -37,8 +88,8 @@ eyre = { version = "0.6.14", default-features = false }
 futures = { version = "0.3.33", default-features = false }
 image = { version = "0.25.10", default-features = false }
 libc = { version = "0.2.191", default-features = false }
-log = { version = "0.4.34", default-features = false }
 lofty = { version = "0.25.4", default-features = false }
+log = { version = "0.4.34", default-features = false }
 md-5 = { version = "0.11.0", default-features = false }
 ncm-api = { path = "crates/ncm-api", default-features = false }
 once_cell = { version = "1.21.4", default-features = false }
@@ -64,52 +115,15 @@ unicode-width = { version = "0.2.2", default-features = false }
 url = { version = "2.5.8", default-features = false }
 urlencoding = { version = "2.1", default-features = false }
 
+[workspace.lints.clippy]
+assigning_clones = "deny"
+clone_on_copy = "deny"
+needless_borrow = "deny"
+redundant_clone = "deny"
+
 [workspace.lints.rust]
 unreachable_pub = "deny"
 unused_crate_dependencies = "deny"
-
-[workspace.lints.clippy]
-redundant_clone = "deny"
-clone_on_copy = "deny"
-needless_borrow = "deny"
-assigning_clones = "deny"
-
-[lints]
-workspace = true
-
-[dependencies]
-biquad = { workspace = true }
-clap = { workspace = true, features = ["std", "color", "help", "usage", "error-context", "suggestions", "derive"] }
-clap_complete = { workspace = true }
-crossterm = { workspace = true, features = ["event-stream", "events", "windows"] }
-dirs = { workspace = true }
-eyre = { workspace = true, features = ["auto-install", "track-caller"] }
-futures = { workspace = true, features = ["std"] }
-image = { workspace = true, features = ["jpeg"] }
-log = { workspace = true, features = ["serde", "std"] }
-ncm-api = { workspace = true }
-qrcode = { workspace = true }
-rand = { workspace = true, features = ["std", "thread_rng"] }
-ratatui = { workspace = true, features = ["crossterm_0_29", "layout-cache", "serde"] }
-ratatui-image = { workspace = true, features = ["crossterm"] }
-reqwest = { workspace = true, features = ["rustls-no-provider"] }
-rodio = { workspace = true, features = ["playback", "symphonia-aac", "symphonia-flac", "symphonia-isomp4", "symphonia-mp3", "symphonia-vorbis", "symphonia-wav"] }
-rustls = { workspace = true, features = ["ring", "std"] }
-serde = { workspace = true, features = ["std", "derive", "rc"] }
-serde_json = { workspace = true, features = ["std"] }
-sonar = { workspace = true }
-stream-download = { workspace = true, features = ["async-read", "reqwest", "temp-storage"] }
-time = { workspace = true, features = ["std", "formatting", "local-offset", "macros"] }
-tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
-toml_edit = { workspace = true, features = ["parse", "display", "serde"] }
-unicode-width = { workspace = true, features = ["cjk"] }
-url = { workspace = true, features = ["std"] }
-
-[dev-dependencies]
-rustls = { workspace = true, features = ["ring", "std"] }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-libc = { workspace = true, features = ["std"] }
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
 [profile.release]

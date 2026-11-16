@@ -85,7 +85,10 @@ impl ContentCache {
     }
 
     fn content_path(&self, api: &str) -> PathBuf {
-        self.content_dir.join(format!("{}.json", api))
+        // `api` can contain `:` (e.g. `playlist:123`), which is a legal Unix
+        // filename but invalid on Windows. Sanitize so the cache works on both.
+        self.content_dir
+            .join(format!("{}.json", crate::persist::sanitize_filename(api)))
     }
 
     pub async fn load_content_cache_async(
@@ -223,6 +226,17 @@ mod tests {
         lock::lock_recover,
         state::{ContentState, PaginationInfo},
     };
+
+    #[test]
+    fn content_cache_path_is_valid_on_windows() {
+        let cache = ContentCache::new(std::env::temp_dir());
+        let path = cache.content_path("playlist:7");
+        assert_eq!(
+            path.file_name().and_then(|n| n.to_str()),
+            Some("playlist_7.json")
+        );
+        assert!(!path.to_string_lossy().contains(':'));
+    }
 
     #[test]
     fn flush_content_cache_writes_pending_payload_even_when_writer_is_busy() {

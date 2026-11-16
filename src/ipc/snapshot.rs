@@ -75,6 +75,25 @@ impl StatusSnapshot {
         }
     }
 
+    /// Whether this snapshot still matches the playback state in every field
+    /// except the position. Lets the app loop avoid cloning name/artist/album
+    /// on every iteration when nothing but the progress changed.
+    pub fn matches_playback(&self, state: &crate::playback::PlaybackState) -> bool {
+        let song = state.current_song.as_ref();
+        self.id == song.map_or(0, |s| s.id)
+            && self.name == song.map_or("", |s| s.name.as_str())
+            && self.artist == song.map_or("", |s| s.singer.as_str())
+            && self.album == song.map_or("", |s| s.album.as_str())
+            && self.duration_ms == song.map_or(0, |s| s.duration)
+            && self.volume == state.volume
+            && self.speed == state.speed
+            && self.pitch_locked == state.pitch_locked
+            && self.playing == state.playing
+            && self.paused == state.paused
+            && self.mode == mode_key(&state.mode)
+            && self.liked == state.liked
+    }
+
     /// Whether `self` differs from `other` in any field that is *not* the
     /// playback position. The app loop compares snapshots with this before
     /// deciding to broadcast, so a running track does not spam subscribers on

@@ -5,5 +5,5 @@
 mod handler;
 mod model;
 
-pub use handler::EventHandler;
+pub use handler::{EventHandler, EventSender};
 pub use model::*;

@@ -6,7 +6,6 @@
 [![AUR Version](https://img.shields.io/aur/version/pigma-bin)](https://aur.archlinux.org/packages/pigma-bin)
 ![GitHub repo size](https://img.shields.io/github/repo-size/akirco/pigma)
 
-
 <img width="100" src="./assets/imgs/logo.png" alt="pigma" />
 
 A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built with [Ratatui](https://ratatui.rs).
@@ -27,6 +26,7 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
       - [Windows：命名管道控制（PowerShell）](#windows命名管道控制powershell)
     - [无头守护进程模式（pigma -d）](#无头守护进程模式pigma--d)
   - [Configuration](#configuration)
+    - [Content Layout Configuration](#content-layout-configuration)
     - [Columns Configuration](#columns-configuration)
       - [Column width types](#column-width-types)
       - [Available fields by content type](#available-fields-by-content-type)
@@ -39,13 +39,15 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
     - [Lyric gradient](#lyric-gradient)
     - [Navigation items](#navigation-items)
       - [Section titles support rich-text markup](#section-titles-support-rich-text-markup)
+    - [Border](#border)
+      - [内置字符](#内置字符)
+      - [自定义字符](#自定义字符)
+      - [角落字符参考](#角落字符参考)
     - [Theme](#theme)
   - [Development](#development)
-  - [Plan](#plan)
   - [License](#license)
 
 </details>
-
 
 **注意：**
 
@@ -74,6 +76,7 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
 - [x] 重构播放队列
 - [x] 下载管理（重合边听边存）
 - [x] 重写playerbar(支持歌曲封面)
+- [x] 页面切换过渡动画（背景 sweep 遮罩 + 淡入，覆盖 splash/login/歌词/均衡器等页面）
 - [x] 云盘上传（缓存文件，本地文件）
 - [x] 音量控制 / 10 段均衡器（`e` 打开，横向调节 dB）
 - [x] 变速播放（`[` / `]` 每档 0.1，0.5–2.0x；`t` 切换两种变速方式：WSOLA 时域拉伸保持音调（播放条显示 `*1.2x`）与重采样保持原声质感（显示 `1.2x`），进度与歌词自动跟随）
@@ -115,7 +118,6 @@ A NetEase Cloud Music (网易云音乐) or local audio playback TUI client built
   </tr>
 </table>
 
-
 ## Install
 
 > Note: the `gnu` Linux builds depend on system audio libraries (e.g. `alsa-lib`).
@@ -135,6 +137,7 @@ scoop install aki/pigma
 ```
 
 `linux(aur)`
+
 ```sh
 yay -S pigma
 
@@ -338,6 +341,7 @@ Send-Pigma '{"cmd":"msg","action":{"action":"volume","absolute":0.75}}'  # 音�
 启动后即用 `pigma status` / `pigma msg` 控制；`SIGINT`/`SIGTERM` 会保存会话并干净退出。
 
 **Waybar 集成**：
+
 - 参考 [waybar](./assets/waybar)。状态模块用 bash 脚本 `assets/waybar/pigma`，每秒调 `pigma status --json` 获取状态并格式化为 waybar JSON。脚本内置 `ensure_daemon`，首次调用时自动启动 daemon。
 
 ```jsonc
@@ -355,9 +359,14 @@ Send-Pigma '{"cmd":"msg","action":{"action":"volume","absolute":0.75}}'  # 音�
 ## Configuration
 
 Config file location:
+
 - linux: `~/.config/pigma/config.toml`
 - macOS: `$HOME/Library/Application Support/pigma/config.tomnl`
 - windows:`RoamingAppData`
+
+pigma loads the config at startup. If you edit `config.toml` manually while
+pigma is running, later saves (including the save on exit) leave the externally
+modified file untouched; the new settings take effect on the next start.
 
 ### Content Layout Configuration
 
@@ -376,7 +385,6 @@ hot_search = "table"
 ### Columns Configuration
 
 Each content type has two levels of columns: **type-defaults** and **per-API overrides**.
-
 
 ```toml
 [columns]
@@ -400,7 +408,6 @@ search = [
     { header = "HOT SEARCH", field = "keyword", min_width = 1 },
 ]
 ```
-
 
 #### Column width types
 
@@ -530,7 +537,7 @@ lyrics = "\u266a LYRICS"
 
 ```toml
 [playerbar]
-# 播放栏布局: "default", "modern", "minimal"
+# 播放栏布局: "classic", "modern"（默认；单击封面进入/返回歌词页）
 layout = "modern"
 
 # 进度条填充符号
@@ -542,10 +549,9 @@ filled_color = "accent"
 # 进度条未填充颜色
 unfilled_color = "text"
 # 已缓存到本地时进度条轨道颜色
-unfilled_color_cached = "warning"
-# 是否启用进度条渐变效果
-gradient_enabled = false
-# 渐变预设: "warm", "cool", "sunset", "ocean", "forest", "neon", "pastel", "rainbow"
+unfilled_color_cached = "error"
+# 渐变预设: 设为空或未知名称即关闭渐变
+# 可选: "warm", "cubehelix", "rainbow", "turbo", "spectral", "viridis"
 gradient_preset = "warm"
 
 # 播放栏各组件可见性(建议暂时别用，音量控制没写好)
@@ -560,7 +566,7 @@ mode_icon = true
 spinner = true
 ```
 
-Supported theme color names: `bg`, `surface`, `text`, `accent`, `highlight`, `muted`, `error`, `warning`.
+Supported theme color names: `bg`, `surface`, `text`, `accent`, `border`, `muted`, `error`.
 
 ### Content cache
 
@@ -585,9 +591,24 @@ splash_duration_secs = 2.0
 lyric_gradient = "warm"  # warm | cubehelix | rainbow | spectral | viridis | turbo
 ```
 
-未知值回退到 `warm`。
+未知值回退到默认的 `rainbow`。
 
 ### Navigation items
+
+The selected and hovered nav item's decorations are configurable:
+
+```toml
+[navigation]
+# Drawn on each side of the selected/hovered item.
+selected_left = "\ue0b2"
+selected_right = "\ue0b0"
+
+#  ,  ,  , ,    ,    ,   ,
+```
+
+Defaults use the Powerline separators around the selected/hovered item
+(`\ue0b2` / `\ue0b0`). Hovered items reuse the same capsule shape with a dimmer
+fill, so they stay distinct from the accent-filled selected item.
 
 Each nav item can have:
 
@@ -607,7 +628,6 @@ are styled by the active theme:
 | -------------------- | ------------ |
 | `<accent>…</accent>` | Accent color |
 | `<b>…</b>`           | Bold         |
-
 
 **支持的标记语法**
 
@@ -631,6 +651,7 @@ are styled by the active theme:
 | 渐变色   | `<grad:preset>…</grad>`         | 逐字符渐变（简写）                       | `<grad:turbo>…</grad>`           |
 
 渐变预设：`warm`、`cubehelix`、`rainbow`、`turbo`、`spectral`、`viridis`。
+
 - 普通标签（主题色/修饰符/字面颜色）支持嵌套，例如 `<b><accent>DISCOVER</accent></b>` 会得到加粗的强调色文本。
 - 渐变标签内的内容不再解析内部标签，整段按字符上渐变色；渐变标签需成对使用（`</gradient>` 或 `</grad>`）。
 - 未含标签的文本按无样式渲染。
@@ -647,7 +668,6 @@ are styled by the active theme:
 
 > 表格**行内容**（歌曲名、歌手等单元格）暂不支持标记语法，按纯文本渲染。
 
-
 Example (the default):
 
 ```toml
@@ -660,11 +680,99 @@ api = "recommend_songs"
 title_template = "{name} ({count})" # 同样支持title的标记语法
 ```
 
+### Border
+
+`[border]` 控制内容区、播放队列、歌词页、侧栏/横向导航和播放栏的外框。
+
+```toml
+[border]
+enabled = true
+# 边框字符类型，见下表
+style = "rounded"
+# 横竖线是否跟随角落颜色
+follow_corner_color = false
+# 可选：边框渐变（同歌词渐变预设），优先级高于纯色
+border_gradient = "rainbow"
+# 渐变滚动速度，0 为静态
+border_gradient_speed = 0.005
+```
+
+#### 内置字符
+
+每个边框由 8 个单格字符组成：4 个角、上下两条横线、左右两条竖线。
+
+| `style`                  | 左上 / 右上 | 左下 / 右下 | 横线    | 竖线    |
+| ------------------------ | ----------- | ----------- | ------- | ------- |
+| `plain`                  | `┌` `┐`     | `└` `┘`     | `─`     | `│`     |
+| `rounded`                | `╭` `╮`     | `╰` `╯`     | `─`     | `│`     |
+| `double`                 | `╔` `╗`     | `╚` `╝`     | `═`     | `║`     |
+| `thick`                  | `┏` `┓`     | `┗` `┛`     | `━`     | `┃`     |
+| `light_double_dashed`    | `┌` `┐`     | `└` `┘`     | `╌`     | `╎`     |
+| `heavy_double_dashed`    | `┏` `┓`     | `┗` `┛`     | `╍`     | `╏`     |
+| `light_triple_dashed`    | `┌` `┐`     | `└` `┘`     | `┄`     | `┆`     |
+| `heavy_triple_dashed`    | `┏` `┓`     | `┗` `┛`     | `┅`     | `┇`     |
+| `light_quadruple_dashed` | `┌` `┐`     | `└` `┘`     | `┈`     | `┊`     |
+| `heavy_quadruple_dashed` | `┏` `┓`     | `┗` `┛`     | `┉`     | `┋`     |
+| `quadrant_inside`        | `▗` `▖`     | `▝` `▘`     | `▄` `▀` | `▐` `▌` |
+| `quadrant_outside`       | `▛` `▜`     | `▙` `▟`     | `▀` `▄` | `▌` `▐` |
+
+#### 自定义字符
+
+`style = "custom"` 时从 `[border.chars]` 读取字符；没写的项保持 `plain` 的字形，
+每个槽位都是**一个终端单元格**。
+
+```toml
+[border]
+style = "custom"
+
+[border.chars]
+top_left = "◆"
+top_right = "◆"
+bottom_left = "◆"
+bottom_right = "◆"
+horizontal_top = "╌"
+horizontal_bottom = "╌"
+vertical_left = "╎"
+vertical_right = "╎"
+```
+
+`horizontal_top` 和 `horizontal_bottom`、`vertical_left` 和 `vertical_right`
+可以不同，方便做上/下不同线型或左右不对称。
+
+#### 角落字符参考
+
+| 风格      | 角              | 搭配横/竖线 |
+| --------- | --------------- | ----------- |
+| 菱形      | `◆` `◆` `◆` `◆` | `╌` / `╎`   |
+| 三角/切口 | `◤` `◥` `◣` `◢` | `─` / `│`   |
+| 实心块    | `▛` `▜` `▙` `▟` | `▀` / `▌`   |
+| 双线      | `╔` `╗` `╚` `╝` | `═` / `║`   |
+| 圆角      | `╭` `╮` `╰` `╯` | `─` / `│`   |
+| 细角标    | `⌜` `⌝` `⌞` `⌟` | `─` / `│`   |
+| 点缀      | `✦` `✦` `✦` `✦` | `·` / `·`   |
+
+例如"切口"风格：
+
+```toml
+[border]
+style = "custom"
+
+[border.chars]
+top_left = "◤"
+top_right = "◥"
+bottom_left = "◣"
+bottom_right = "◢"
+horizontal_top = "─"
+horizontal_bottom = "─"
+vertical_left = "│"
+vertical_right = "│"
+```
+
 ### Theme
 
-pigma no longer ships built-in themes. You must define one or more `[[themes]]`
-entries in your config, and select the active one via `default_theme` (matched by
-`name`). If `themes` is empty, the UI falls back to a built-in default palette.
+pigma ships a few built-in themes. Add one or more `[[themes]]` entries to
+define your own, and select the active theme via `default_theme` (matched by
+`name`). If `themes` is empty, the UI uses the built-in default palette.
 
 ```toml
 default_theme = "rose-pine"
@@ -675,16 +783,13 @@ bg = "#191724"
 surface = "#26233A"
 text = "#E0DEF4"
 accent = "#EB6F92"
-highlight = "#31748F"
+border = "#31748F"
 muted = "#6E6A86"
 error = "#EB6F92"
-warning = "#F6C177"
-# 可选：选中卡片背景色；省略时使用 surface/accent 的混合色
-selection = "#3A2530"
 ```
 
-Supported theme color fields: `bg`, `surface`, `text`, `accent`, `highlight`,
-`muted`, `error`, `warning`, and optional `selection`.
+Supported theme color fields: `bg`, `surface`, `text`, `accent`, `border`,
+`muted`, and `error`.
 
 You can define multiple themes and switch between them at runtime (style toggle,
 default key `b`).
@@ -698,8 +803,6 @@ git submodule update --init --recursive
 cargo run
 cargo +nightly fmt
 ```
-
-
 
 ## License
 

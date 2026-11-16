@@ -35,7 +35,8 @@ impl PlaybackEngine {
         // would keep the event loop polling every 32ms for a reply that never
         // comes (the tick loop skips paused players).
         self.state.seeking = !self.state.paused;
-        self.controller.seek_to(Duration::from_secs_f64(new_secs));
+        self.controller
+            .seek_to(Duration::try_from_secs_f64(new_secs).unwrap_or(Duration::ZERO));
     }
 
     /// Replace the equalizer settings; the audio thread retunes its running

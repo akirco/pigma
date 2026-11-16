@@ -26,8 +26,11 @@ pub(crate) mod terminal;
 mod title;
 mod toast;
 mod topbar;
+mod transition;
 
+pub(crate) use playerbar::PlayerbarHits;
 pub(crate) use style::BlockStyle;
+pub(crate) use transition::{PageTransition, TransitionStep};
 
 mod render;
-pub use render::draw;
+pub(crate) use render::{ContentLayout, RenderOutcome, draw};

@@ -266,7 +266,9 @@ impl PlaybackEngine {
             let seek_time = if self.state.progress > 0.0 {
                 self.queue.current_song().and_then(|s| {
                     let secs = self.state.progress * (s.duration as f64 / 1000.0);
-                    (secs > 0.0).then(|| Duration::from_secs_f64(secs))
+                    (secs > 0.0)
+                        .then(|| Duration::try_from_secs_f64(secs).ok())
+                        .flatten()
                 })
             } else {
                 None

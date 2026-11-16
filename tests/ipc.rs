@@ -1,7 +1,11 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+//! IPC integration tests.
+//!
+//! These use the default current-thread Tokio runtime on purpose: the test
+//! socket path is a thread-local override, so the test future and all spawned
+//! server/client tasks must stay on the same thread. A multi-thread runtime
+//! could migrate the future and make it fall back to the real default socket.
+
+use std::sync::{Arc, Mutex};
 
 use pigma::{
     event::IpcEvent,
@@ -33,9 +37,10 @@ fn stub_searcher() -> Arc<pigma::service::SearchEngine> {
     let finder = Arc::new(
         sonar::SonarFinder::new(sonar::SearchConfig::new().with_providers(vec![])).expect("finder"),
     );
-    let sonar_songs: Arc<Mutex<HashMap<u64, Arc<sonar::Song>>>> =
-        Arc::new(Mutex::new(HashMap::new()));
-    let search_results: pigma::service::SearchResults = Arc::new(Mutex::new(HashMap::new()));
+    let sonar_songs: pigma::service::SonarSongs =
+        Arc::new(Mutex::new(pigma::service::SearchRegistry::default()));
+    let search_results: pigma::service::SearchResults =
+        Arc::new(Mutex::new(pigma::service::SearchRegistry::default()));
     Arc::new(pigma::service::SearchEngine::new(
         service,
         finder,
@@ -61,7 +66,7 @@ fn tmp_socket(tag: &str) -> std::path::PathBuf {
     }
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn status_round_trip() {
     ipc::set_socket_path_override(Some(tmp_socket("status")));
 
@@ -98,7 +103,7 @@ async fn status_round_trip() {
     assert!(got.playing);
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn queue_round_trip() {
     ipc::set_socket_path_override(Some(tmp_socket("queue")));
 
@@ -139,7 +144,7 @@ async fn queue_round_trip() {
     assert_eq!(got.songs[1].duration_ms, 2000);
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn msg_round_trip_forwards_event() {
     ipc::set_socket_path_override(Some(tmp_socket("msg")));
 
@@ -165,7 +170,7 @@ async fn msg_round_trip_forwards_event() {
     }
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn msg_switch_list_round_trip() {
     ipc::set_socket_path_override(Some(tmp_socket("switch_list")));
 
@@ -200,7 +205,7 @@ async fn msg_switch_list_round_trip() {
     }
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn msg_play_song_id_forwards_event() {
     ipc::set_socket_path_override(Some(tmp_socket("play_id")));
 
@@ -230,7 +235,7 @@ async fn msg_play_song_id_forwards_event() {
     }
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn msg_toggle_play_forwards_event() {
     ipc::set_socket_path_override(Some(tmp_socket("toggle_play")));
 
@@ -256,7 +261,7 @@ async fn msg_toggle_play_forwards_event() {
     }
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn subscribe_streams_updates() {
     ipc::set_socket_path_override(Some(tmp_socket("subscribe")));
 
@@ -306,7 +311,7 @@ async fn subscribe_streams_updates() {
     assert!(update.paused);
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn search_round_trip() {
     ipc::set_socket_path_override(Some(tmp_socket("search")));
 
@@ -329,7 +334,7 @@ async fn search_round_trip() {
 /// The Unix socket must be owner-only; otherwise another local user could
 /// control playback or read the status snapshot.
 #[cfg(unix)]
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn unix_socket_is_owner_only() {
     use std::os::unix::fs::PermissionsExt;
 

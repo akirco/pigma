@@ -4,35 +4,51 @@
 use std::time::Duration;
 
 use crossterm::event::Event as CrosstermEvent;
-use tokio::{sync::mpsc::UnboundedSender, time::sleep};
+use tokio::time::sleep;
 
 use super::super::App;
 use crate::{
-    event::{AppEvent, AuthEvent, CommandEvent, Event, NavigationEvent, SplashEvent},
+    event::{AppEvent, AuthEvent, CommandEvent, Event, EventSender, NavigationEvent, SplashEvent},
     input,
+    state::CommandAction,
 };
 
-/// Send an app event on the event loop channel, logging a dropped-receiver
+/// Send an app event on the event loop channels, logging a dropped-receiver
 /// failure instead of panicking. Shared by the spawn-and-notify pipelines.
-pub(crate) fn send_event(tx: &UnboundedSender<Event>, event: Event) {
-    if tx.send(event).is_err() {
-        log::error!("Failed to send event: receiver dropped");
+pub(crate) fn send_event(tx: &EventSender, event: Event) {
+    if let Err(e) = tx.send(event) {
+        log::error!("Failed to send event: {e}");
     }
 }
 
 impl App {
+    /// Upper bound for events folded into one frame. Control events are
+    /// unbounded, so draining without a limit would let a backlog postpone the
+    /// next render indefinitely; 32 keeps input latency bounded.
+    const MAX_EVENTS_PER_FRAME: usize = 32;
+
     pub(crate) async fn handle_events(&mut self) -> eyre::Result<()> {
-        if self.playback.state.seeking {
+        // Seeking and page transitions need periodic redraws even when no
+        // terminal/playback event arrives.
+        if self.playback.state.seeking || self.page_transition.is_some() {
             tokio::select! {
                 biased;
                 result = self.events.next() => {
                     self.dispatch_event(result?).await?;
                 }
-                _ = sleep(Duration::from_millis(32)) => {}
+                _ = sleep(Duration::from_millis(16)) => {}
             }
         } else {
             let event = self.events.next().await?;
             self.dispatch_event(event).await?;
+        }
+        let mut drained = 0;
+        while drained < Self::MAX_EVENTS_PER_FRAME && self.state.running {
+            let Some(event) = self.events.try_recv() else {
+                break;
+            };
+            self.dispatch_event(event).await?;
+            drained += 1;
         }
         Ok(())
     }
@@ -57,7 +73,7 @@ impl App {
                 AppEvent::Navigation(e) => self.handle_navigation_event(e),
                 AppEvent::Command(e) => self.handle_command_event(e),
                 AppEvent::Toast(msg) => self.toast(msg),
-                AppEvent::Ipc(e) => self.handle_ipc_event(e).await,
+                AppEvent::Ipc(e) => self.handle_ipc_event(e),
             },
         }
         Ok(())
@@ -85,6 +101,7 @@ impl App {
             NavigationEvent::NavSelect(api_str) => {
                 if let Err(e) = self.handle_nav_select(api_str, false) {
                     log::error!("NavSelect error: {e}");
+                    self.toast(format!("{} 加载失败: {e}", crate::icons::ERROR_MARK));
                 }
             }
             NavigationEvent::ContentLoaded {
@@ -103,13 +120,14 @@ impl App {
                 self.handle_breadcrumb(name, generation);
             }
             NavigationEvent::SearchSong(keyword) => self.handle_search_song(keyword),
-            NavigationEvent::Navigate(page) => self.state.navigation.page = page,
+            NavigationEvent::Navigate(page) => self.start_page_transition(page),
             NavigationEvent::SearchActivated => self.handle_search_activate(),
             NavigationEvent::SearchDeactivated => self.handle_search_deactivate(),
             NavigationEvent::ContentRestore => self.handle_content_restore(),
             NavigationEvent::CellAction(row, col) => {
                 if let Err(e) = self.handle_cell_action(row, col) {
                     log::error!("CellAction error: {e}");
+                    self.toast(format!("{} 操作失败: {e}", crate::icons::ERROR_MARK));
                 }
             }
             NavigationEvent::LoadMore => self.handle_load_more(),
@@ -121,13 +139,27 @@ impl App {
             NavigationEvent::UploadCachedSong(row) => self.handle_upload_cached_song(row),
             NavigationEvent::QueueFilterExit => self.handle_queue_filter_exit(),
             NavigationEvent::QueueFilterChanged => self.handle_queue_filter_changed(),
+            NavigationEvent::EndpointResolved {
+                endpoint,
+                content,
+                playlist_id,
+            } => {
+                let loaded = self.apply_endpoint_resolution(&endpoint, content, playlist_id);
+                self.toast(if loaded {
+                    format!("已切换到: {endpoint}")
+                } else {
+                    format!("切换失败: {endpoint}")
+                });
+            }
         }
     }
 
     fn handle_command_event(&mut self, event: CommandEvent) {
         match event {
             CommandEvent::Panel(action) => self.handle_command_panel(action),
-            CommandEvent::ToggleBordered => self.state.border.enabled = !self.state.border.enabled,
+            CommandEvent::ToggleBordered => {
+                self.execute_command(CommandAction::ToggleBordered);
+            }
         }
     }
 }

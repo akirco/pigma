@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},
@@ -9,11 +7,9 @@ use ratatui::{
 
 use crate::config::Theme;
 
-pub(super) fn draw_toast(f: &mut Frame, msg: &str, age: Duration, colors: &Theme) {
-    if age > Duration::from_secs(2) {
-        return;
-    }
-
+/// Draw the current toast. Expiry is decided once per frame by `App::begin_frame`
+/// (which clears `toast_time`), so this only has to render.
+pub(super) fn draw_toast(f: &mut Frame, msg: &str, colors: &Theme) {
     let area = f.area();
     let display_w = unicode_width::UnicodeWidthStr::width(msg);
     let w = (display_w as u16 + 6).min(area.width);

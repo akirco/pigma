@@ -2,16 +2,16 @@
 //! sonar fallback. Streaming setup lives in `stream`, provider resolution in
 //! `resolve`.
 
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::sync::Arc;
 
 use ncm_api::SongQuality;
-use sonar::{SonarFinder, Song};
-use tokio::sync::mpsc;
+use sonar::SonarFinder;
 
-use crate::{cache::CacheManager, event::Event, service::ApiService};
+use crate::{
+    cache::CacheManager,
+    event::EventSender,
+    service::{ApiService, SonarSongs},
+};
 
 mod resolve;
 mod stream;
@@ -28,10 +28,10 @@ pub(super) struct AudioSource {
     pub(super) sonar_enabled: bool,
     /// HTTP client used for streaming play URLs (proxy + headers applied).
     pub(super) stream_client: reqwest::Client,
-    pub(super) event_tx: mpsc::UnboundedSender<Event>,
+    pub(super) event_tx: EventSender,
     /// Original sonar songs for search results, keyed by the synthetic
     /// `SongInfo` id so playback can resolve the source via the same provider.
-    pub(super) sonar_songs: Arc<Mutex<HashMap<u64, Arc<Song>>>>,
+    pub(super) sonar_songs: SonarSongs,
 }
 
 impl AudioSource {
@@ -45,8 +45,8 @@ impl AudioSource {
         stream_client: reqwest::Client,
         finder: Arc<SonarFinder>,
         sonar_enabled: bool,
-        sonar_songs: Arc<Mutex<HashMap<u64, Arc<Song>>>>,
-        event_tx: mpsc::UnboundedSender<Event>,
+        sonar_songs: SonarSongs,
+        event_tx: EventSender,
     ) -> Self {
         Self {
             service,

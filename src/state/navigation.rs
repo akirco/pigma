@@ -1,7 +1,10 @@
 use std::{cell::RefCell, ops::Range, sync::Arc};
 
 use ncm_api::{LoginInfo, SongInfo};
-use ratatui::widgets::{ListState, TableState};
+use ratatui::{
+    layout::Rect,
+    widgets::{ListState, TableState},
+};
 
 use super::{ContentState, Page, PaginationInfo, content::TableMode, search::SearchState};
 use crate::config::NavConfig;
@@ -12,8 +15,21 @@ pub struct NavState {
     pub section_states: Vec<ListState>,
     pub focus_section: usize,
     pub subtitle: Option<String>,
+    /// Bordered UI: characters around the selected or hovered item.
+    pub selected_left: String,
+    pub selected_right: String,
     /// Horizontal scroll offset (in cells) for the top navigation mode.
     pub scroll_x: u16,
+    /// Inner rect of the sidebar list in the last frame, used to map mouse
+    /// clicks back to nav rows. Zero-sized when the sidebar was not drawn.
+    pub list_area: ratatui::layout::Rect,
+    /// Vertical scroll offset of the sidebar list in the last frame.
+    pub scroll_y: usize,
+    /// Inner rect of the horizontal navigation row in the last frame.
+    pub top_area: ratatui::layout::Rect,
+    /// Clickable items of that row: line columns and the section/item they
+    /// select. Empty when the sidebar layout is active.
+    pub top_hits: Vec<(std::ops::Range<usize>, usize, usize)>,
 }
 
 impl NavState {
@@ -40,7 +56,13 @@ impl NavState {
             section_states,
             focus_section: 0,
             subtitle: None,
+            selected_left: config.selected_left.clone(),
+            selected_right: config.selected_right.clone(),
             scroll_x: 0,
+            list_area: ratatui::layout::Rect::default(),
+            scroll_y: 0,
+            top_area: ratatui::layout::Rect::default(),
+            top_hits: Vec::new(),
         }
     }
 
@@ -87,8 +109,18 @@ impl NavState {
     }
 }
 
-/// (rendered title, focus_section, selected_index, generation, content item count)
-type TitleCache = (Arc<String>, usize, Option<usize>, u64, usize);
+/// One clickable tab in the queue tab bar: the columns it occupies in the tab
+/// line and the queue index it selects.
+#[derive(Debug, Clone)]
+pub struct QueueTabHit {
+    pub columns: std::ops::Range<usize>,
+    pub index: usize,
+}
+
+/// (rendered title, focus_section, selected_index, generation, content item
+/// count, paged total). The total is part of the key so a `count/total` title
+/// refreshes when the server reports a new total without adding loaded rows.
+type TitleCache = (Arc<String>, usize, Option<usize>, u64, usize, usize);
 
 #[derive(Clone)]
 pub struct BreadcrumbEntry {
@@ -110,18 +142,29 @@ pub struct NavigationState {
     pub history: Vec<BreadcrumbEntry>,
     pub content_selected: usize,
     pub content_column_selected: usize,
-    /// Columns used by the current content layout, set by the renderer.
+    /// Layout facts produced by the last frame and applied by
+    /// `App::apply_render_outcome` (see `ui::RenderOutcome`). Input handlers run
+    /// after `draw`, so these always describe the frame on screen.
     pub content_columns: usize,
-    /// Screen-row scroll offset for the card grid, set by the renderer.
+    /// Screen-row scroll offset for the card grid.
     pub content_scroll: usize,
     /// Item range drawn last frame, used to prefetch covers.
     pub content_visible: Range<usize>,
+    /// Item under the pointer in the last frame, used by mouse activation.
+    pub content_hovered: Option<usize>,
     pub table_mode: TableMode,
     pub table_state: TableState,
     pub playlist_selected: usize,
     /// Horizontal scroll offset of the queue's tab bar (persisted across renders
     /// so the selected tab stays in view).
     pub queue_tab_scroll_x: u16,
+    /// Queue table body in the last frame and its first visible song, used to
+    /// map mouse clicks back to queue rows. Zero-sized when not drawn.
+    pub queue_body: Rect,
+    pub queue_offset: usize,
+    /// Queue tab bar in the last frame and its clickable tabs.
+    pub queue_tab_area: Rect,
+    pub queue_tab_hits: Vec<QueueTabHit>,
     pub search: SearchState,
     pub pagination: Option<PaginationInfo>,
     pub generation: u64,
@@ -132,10 +175,25 @@ pub struct NavigationState {
     /// (focus_section, selected_index, generation, content item count).
     /// The item count is part of the key so incremental (paged) loads that
     /// append to the current content re-render the `{count}` placeholder.
+    /// This is a frame-local render cache, not business state: only
+    /// `ui::title` reads or writes it, via interior mutability.
     pub title_cache: RefCell<Option<TitleCache>>,
 }
 
 impl NavigationState {
+    /// Keep the cursor inside the loaded content after any mutation. The
+    /// renderer used to clamp a private copy, which let the highlighted row and
+    /// `content_selected` diverge (Enter then found nothing). Clamp at the
+    /// write site instead so every consumer reads the same value.
+    pub fn clamp_selection(&mut self) {
+        let len = self.content.len();
+        let sel = self.content_selected.min(len.saturating_sub(1));
+        if sel != self.content_selected {
+            self.content_selected = sel;
+            self.table_state.select((len > 0).then_some(sel));
+        }
+    }
+
     pub fn set_content(&mut self, content: ContentState) {
         self.content = Arc::new(content);
         self.content_selected = 0;
@@ -176,6 +234,7 @@ impl NavigationState {
             if let Some(api) = &entry.api {
                 self.nav.restore_focus_by_api(api);
             }
+            self.clamp_selection();
             *self.title_cache.borrow_mut() = None;
             true
         } else {
@@ -189,10 +248,7 @@ impl NavigationState {
             return false;
         }
 
-        let len = self.content.len();
-        self.content_selected = self.content_selected.min(len.saturating_sub(1));
-        self.table_state
-            .select((len > 0).then_some(self.content_selected));
+        self.clamp_selection();
         if let Some(pagination) = &mut self.pagination {
             pagination.total = pagination.total.saturating_sub(1);
         }
@@ -214,6 +270,7 @@ impl NavigationState {
         if let Some(pagination) = &mut self.pagination {
             pagination.total = pagination.total.saturating_add(1);
         }
+        self.clamp_selection();
         *self.title_cache.borrow_mut() = None;
         true
     }

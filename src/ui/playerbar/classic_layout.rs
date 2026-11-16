@@ -9,9 +9,9 @@ use crate::{
     playback::PlaybackState,
 };
 
-pub(super) struct DefaultLayout;
+pub(super) struct ClassicLayout;
 
-impl Playerbar for DefaultLayout {
+impl Playerbar for ClassicLayout {
     fn layout(&self, area: Rect, _config: &PlayerbarConfig, _is_sixel: bool) -> LayoutArea {
         // Previous, play and next: one cell per glyph plus the two three-cell gaps.
         const CONTROLS_WIDTH: u16 = 9;
@@ -71,9 +71,9 @@ impl Playerbar for DefaultLayout {
         _tick: u64,
         config: &PlayerbarConfig,
         layout: &LayoutArea,
-    ) {
+    ) -> widgets::ControlHits {
         widgets::draw_song_info(f, player, colors, layout.song_info);
-        widgets::draw_controls(f, player, colors, layout.controls, true);
+        let controls = widgets::draw_controls(f, player, colors, layout.controls, true);
         widgets::draw_gauge_with_label(f, player, colors, config, layout.gauge);
 
         if config.visible.mode_icon {
@@ -88,5 +88,6 @@ impl Playerbar for DefaultLayout {
         if player.seeking && config.visible.spinner {
             widgets::draw_spinner(f, _tick, colors, layout.spinner);
         }
+        controls
     }
 }

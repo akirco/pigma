@@ -2,8 +2,13 @@
 
 use ncm_api::SongList;
 
-use super::super::App;
-use crate::{lock::lock_recover, service::ApiEndpoint, state::ContentState};
+use super::super::{App, event::send_event};
+use crate::{
+    event::NavigationEvent,
+    lock::lock_recover,
+    service::{ApiEndpoint, ApiService},
+    state::ContentState,
+};
 
 impl App {
     pub(crate) fn handle_playback_started(&mut self) {
@@ -36,37 +41,51 @@ impl App {
         api_str: &str,
         playlist_index: Option<usize>,
     ) -> bool {
-        let api = ApiEndpoint::parse(api_str).unwrap_or(ApiEndpoint::RecommendSongs);
         let uid = self.state.navigation.user.as_ref().map(|u| u.uid);
-        let content = self
-            .service
-            .resolve_endpoint_content(api, uid, self.config.search_limit)
-            .await;
+        let (content, playlist_id) = resolve_endpoint(
+            &self.service,
+            api_str,
+            uid,
+            self.config.search_limit,
+            playlist_index,
+        )
+        .await;
+        self.apply_endpoint_resolution(api_str, content, playlist_id)
+    }
 
-        // Playlist/toplist endpoints resolve to a *list* of playlists; pick one
-        // (default first, or `--playlist N`) and load its songs.
-        let content = match content {
-            ContentState::SongLists(lists) => {
-                self.load_endpoint_list_songs(api, lists, playlist_index)
-                    .await
-            }
-            ContentState::TopLists(lists) => {
-                let lists: Vec<SongList> = lists
-                    .into_iter()
-                    .map(|t| SongList {
-                        id: t.id,
-                        name: t.name,
-                        cover_img_url: t.cover,
-                        author: String::new(),
-                        subscribed: false,
-                    })
-                    .collect();
-                self.load_endpoint_list_songs(api, lists, playlist_index)
-                    .await
-            }
-            other => other,
-        };
+    /// Start resolving `endpoint` in the background and emit
+    /// [`NavigationEvent::EndpointResolved`] when it is ready. Used by IPC so a
+    /// `switch-list` request cannot block the render loop on network I/O.
+    pub(crate) fn spawn_endpoint_load(&self, endpoint: String, playlist_index: Option<usize>) {
+        let service = self.service.clone();
+        let uid = self.state.navigation.user.as_ref().map(|u| u.uid);
+        let limit = self.config.search_limit;
+        let sender = self.events.sender();
+        tokio::spawn(async move {
+            let (content, playlist_id) =
+                resolve_endpoint(&service, &endpoint, uid, limit, playlist_index).await;
+            send_event(
+                &sender,
+                NavigationEvent::EndpointResolved {
+                    endpoint,
+                    content,
+                    playlist_id,
+                }
+                .into(),
+            );
+        });
+    }
 
+    /// Apply an asynchronously resolved endpoint to the playback queue.
+    pub(crate) fn apply_endpoint_resolution(
+        &mut self,
+        api_str: &str,
+        content: ContentState,
+        playlist_id: Option<u64>,
+    ) -> bool {
+        if let Some(id) = playlist_id {
+            self.playback.set_playlist_id(id);
+        }
         match content {
             ContentState::Songs(songs) if !songs.is_empty() => {
                 // Use the nav display name (e.g. " 我喜欢的音乐") as the queue key
@@ -90,44 +109,84 @@ impl App {
             }
         }
     }
+}
 
-    /// Resolve a playlist-list (or toplist) to the songs of the selected
-    /// playlist: `--playlist N` picks the 1-based `N`-th entry (default 1st).
-    async fn load_endpoint_list_songs(
-        &mut self,
-        api: ApiEndpoint,
-        lists: Vec<SongList>,
-        playlist_index: Option<usize>,
-    ) -> ContentState {
-        if lists.is_empty() {
-            return ContentState::Empty;
+/// Resolve an endpoint (and optionally one playlist inside a list endpoint)
+/// without mutating `App`, so it can run on a background task.
+async fn resolve_endpoint(
+    service: &ApiService,
+    api_str: &str,
+    uid: Option<u64>,
+    limit: u16,
+    playlist_index: Option<usize>,
+) -> (ContentState, Option<u64>) {
+    let Some(api) = ApiEndpoint::parse(api_str) else {
+        return (
+            ContentState::Error(format!("未知 endpoint: {api_str}")),
+            None,
+        );
+    };
+    let content = service.resolve_endpoint_content(api, uid, limit).await;
+
+    // Playlist/toplist endpoints resolve to a *list* of playlists; pick one
+    // (default first, or `--playlist N`) and load its songs.
+    match content {
+        ContentState::SongLists(lists) => {
+            resolve_endpoint_list(service, api, lists, playlist_index, limit).await
         }
-        let index = playlist_index.unwrap_or(1).max(1) - 1;
-        let Some(list) = lists.get(index) else {
-            return ContentState::Error(format!(
+        ContentState::TopLists(lists) => {
+            let lists: Vec<SongList> = lists
+                .into_iter()
+                .map(|t| SongList {
+                    id: t.id,
+                    name: t.name,
+                    cover_img_url: t.cover,
+                    author: String::new(),
+                    subscribed: false,
+                })
+                .collect();
+            resolve_endpoint_list(service, api, lists, playlist_index, limit).await
+        }
+        other => (other, None),
+    }
+}
+
+/// Resolve a playlist-list (or toplist) to the songs of the selected
+/// playlist: `--playlist N` picks the 1-based `N`-th entry (default 1st).
+async fn resolve_endpoint_list(
+    service: &ApiService,
+    api: ApiEndpoint,
+    lists: Vec<SongList>,
+    playlist_index: Option<usize>,
+    limit: u16,
+) -> (ContentState, Option<u64>) {
+    if lists.is_empty() {
+        return (ContentState::Empty, None);
+    }
+    let index = playlist_index.unwrap_or(1).max(1) - 1;
+    let Some(list) = lists.get(index) else {
+        return (
+            ContentState::Error(format!(
                 "playlist index {} out of range (1..={})",
                 index + 1,
                 lists.len()
-            ));
-        };
-        self.playback.set_playlist_id(list.id);
-        let limit = self.config.search_limit;
-        match api {
-            ApiEndpoint::SavedAlbums => self.service.load_album(list.id).await,
-            ApiEndpoint::UserRadioSublist => {
-                let (state, _, _) = self
-                    .service
-                    .load_playlist_detail(list.id, true, limit)
-                    .await;
-                state
-            }
-            _ => {
-                let (state, _, _) = self
-                    .service
-                    .load_playlist_detail(list.id, false, limit)
-                    .await;
-                state
-            }
+            )),
+            None,
+        );
+    };
+    let playlist_id = list.id;
+    let content = match api {
+        ApiEndpoint::SavedAlbums => service.load_album(playlist_id).await,
+        ApiEndpoint::UserRadioSublist => {
+            let (state, _, _) = service.load_playlist_detail(playlist_id, true, limit).await;
+            state
         }
-    }
+        _ => {
+            let (state, _, _) = service
+                .load_playlist_detail(playlist_id, false, limit)
+                .await;
+            state
+        }
+    };
+    (content, Some(playlist_id))
 }

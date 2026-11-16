@@ -12,7 +12,7 @@ impl CacheManager {
             use std::fmt::Write;
             let mut out = String::with_capacity(16 + ext.len());
             let _ = write!(out, "{}.{}", song.id, ext);
-            return out;
+            return sanitize_filename(&out);
         }
         let mut out = String::with_capacity(self.template.len() + ext.len() + 16);
         let mut rest = self.template.as_str();
@@ -47,7 +47,10 @@ impl CacheManager {
         }
         out.push('.');
         out.push_str(ext);
-        out
+        // Sanitize the assembled name too: template literals can contain path
+        // separators or Windows-illegal characters even though song fields are
+        // already sanitized individually.
+        sanitize_filename(&out)
     }
 
     /// Parse a cached filename stem into (name, singer) using the template.

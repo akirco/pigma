@@ -37,7 +37,8 @@ pub(super) async fn connect_client(path: &std::path::Path) -> std::io::Result<Cl
 /// Platform-specific listener for the IPC server.
 ///
 /// On Windows a named pipe is re-created for every connection, so the Windows
-/// variant holds the pipe name rather than a persistent handle.
+/// variant holds the pipe name plus the first server instance (which reserves
+/// the name until the first client connects).
 pub(super) struct Listener {
     #[cfg(unix)]
     unix: tokio::net::UnixListener,
@@ -47,6 +48,8 @@ pub(super) struct Listener {
     owner_uid: Option<u32>,
     #[cfg(windows)]
     name: String,
+    #[cfg(windows)]
+    first: Option<Stream>,
 }
 
 impl Listener {
@@ -93,8 +96,14 @@ impl Listener {
         #[cfg(windows)]
         {
             let name = path.to_string_lossy().into_owned();
-            match tokio::net::windows::named_pipe::ServerOptions::new().create(&name) {
-                Ok(_) => Some(Self { name }),
+            // `first_pipe_instance` fails if another process already owns the
+            // pipe name. Without it, CreateNamedPipe can silently add another
+            // instance and two pigma processes would share the endpoint.
+            match create_pipe_server(&name, true) {
+                Ok(first) => Some(Self {
+                    name,
+                    first: Some(first),
+                }),
                 Err(e) => {
                     // Windows releases the pipe name when the owning process
                     // exits, so a failed bind always means a live instance.
@@ -143,7 +152,8 @@ impl Listener {
         }
     }
 
-    /// Windows named pipes are scoped by the default pipe ACL; no extra check.
+    /// Windows access is restricted by the explicit owner-only DACL attached
+    /// when each pipe instance is created, so no peer check is needed here.
     #[cfg(windows)]
     pub(super) fn is_trusted(&self, _stream: &Stream) -> bool {
         true
@@ -157,15 +167,82 @@ impl Listener {
         }
         #[cfg(windows)]
         {
-            // A fresh server instance per connection; after a client attaches,
-            // that instance becomes the connection stream.
-            let server = tokio::net::windows::named_pipe::ServerOptions::new()
-                .create(&self.name)
-                .ok()?;
+            // The instance created by `bind` reserves the pipe name; after the
+            // first client attaches, create a fresh instance for the next one.
+            let server = match self.first.take() {
+                Some(server) => server,
+                None => create_pipe_server(&self.name, false).ok()?,
+            };
             server.connect().await.ok()?;
             Some(server)
         }
     }
+}
+
+/// Create a pipe instance with an owner-only DACL.
+///
+/// The default named-pipe security descriptor is inherited from the process
+/// and can grant access to other local users depending on policy. Attaching an
+/// explicit protected DACL (`SY` LocalSystem + `OW` owner) makes the IPC
+/// endpoint owner-only, matching the Unix socket's 0600 mode.
+#[cfg(windows)]
+fn create_pipe_server(
+    name: &str,
+    first_instance: bool,
+) -> std::io::Result<tokio::net::windows::named_pipe::NamedPipeServer> {
+    use std::ffi::c_void;
+
+    use windows_sys::Win32::{
+        Foundation::{HLOCAL, LocalFree},
+        Security::{
+            Authorization::{
+                ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+            },
+            PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES,
+        },
+    };
+
+    const SDDL: &str = "D:P(A;;GA;;;SY)(A;;GA;;;OW)";
+    let mut sddl: Vec<u16> = SDDL.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut descriptor: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+
+    // SAFETY: `sddl` is a valid NUL-terminated wide string, `descriptor` points
+    // to writable storage, and the optional size pointer is null as allowed by
+    // the API.
+    let ok = unsafe {
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl.as_mut_ptr(),
+            SDDL_REVISION_1,
+            &mut descriptor,
+            std::ptr::null_mut(),
+        )
+    };
+    if ok == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+
+    let mut attributes = SECURITY_ATTRIBUTES {
+        nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+        lpSecurityDescriptor: descriptor,
+        bInheritHandle: 0,
+    };
+    // SAFETY: `attributes` points to a valid SECURITY_ATTRIBUTES for the
+    // duration of the call, as required by the tokio API.
+    let result = unsafe {
+        let mut options = tokio::net::windows::named_pipe::ServerOptions::new();
+        options.first_pipe_instance(first_instance);
+        options.create_with_security_attributes_raw(
+            std::ffi::OsStr::new(name),
+            &mut attributes as *mut _ as *mut c_void,
+        )
+    };
+    // SAFETY: `descriptor` was allocated by
+    // ConvertStringSecurityDescriptorToSecurityDescriptorW and is no longer
+    // needed once the pipe has been created.
+    unsafe {
+        LocalFree(descriptor as HLOCAL);
+    }
+    result
 }
 
 /// Create the socket's parent directory and tighten pigma's own cache dir.

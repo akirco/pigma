@@ -1,5 +1,4 @@
-mod default_layout;
-mod minimal_layout;
+mod classic_layout;
 mod modern_layout;
 mod widgets;
 
@@ -59,9 +58,62 @@ impl LayoutArea {
     }
 }
 
+/// Clickable regions of the player bar, recorded by the last draw so mouse
+/// input can map a click to the control under the pointer. Zero-sized rects
+/// mean the control is not visible in the active layout.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct PlayerbarHits {
+    /// Cover art in layouts that draw one; a click opens the lyrics page.
+    pub cover: Rect,
+    pub play: Rect,
+    pub prev: Rect,
+    pub next: Rect,
+    pub like: Rect,
+    pub mode: Rect,
+    /// Progress gauge: a click seeks to that position.
+    pub progress: Rect,
+}
+
+/// Derive the click targets from a rendered layout. Control positions come from
+/// the renderer (icon widths differ between glyphs, which shifts centring); the
+/// like heart is a layout-specific cell.
+fn playerbar_hits(
+    layout: &LayoutArea,
+    controls: widgets::ControlHits,
+    like: Rect,
+) -> PlayerbarHits {
+    let progress = if layout.progress_bar.width > 0 {
+        layout.progress_bar
+    } else {
+        layout.gauge
+    };
+
+    PlayerbarHits {
+        cover: layout.cover,
+        play: controls.play,
+        prev: controls.prev,
+        next: controls.next,
+        like,
+        mode: layout.mode_icon,
+        progress,
+    }
+}
+
 pub(super) trait Playerbar {
     /// Build the concrete sub-areas from the already-inner area.
     fn layout(&self, area: Rect, config: &PlayerbarConfig, is_sixel: bool) -> LayoutArea;
+
+    /// Cell holding the like heart, if this layout draws one. The default
+    /// layout puts it at the start of the song info's second line; layouts that
+    /// draw it elsewhere override this, and layouts without one return an empty
+    /// rect.
+    fn like_area(&self, layout: &LayoutArea) -> Rect {
+        if layout.song_info.height >= 2 && layout.song_info.width > 0 {
+            Rect::new(layout.song_info.x, layout.song_info.y + 1, 1, 1)
+        } else {
+            Rect::default()
+        }
+    }
 
     fn render(
         &self,
@@ -71,7 +123,7 @@ pub(super) trait Playerbar {
         tick: u64,
         config: &PlayerbarConfig,
         layout: &LayoutArea,
-    );
+    ) -> widgets::ControlHits;
 
     // Playerbar drawing needs both the playback state and its layout/config inputs.
     #[allow(clippy::too_many_arguments)]
@@ -84,9 +136,11 @@ pub(super) trait Playerbar {
         config: &PlayerbarConfig,
         area: Rect,
         is_sixel: bool,
-    ) {
+        mouse: Option<(u16, u16)>,
+    ) -> PlayerbarHits {
         let colors = bs.colors;
-        let block = StyledBlock::from_color(bs, bs.colors.bg).block_padding(Padding::horizontal(1));
+        let block =
+            StyledBlock::from_color(bs, bs.colors.elevated()).block_padding(Padding::horizontal(1));
         let inner = block.inner(area);
         f.render_widget(block, area);
 
@@ -96,11 +150,54 @@ pub(super) trait Playerbar {
                     .style(Style::default().fg(colors.error)),
                 inner,
             );
-            return;
+            return PlayerbarHits::default();
         }
 
         let layout = self.layout(inner, config, is_sixel).clamped_to(inner);
-        self.render(f, player, colors, tick, config, &layout);
+        let controls = self.render(f, player, colors, tick, config, &layout);
+        let hits = playerbar_hits(&layout, controls, self.like_area(&layout));
+        paint_hover(f, &hits, mouse, area, colors);
+        hits
+    }
+}
+
+/// Expand a control's one-cell hit target into a small block with one cell of
+/// horizontal padding on each side, like a web button's hover background. The
+/// block stays inside the player bar and never covers the neighbouring control
+/// because the layouts leave at least one cell between them.
+fn hover_block(hit: Rect, bar: Rect) -> Rect {
+    if hit.width == 0 || hit.height == 0 {
+        return Rect::default();
+    }
+    let left = hit.x.saturating_sub(1).max(bar.x);
+    let right = hit.right().saturating_add(1).min(bar.right());
+    Rect::new(left, hit.y, right.saturating_sub(left), 1)
+}
+
+/// Paint a hover background under the clickable control beneath the pointer.
+fn paint_hover(
+    f: &mut Frame,
+    hits: &PlayerbarHits,
+    mouse: Option<(u16, u16)>,
+    bar: Rect,
+    colors: &Theme,
+) {
+    let Some((x, y)) = mouse else {
+        return;
+    };
+    let point = (x, y).into();
+    let hovered = [hits.prev, hits.play, hits.next, hits.like, hits.mode]
+        .into_iter()
+        .find(|hit| hit.contains(point));
+    if let Some(hit) = hovered {
+        let block = hover_block(hit, bar);
+        if block.width > 0 {
+            // Set the foreground too: on terminals without RGB colours
+            // `hover()` falls back to a different ANSI slot, but the glyph
+            // colours still need to contrast with the new background.
+            f.buffer_mut()
+                .set_style(block, Style::default().fg(colors.text).bg(colors.hover()));
+        }
     }
 }
 
@@ -108,12 +205,13 @@ pub(super) trait Playerbar {
 /// shared by `draw` and the tests.
 fn layout_impl(layout: &LayoutType) -> &'static dyn Playerbar {
     match layout {
-        LayoutType::Default => &default_layout::DefaultLayout,
+        LayoutType::Classic => &classic_layout::ClassicLayout,
         LayoutType::Modern => &modern_layout::ModernLayout,
-        LayoutType::Minimal => &minimal_layout::MinimalLayout,
     }
 }
 
+// Same layout and playback inputs as the per-layout draw above.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn draw(
     f: &mut Frame,
     player: &PlaybackState,
@@ -122,9 +220,10 @@ pub(super) fn draw(
     config: &PlayerbarConfig,
     area: Rect,
     is_sixel: bool,
-) {
+    mouse: Option<(u16, u16)>,
+) -> PlayerbarHits {
     let layout = layout_impl(&config.layout);
-    layout.draw(f, player, tick, bs, config, area, is_sixel);
+    layout.draw(f, player, tick, bs, config, area, is_sixel, mouse)
 }
 
 #[cfg(test)]
@@ -132,7 +231,7 @@ mod tests {
     use std::sync::Arc;
 
     use ncm_api::{SongCopyright, SongInfo};
-    use ratatui::{Terminal, backend::TestBackend};
+    use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
 
     use super::*;
     use crate::config::BorderConfig;
@@ -179,8 +278,19 @@ mod tests {
         let state = state(speed, pitch_locked);
 
         let mut term = Terminal::new(TestBackend::new(W, H)).unwrap();
-        term.draw(|f| draw(f, &state, 0, &bs, &config, Rect::new(0, 0, W, H), false))
-            .unwrap();
+        term.draw(|f| {
+            draw(
+                f,
+                &state,
+                0,
+                &bs,
+                &config,
+                Rect::new(0, 0, W, H),
+                false,
+                None,
+            );
+        })
+        .unwrap();
 
         let buf = term.backend().buffer().clone();
         let mut found = Vec::new();
@@ -214,17 +324,17 @@ mod tests {
         found
     }
 
-    const LAYOUTS: [LayoutType; 3] = [LayoutType::Default, LayoutType::Modern, LayoutType::Minimal];
+    const LAYOUTS: [LayoutType; 2] = [LayoutType::Classic, LayoutType::Modern];
 
     #[test]
-    fn default_layout_widens_the_title_without_moving_controls() {
+    fn classic_layout_widens_the_title_without_moving_controls() {
         let config = PlayerbarConfig {
-            layout: LayoutType::Default,
+            layout: LayoutType::Classic,
             ..PlayerbarConfig::default()
         };
         // A typical 90-column terminal leaves 86 columns inside the border and
         // horizontal padding.
-        let layout = default_layout::DefaultLayout.layout(Rect::new(0, 0, 86, 3), &config, false);
+        let layout = classic_layout::ClassicLayout.layout(Rect::new(0, 0, 86, 3), &config, false);
 
         // The controls stay where the old [20, Min, 3, 8] split put them:
         // 20 + (55 - 9) / 2 = 43.
@@ -245,7 +355,7 @@ mod tests {
     }
 
     #[test]
-    fn default_layout_shows_long_titles_past_the_old_title_area() {
+    fn classic_layout_shows_long_titles_past_the_old_title_area() {
         let colors = Theme::default();
         let border = BorderConfig::default();
         let bs = BlockStyle {
@@ -254,7 +364,7 @@ mod tests {
             tick: 0,
         };
         let config = PlayerbarConfig {
-            layout: LayoutType::Default,
+            layout: LayoutType::Classic,
             ..PlayerbarConfig::default()
         };
         let mut state = state(1.0, true);
@@ -262,8 +372,19 @@ mod tests {
         Arc::make_mut(state.current_song.as_mut().unwrap()).name = name.into();
 
         let mut term = Terminal::new(TestBackend::new(W, H)).unwrap();
-        term.draw(|f| draw(f, &state, 0, &bs, &config, Rect::new(0, 0, W, H), false))
-            .unwrap();
+        term.draw(|f| {
+            draw(
+                f,
+                &state,
+                0,
+                &bs,
+                &config,
+                Rect::new(0, 0, W, H),
+                false,
+                None,
+            );
+        })
+        .unwrap();
 
         let buf = term.backend().buffer().clone();
         let row: String = (0..buf.area().width)
@@ -295,12 +416,12 @@ mod tests {
     #[test]
     fn speed_badge_is_shown_at_normal_speed() {
         for layout in LAYOUTS {
-            let locked = badges(layout.clone(), 1.0, true);
+            let locked = badges(layout, 1.0, true);
             assert_eq!(
                 locked[0].1, "*1.0x",
                 "{layout:?}: default pitch-keeping speed must render"
             );
-            let shifted = badges(layout.clone(), 1.0, false);
+            let shifted = badges(layout, 1.0, false);
             assert_eq!(
                 shifted[0].1, "1.0x",
                 "{layout:?}: default resampled speed must render"
@@ -311,7 +432,7 @@ mod tests {
     #[test]
     fn speed_badge_sits_at_the_right_end() {
         for layout in LAYOUTS {
-            let found = badges(layout.clone(), 1.5, true);
+            let found = badges(layout, 1.5, true);
             assert_eq!(found.len(), 1, "{layout:?}: expected exactly one badge");
             let (col, _) = &found[0];
             assert!(
@@ -324,12 +445,12 @@ mod tests {
     #[test]
     fn badge_marks_pitch_lock_with_a_star() {
         for layout in LAYOUTS {
-            let locked = badges(layout.clone(), 1.5, true);
+            let locked = badges(layout, 1.5, true);
             assert_eq!(
                 locked[0].1, "*1.5x",
                 "{layout:?}: pitch-keeping speed must be marked"
             );
-            let shifted = badges(layout.clone(), 1.5, false);
+            let shifted = badges(layout, 1.5, false);
             assert_eq!(
                 shifted[0].1, "1.5x",
                 "{layout:?}: resampled speed must carry no star"
@@ -351,8 +472,8 @@ mod tests {
             border: &border,
             tick: 0,
         };
-        // A current song keeps the gauge rendering for every layout (Modern and
-        // Minimal skip it without one), and `seeking` makes the spinner render:
+        // A current song keeps the gauge rendering for every layout (Modern skips
+        // it without one), and `seeking` makes the spinner render:
         // both write into the buffer by index, so they must also survive an
         // empty area on the bottom edge.
         let mut state = state(1.0, false);
@@ -366,7 +487,16 @@ mod tests {
             let mut term = Terminal::new(TestBackend::new(64, 11)).unwrap();
             term.draw(|f| {
                 // Player bar squeezed to one row at the very bottom edge.
-                draw(f, &state, 0, &bs, &config, Rect::new(0, 10, 64, 1), false)
+                draw(
+                    f,
+                    &state,
+                    0,
+                    &bs,
+                    &config,
+                    Rect::new(0, 10, 64, 1),
+                    false,
+                    None,
+                );
             })
             .unwrap();
         }
@@ -375,6 +505,169 @@ mod tests {
     /// The sub-areas actually handed to widgets — after `clamped_to` — must
     /// stay inside the bar for every layout and size, so no widget can be
     /// asked to draw outside the bar (or the terminal buffer).
+    fn hits_for(layout: LayoutType) -> (Buffer, PlayerbarHits) {
+        hits_for_mouse(layout, None)
+    }
+
+    fn hits_for_mouse(layout: LayoutType, mouse: Option<(u16, u16)>) -> (Buffer, PlayerbarHits) {
+        let colors = Theme::default();
+        let border = BorderConfig::default();
+        let bs = BlockStyle {
+            colors: &colors,
+            border: &border,
+            tick: 0,
+        };
+        let config = PlayerbarConfig {
+            layout,
+            ..PlayerbarConfig::default()
+        };
+        let state = state(1.0, true);
+        let mut hits = PlayerbarHits::default();
+        let mut term = Terminal::new(TestBackend::new(W, H)).unwrap();
+        term.draw(|f| {
+            hits = draw(
+                f,
+                &state,
+                0,
+                &bs,
+                &config,
+                Rect::new(0, 0, W, H),
+                false,
+                mouse,
+            );
+        })
+        .unwrap();
+        (term.backend().buffer().clone(), hits)
+    }
+
+    #[test]
+    fn modern_layout_exposes_the_cover_as_a_click_target() {
+        let (_, modern) = hits_for(LayoutType::Modern);
+        assert!(
+            modern.cover.width > 0 && modern.cover.height > 0,
+            "modern layout should report its cover area"
+        );
+        let (_, classic) = hits_for(LayoutType::Classic);
+        assert_eq!(
+            (classic.cover.width, classic.cover.height),
+            (0, 0),
+            "classic layout has no cover to click"
+        );
+    }
+
+    #[test]
+    fn hovering_a_playerbar_button_paints_a_block_background() {
+        let theme = Theme::default();
+        for layout in LAYOUTS {
+            let (_, hits) = hits_for(layout);
+            let targets = [
+                ("prev", hits.prev),
+                ("play", hits.play),
+                ("next", hits.next),
+                ("like", hits.like),
+                ("mode", hits.mode),
+            ];
+            for (name, hit) in targets {
+                assert!(
+                    hit.width > 0,
+                    "{layout:?}: {name} should have a click target"
+                );
+                let (buffer, _) = hits_for_mouse(layout, Some((hit.x, hit.y)));
+                assert_eq!(
+                    buffer[(hit.x, hit.y)].style().bg,
+                    Some(theme.hover()),
+                    "{layout:?}: hovering {name} should paint its hover block"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn hovering_outside_the_controls_paints_no_block() {
+        let theme = Theme::default();
+        let (buffer, hits) = hits_for_mouse(LayoutType::Classic, Some((0, 0)));
+        assert_ne!(
+            buffer[(hits.play.x, hits.play.y)].style().bg,
+            Some(theme.hover()),
+            "the play button must stay unhighlighted when the pointer is away"
+        );
+    }
+
+    #[test]
+    fn borderless_playerbar_uses_the_elevated_background() {
+        let colors = Theme::default();
+        let border = BorderConfig {
+            enabled: false,
+            ..BorderConfig::default()
+        };
+        let bs = BlockStyle {
+            colors: &colors,
+            border: &border,
+            tick: 0,
+        };
+        let config = PlayerbarConfig::default();
+        let state = state(1.0, true);
+        let mut term = Terminal::new(TestBackend::new(W, H)).unwrap();
+        term.draw(|f| {
+            draw(
+                f,
+                &state,
+                0,
+                &bs,
+                &config,
+                Rect::new(0, 0, W, H),
+                false,
+                None,
+            );
+        })
+        .unwrap();
+        let buffer = term.backend().buffer();
+        assert_eq!(
+            buffer[(0, 0)].style().bg,
+            Some(colors.elevated()),
+            "borderless playerbar should use the elevated background"
+        );
+    }
+
+    #[test]
+    fn control_hits_land_on_the_drawn_glyphs() {
+        for layout in LAYOUTS {
+            let (buffer, hits) = hits_for(layout);
+            let symbol = |rect: Rect| buffer[(rect.x, rect.y)].symbol();
+            assert_eq!(hits.play.width, 1, "{layout:?}: play target");
+            assert_eq!(
+                symbol(hits.play),
+                crate::icons::CONTROL_PLAY,
+                "{layout:?}: play"
+            );
+            assert_eq!(
+                symbol(hits.prev),
+                crate::icons::CONTROL_PREV,
+                "{layout:?}: prev"
+            );
+            assert_eq!(
+                symbol(hits.next),
+                crate::icons::CONTROL_NEXT,
+                "{layout:?}: next"
+            );
+            assert!(hits.progress.width > 0, "{layout:?}: progress target");
+            assert!(hits.mode.width > 0, "{layout:?}: mode target");
+        }
+    }
+
+    #[test]
+    fn like_hit_lands_on_the_heart_when_the_layout_draws_one() {
+        for layout in LAYOUTS {
+            let (buffer, hits) = hits_for(layout);
+            let symbol = buffer[(hits.like.x, hits.like.y)].symbol();
+            assert_eq!(
+                symbol,
+                crate::icons::LIKE_OUTLINE,
+                "{layout:?}: like target"
+            );
+        }
+    }
+
     #[test]
     fn every_layout_keeps_sub_areas_inside_the_playerbar() {
         let config = PlayerbarConfig::default();

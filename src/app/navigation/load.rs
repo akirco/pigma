@@ -15,7 +15,7 @@ impl App {
     /// and write the result back to the cache (manual refresh).
     pub(crate) fn handle_nav_select(&mut self, api_str: String, force: bool) -> eyre::Result<()> {
         if api_str == "login" {
-            self.state.navigation.page = Page::Login;
+            self.start_page_transition(Page::Login);
             return Ok(());
         }
         let api = match ApiEndpoint::parse(&api_str) {

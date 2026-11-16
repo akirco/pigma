@@ -20,17 +20,25 @@ impl App {
         generation
     }
 
+    /// A dropped response must not leave pagination permanently in flight:
+    /// `check_load_more` refuses to start another page while `loading` is set.
+    fn release_pagination_loading(&mut self) {
+        if let Some(pg) = self.state.navigation.pagination.as_mut() {
+            pg.loading = false;
+        }
+    }
+
     pub(crate) fn handle_content_loaded(&mut self, content: ContentState, generation: u64) {
         if generation != self.state.navigation.generation {
+            self.release_pagination_loading();
             return;
         }
         self.state.navigation.set_content(content);
-        self.prefetch_content_covers();
     }
 
     pub(crate) fn handle_load_more(&mut self) {
         let (api, offset, limit) = match self.state.navigation.pagination.as_ref() {
-            Some(pg) if pg.has_more => (pg.api.clone(), pg.next_offset(), pg.limit),
+            Some(pg) if pg.has_more && !pg.loading => (pg.api.clone(), pg.next_offset(), pg.limit),
             _ => return,
         };
 
@@ -62,8 +70,9 @@ impl App {
         pagination: PaginationInfo,
         generation: u64,
     ) {
-        // Drop stale responses
+        // Drop stale responses, but release the in-flight flag first.
         if generation != self.state.navigation.generation {
+            self.release_pagination_loading();
             return;
         }
 
@@ -105,11 +114,9 @@ impl App {
                 let merged = self.state.navigation.content.as_ref().clone();
                 cache.queue_content_cache(&cache_key, merged, pg_for_save);
             }
-            self.prefetch_content_covers();
             return;
         }
         self.state.navigation.set_content(content);
         self.state.navigation.pagination = Some(pagination);
-        self.prefetch_content_covers();
     }
 }

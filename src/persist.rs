@@ -6,7 +6,7 @@
 
 use std::{
     fs::{self, OpenOptions},
-    io::Write,
+    io::{self, Write},
     path::{Path, PathBuf},
 };
 
@@ -28,30 +28,55 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     fs::create_dir_all(dir)?;
 
     let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("cache");
-    let tmp = dir.join(format!(
-        ".{file_name}.{}.{}.tmp",
-        std::process::id(),
-        rand::random::<u32>()
-    ));
+    let mut tmp = PathBuf::new();
+    let mut created = false;
 
-    let result = (|| {
-        let mut options = OpenOptions::new();
-        options.write(true).create(true).truncate(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            // Config, queues and cache payloads can contain account data;
-            // keep them owner-only.
-            options.mode(0o600);
-        }
-        let mut file = options.open(&tmp)?;
+    let result = (|| -> io::Result<()> {
+        // `create_new` refuses to follow a pre-created symlink at the temp
+        // path; retry on the (very unlikely) random-name collision.
+        let mut attempt = 0u32;
+        let mut file = loop {
+            tmp = dir.join(format!(
+                ".{file_name}.{}.{}.tmp",
+                std::process::id(),
+                rand::random::<u32>()
+            ));
+            let mut options = OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                // Config, queues and cache payloads can contain account data;
+                // keep them owner-only.
+                options.mode(0o600);
+            }
+            match options.open(&tmp) {
+                Ok(file) => {
+                    created = true;
+                    break file;
+                }
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists && attempt < 8 => {
+                    attempt += 1;
+                }
+                Err(e) => return Err(e),
+            }
+        };
         file.write_all(bytes)?;
         file.sync_all()?;
         drop(file);
-        fs::rename(&tmp, path)
+        fs::rename(&tmp, path)?;
+        // Persist the directory entry as well; otherwise the rename itself can
+        // be lost on power failure even though the file data was synced.
+        #[cfg(unix)]
+        if let Ok(dir_file) = fs::File::open(dir) {
+            let _ = dir_file.sync_all();
+        }
+        Ok(())
     })();
     if let Err(e) = result {
-        let _ = fs::remove_file(&tmp);
+        if created && !tmp.as_os_str().is_empty() {
+            let _ = fs::remove_file(&tmp);
+        }
         return Err(e);
     }
     Ok(())
@@ -71,15 +96,65 @@ pub(crate) fn ensure_private_dir(dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Replace illegal characters in a file name with `_`.
+/// Replace illegal characters in a file name with `_`, including control
+/// characters that would otherwise break logs or terminal rendering.
 pub(crate) fn sanitize_filename(s: &str) -> String {
-    s.trim()
+    let mut out: String = s
+        .trim()
         .chars()
         .map(|c| match c {
             '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
-            _ => c,
+            c if c.is_control() => '_',
+            c => c,
         })
-        .collect()
+        .collect();
+
+    // Windows silently strips trailing dots/spaces; doing it explicitly keeps
+    // the on-disk name and the index in sync.
+    while out.ends_with('.') || out.ends_with(' ') {
+        out.pop();
+    }
+
+    // Windows reserved device names must not be used as a plain file stem.
+    // The id suffix usually avoids this, but custom templates may not.
+    let stem = out.split('.').next().unwrap_or_default();
+    if is_windows_reserved(stem) {
+        out.insert(0, '_');
+    }
+
+    if out.is_empty() {
+        out.push('_');
+    }
+    out
+}
+
+fn is_windows_reserved(stem: &str) -> bool {
+    let upper = stem.to_ascii_uppercase();
+    matches!(
+        upper.as_str(),
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "COM1"
+            | "COM2"
+            | "COM3"
+            | "COM4"
+            | "COM5"
+            | "COM6"
+            | "COM7"
+            | "COM8"
+            | "COM9"
+            | "LPT1"
+            | "LPT2"
+            | "LPT3"
+            | "LPT4"
+            | "LPT5"
+            | "LPT6"
+            | "LPT7"
+            | "LPT8"
+            | "LPT9"
+    )
 }
 
 /// pigma cache root directory (cache files and play queues live under it).
@@ -124,6 +199,15 @@ mod tests {
     use dirs::home_dir;
 
     use super::*;
+
+    #[test]
+    fn sanitize_filename_handles_control_and_windows_reserved_names() {
+        assert_eq!(sanitize_filename("a\nb"), "a_b");
+        assert_eq!(sanitize_filename("CON"), "_CON");
+        assert_eq!(sanitize_filename("name. "), "name");
+        assert_eq!(sanitize_filename("   "), "_");
+        assert_eq!(sanitize_filename("../x"), ".._x");
+    }
 
     #[test]
     fn expand_tilde_handles_home_and_plain_paths() {

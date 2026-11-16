@@ -40,7 +40,7 @@ impl AudioSource {
     /// Stream a resolved play URL through the cache layer.
     async fn stream_play_url(
         &self,
-        song: &SongInfo,
+        song: &Arc<SongInfo>,
         msong: Option<&sonar::Song>,
         play: PlayUrlResult,
     ) -> Result<AudioInput, String> {
@@ -51,7 +51,7 @@ impl AudioSource {
 
     /// Search all configured sonar sources for the best playable match and
     /// stream it (cross-provider fallback).
-    async fn resolve_providers(&self, song: &SongInfo) -> Result<AudioInput, String> {
+    async fn resolve_providers(&self, song: &Arc<SongInfo>) -> Result<AudioInput, String> {
         let keyword = format!("{} {}", song.name, song.singer);
         let query = SearchQuery::new(keyword).with_duration(song.duration);
 
@@ -65,7 +65,7 @@ impl AudioSource {
     }
 
     /// Resolve a sonar search result directly via the provider that found it.
-    async fn resolve_by_provider(&self, song: &SongInfo) -> Result<AudioInput, String> {
+    async fn resolve_by_provider(&self, song: &Arc<SongInfo>) -> Result<AudioInput, String> {
         let msong = lock_recover(&self.sonar_songs)
             .get(&song.id)
             .cloned()
@@ -82,7 +82,7 @@ impl AudioSource {
     }
 
     /// Try to resolve a song from NCM streaming.
-    async fn resolve_ncm(&self, song: &SongInfo) -> Result<AudioInput, String> {
+    async fn resolve_ncm(&self, song: &Arc<SongInfo>) -> Result<AudioInput, String> {
         let urls = self.service.fetch_song_urls(&[song.id], self.quality).await;
 
         let urls = match urls {
@@ -111,7 +111,7 @@ impl AudioSource {
     }
 
     /// Return a previously cached audio file for `song`, if one exists.
-    async fn resolve_cached(&self, song: &SongInfo) -> Option<AudioInput> {
+    async fn resolve_cached(&self, song: &Arc<SongInfo>) -> Option<AudioInput> {
         let ext = self.cache.find_cached_extension(song.id)?.to_string();
         let cache = self.cache.clone();
         let song_id = song.id;
@@ -123,7 +123,7 @@ impl AudioSource {
     }
 
     /// Open a local file for a `Free` song whose `album` field is a real path.
-    async fn resolve_local(&self, song: &SongInfo) -> Option<AudioInput> {
+    async fn resolve_local(&self, song: &Arc<SongInfo>) -> Option<AudioInput> {
         if song.copyright != ncm_api::SongCopyright::Free {
             return None;
         }
@@ -139,7 +139,7 @@ impl AudioSource {
         Some(SharedReader(Arc::new(Mutex::new(Box::new(file)))))
     }
 
-    pub(crate) async fn resolve(&self, song: &SongInfo) -> Result<AudioInput, String> {
+    pub(crate) async fn resolve(&self, song: &Arc<SongInfo>) -> Result<AudioInput, String> {
         // 1. Cache wins for every source.
         if let Some(input) = self.resolve_cached(song).await {
             return Ok(input);

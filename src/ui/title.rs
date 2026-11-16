@@ -6,18 +6,26 @@ use crate::state::NavigationState;
 ///
 /// The rendered `Arc<String>` is cached and reused while the focus, selection,
 /// content generation and item count are unchanged, so the hot draw path does
-/// not re-render (or re-allocate) the title every frame.
+/// not re-render (or re-allocate) the title every frame. The `RefCell` cache is
+/// frame-local scratch space (not application state), which is why this takes
+/// `&NavigationState` even though it writes the cache.
 pub(super) fn content_title(nst: &NavigationState) -> Arc<String> {
     let focus = nst.nav.focus_section;
     let selected = nst.nav.selected_index();
     let generation = nst.generation;
     let count = nst.content.len();
+    let total = nst
+        .pagination
+        .as_ref()
+        .map(|p| p.total as usize)
+        .unwrap_or(count);
     let cached = nst.title_cache.borrow();
-    if let Some((ref title, f, s, g, c)) = *cached
+    if let Some((ref title, f, s, g, c, t)) = *cached
         && f == focus
         && s == selected
         && g == generation
         && c == count
+        && t == total
     {
         return Arc::clone(title);
     }
@@ -27,11 +35,6 @@ pub(super) fn content_title(nst: &NavigationState) -> Arc<String> {
     let name = current_item
         .map(|item| item.name.as_str())
         .unwrap_or("SONGS");
-    let total = nst
-        .pagination
-        .as_ref()
-        .map(|p| p.total as usize)
-        .unwrap_or(count);
     // When content is paged (total known), show `count/total` like the music
     // cloud drive; non-paged content shows only the loaded count. Each nav item
     // can also override this via `title_template`.
@@ -53,7 +56,14 @@ pub(super) fn content_title(nst: &NavigationState) -> Arc<String> {
         .and_then(|item| item.title_template.as_deref())
         .unwrap_or(&fallback);
     let title = Arc::new(render_title(template, name, count, total));
-    *nst.title_cache.borrow_mut() = Some((Arc::clone(&title), focus, selected, generation, count));
+    *nst.title_cache.borrow_mut() = Some((
+        Arc::clone(&title),
+        focus,
+        selected,
+        generation,
+        count,
+        total,
+    ));
     title
 }
 

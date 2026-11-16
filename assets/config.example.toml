@@ -28,7 +28,7 @@ cli_status_template = "{name}  {artist}  {current}/{duration}  {status}  vol {vo
 # `pigma status` 默认输出格式: "plain" 或 "json"
 cli_status_format = "plain"
 
-# 歌词渐变效果: "rainbow", "fire", "ocean", "forest", "sunset", "neon", "pastel", "monochrome"
+# 歌词渐变效果: "warm", "cubehelix", "rainbow", "turbo", "spectral", "viridis"
 lyric_gradient = "rainbow"
 
 # 代理地址, 支持 http:// https:// socks5://
@@ -89,7 +89,18 @@ enabled = true
 # light_triple_dashed | heavy_triple_dashed
 # light_quadruple_dashed | heavy_quadruple_dashed
 # quadrant_inside | quadrant_outside
+# custom                                  (使用下面的 [border.chars])
 style = "plain"
+# 仅 style = "custom" 时生效；未写的项默认使用 plain 的字符
+# [border.chars]
+# top_left = "◆"
+# top_right = "◆"
+# bottom_left = "◆"
+# bottom_right = "◆"
+# horizontal_top = "╌"
+# horizontal_bottom = "╌"
+# vertical_left = "╎"
+# vertical_right = "╎"
 # 边框颜色是否跟随角落颜色
 follow_corner_color = false
 # 边框渐变效果名称，同歌词渐变名称 (可选, 不设置则无渐变)，优先级最高
@@ -112,8 +123,8 @@ hot_search = "table"
 # 播放器栏配置
 # =============================================================================
 [playerbar]
-# 播放栏布局: "default", "modern", "minimal"
-# modern 仅有封面
+# 播放栏布局: "classic", "modern"（默认）
+# modern 带封面；单击封面会以过渡动画进入/返回歌词页
 layout = "modern"
 
 # 进度条填充符号
@@ -125,7 +136,7 @@ filled_color = "accent"
 # 进度条未填充颜色
 unfilled_color = "text"
 # 已缓存到本地时进度条轨道颜色
-unfilled_color_cached = "warning"
+unfilled_color_cached = "error"
 # 渐变预设: 设为空或未知名称即关闭渐变
 # 可选: "warm", "cubehelix", "rainbow", "turbo", "spectral", "viridis"
 gradient_preset = ""
@@ -169,8 +180,6 @@ accent = "#ffcc00"
 muted = "#00f0ff"
 border = "0"
 error = "#b000ff"
-# 可选: 选中卡片背景色, 省略时使用 surface/accent 混合色
-selection = "#3a2530"
 
 # =============================================================================
 # 自定义列定义
@@ -211,6 +220,10 @@ selection = "#3a2530"
 # 导航栏配置
 # =============================================================================
 # [navigation]
+# 给“选中项/悬浮项”左右加的字符
+# selected_left = "\ue0b2"
+# selected_right = "\ue0b0"
+#
 # [[navigation.sections]]
 # title = "DISCOVER"
 # [[navigation.sections.items]]

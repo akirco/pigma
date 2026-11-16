@@ -39,8 +39,8 @@ impl CommandPanel {
         }
     }
 
-    pub fn current_items(&self) -> Option<&Vec<CommandItem>> {
-        self.levels.last()
+    pub fn current_items(&self) -> Option<&[CommandItem]> {
+        self.levels.last().map(Vec::as_slice)
     }
 
     /// The event loop has no periodic tick, so the panel is redrawn on every
@@ -69,7 +69,7 @@ impl CommandPanel {
     }
 
     pub fn enter(&mut self) -> Option<CommandAction> {
-        let item = &self.current_items()?[self.selected];
+        let item = self.current_items()?.get(self.selected)?;
         match item {
             CommandItem::Action { action, .. } => Some(action.clone()),
             CommandItem::SubMenu { children, .. } => {

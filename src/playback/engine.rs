@@ -10,14 +10,9 @@ mod transport;
 
 use heartbeat::HeartbeatGate;
 
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use ncm_api::{SongInfo, SongQuality};
-use tokio::sync::mpsc;
 
 use super::{
     controller::PlaybackHandle,
@@ -29,11 +24,11 @@ use super::{
 };
 use crate::{
     cache::CacheManager,
-    event::{Event, PlaybackEvent},
+    event::{EventSender, PlaybackEvent},
     lock::lock_recover,
     lyrics::LyricLine,
     playback::memory::trim_heap,
-    service::ApiService,
+    service::{ApiService, SonarSongs},
 };
 
 /// Return whether an error is a transient audio stream error (buffer underrun/overrun). These
@@ -71,7 +66,7 @@ pub struct PlaybackEngine {
     storage: PlaylistStorage,
     source: AudioSource,
     pub(super) controller: PlaybackHandle,
-    pub(super) event_tx: mpsc::UnboundedSender<Event>,
+    pub(super) event_tx: EventSender,
     pub(super) service: ApiService,
     playlist_id: Option<u64>,
     consecutive_errors: u32,
@@ -89,7 +84,7 @@ impl PlaybackEngine {
     // Engine construction wires all shared services; keep the flat signature until a second constructor exists.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        event_tx: mpsc::UnboundedSender<Event>,
+        event_tx: EventSender,
         service: ApiService,
         cache: Arc<CacheManager>,
         base_dir: std::path::PathBuf,
@@ -98,7 +93,7 @@ impl PlaybackEngine {
         stream_client: reqwest::Client,
         finder: Arc<sonar::SonarFinder>,
         sonar_enabled: bool,
-        sonar_songs: Arc<std::sync::Mutex<HashMap<u64, Arc<sonar::Song>>>>,
+        sonar_songs: SonarSongs,
         liked_ids: Arc<std::sync::Mutex<HashSet<u64>>>,
     ) -> Self {
         let storage = PlaylistStorage::new(base_dir);
@@ -284,7 +279,7 @@ impl PlaybackEngine {
         let event_tx = self.event_tx.clone();
         let controller = self.controller.clone();
 
-        if event_tx.send(PlaybackEvent::Started.into()).is_err() {
+        if event_tx.send(PlaybackEvent::Started).is_err() {
             log::error!("Failed to send PlaybackStarted: receiver dropped");
         }
 
@@ -296,7 +291,7 @@ impl PlaybackEngine {
                     // of letting them sit in the allocator's free lists (RSS would
                     // otherwise ratchet upward across songs in a long-lived TUI).
                     trim_heap();
-                    if event_tx.send(PlaybackEvent::Error(e).into()).is_err() {
+                    if event_tx.send(PlaybackEvent::Error(e)).is_err() {
                         log::error!("Failed to send PlaybackError: receiver dropped");
                     }
                     return;

@@ -49,25 +49,28 @@ impl IpcState {
     /// throttled to once per second so the daemon does not spam subscribers at
     /// the event-loop rate.
     pub(crate) fn update(&mut self, playback: &PlaybackEngine) {
-        let snapshot = StatusSnapshot::from_playback(&playback.state);
+        let state = &playback.state;
+        let position_ms = state
+            .current_song
+            .as_ref()
+            .map(|s| (state.progress * s.duration as f64) as u64)
+            .unwrap_or(0);
         let elapsed = self.last_broadcast.elapsed();
-        let position_stale =
-            snapshot.playing && !snapshot.paused && elapsed >= Duration::from_secs(1);
+        let position_stale = state.playing && !state.paused && elapsed >= Duration::from_secs(1);
 
-        let mut changed = false;
-        {
+        // Compare against the playback state directly, so the common
+        // "only the position moved" path does not clone name/artist/album.
+        let changed = {
             let mut stored = lock_recover(&self.status);
-            if stored.meaningfully_differs(&snapshot) {
-                changed = true;
-                *stored = snapshot.clone();
-            } else {
-                // Same song/mode/etc — only the position advanced. Refresh it in
-                // place instead of rebuilding + replacing the whole (string-
-                // bearing) snapshot every loop iteration.
-                stored.position_ms = snapshot.position_ms;
-            }
-        }
+            let changed = !stored.matches_playback(state);
+            stored.position_ms = position_ms;
+            changed
+        };
         if changed || position_stale {
+            let snapshot = StatusSnapshot::from_playback(state);
+            if changed {
+                *lock_recover(&self.status) = snapshot.clone();
+            }
             self.last_broadcast = Instant::now();
             let _ = self.status_tx.send(snapshot);
         }

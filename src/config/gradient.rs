@@ -12,7 +12,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 /// - spectral / viridis: exact hex color stops + RGB linear interpolation (BlendMode::Rgb)
 ///   Unknown names fall back to rainbow
 ///   Gradient preset enum — avoids per-call string comparison in hot render paths.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GradientPreset {
     #[default]
@@ -22,6 +22,19 @@ pub enum GradientPreset {
     Turbo,
     Spectral,
     Viridis,
+}
+
+/// Deserialize leniently: an unknown preset falls back to the default instead of
+/// failing the whole `config.toml` parse (which would silently discard every
+/// other setting as well).
+impl<'de> Deserialize<'de> for GradientPreset {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        Ok(Self::from_str_or_rainbow(&raw))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,8 +72,12 @@ impl FromStr for GradientPreset {
 
 impl GradientPreset {
     /// Parse with fallback to `Rainbow` for unrecognized names.
-    fn from_str_or_rainbow(s: &str) -> Self {
-        s.parse().unwrap_or_default()
+    pub(crate) fn from_str_or_rainbow(s: &str) -> Self {
+        s.parse().unwrap_or_else(|_| {
+            // Called from the per-frame markup renderer, so keep this quiet.
+            log::debug!("Unknown gradient preset `{s}`, using rainbow");
+            Self::Rainbow
+        })
     }
 
     pub fn color(self, t: f32) -> [u8; 3] {

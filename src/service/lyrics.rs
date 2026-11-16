@@ -1,8 +1,8 @@
 //! Lyrics loading (NetEase + sonar fallback) with cache integration.
 
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
-use super::ApiService;
+use super::{ApiService, search::SonarSongs};
 use crate::{
     lock::lock_recover,
     lyrics::{LyricLine, parse_lyric_lines},
@@ -44,7 +44,7 @@ impl ApiService {
         &self,
         song_id: u64,
         finder: Arc<sonar::SonarFinder>,
-        registry: &std::sync::Mutex<HashMap<u64, Arc<sonar::Song>>>,
+        registry: &SonarSongs,
     ) -> Option<(Vec<LyricLine>, Vec<LyricLine>)> {
         // Serve cached lyrics first so replays don't hit the provider again.
         if let Some(cached) = self.cache.load_lyrics_cache_async(song_id).await {

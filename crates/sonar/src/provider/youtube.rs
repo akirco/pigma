@@ -57,16 +57,21 @@ impl SonarProvider for YoutubeProvider {
 
         let songs: Vec<Song> = results
             .into_iter()
-            .map(|r| Song {
-                id: make_song_id(SonarSource::Youtube, &r.video_id),
-                source_id: r.video_id,
-                name: r.title,
-                singer: r.author,
-                album: String::new(),
-                duration: parse_duration_str(&r.duration).unwrap_or(0) * 1000,
-                source: SonarSource::Youtube,
-                pic_url: String::new(),
-                meta: SongMeta::default(),
+            .map(|r| {
+                // The YouTube search result carries no thumbnail field, but the
+                // video id maps to one on the thumbnail host.
+                let pic_url = format!("https://i.ytimg.com/vi/{}/mqdefault.jpg", r.video_id);
+                Song {
+                    id: make_song_id(SonarSource::Youtube, &r.video_id),
+                    source_id: r.video_id,
+                    name: r.title,
+                    singer: r.author,
+                    album: String::new(),
+                    duration: parse_duration_str(&r.duration).unwrap_or(0) * 1000,
+                    source: SonarSource::Youtube,
+                    pic_url,
+                    meta: SongMeta::default(),
+                }
             })
             .collect();
 

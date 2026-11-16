@@ -104,7 +104,7 @@ pub enum PlaybackEvent {
     },
     HeartbeatSong {
         request: u64,
-        song: SongInfo,
+        song: Arc<SongInfo>,
     },
     HeartbeatFallback {
         request: u64,
@@ -166,6 +166,13 @@ pub enum NavigationEvent {
     QueueFilterExit,
     /// The filter keyword changed; recompute which queue indices still match.
     QueueFilterChanged,
+    /// An endpoint (`pigma msg switch-list`) finished resolving in the
+    /// background; the main thread applies it to the queue.
+    EndpointResolved {
+        endpoint: String,
+        content: ContentState,
+        playlist_id: Option<u64>,
+    },
 }
 
 #[derive(Clone, Debug)]

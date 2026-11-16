@@ -2,11 +2,12 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     style::{Color, Style},
+    symbols::border,
     widgets::{Block, BorderType, Borders, Padding, Widget},
 };
 
 use super::{BlockStyle, styled_text};
-use crate::config::{BorderStyle, GradientPreset, Theme};
+use crate::config::{BorderChars, BorderStyle, GradientPreset, Theme};
 
 pub(super) struct StyledBlock<'a> {
     block: Block<'a>,
@@ -19,11 +20,10 @@ pub(super) struct StyledBlock<'a> {
     follow_corner_color: bool,
     border_gradient: Option<GradientPreset>,
     border_gradient_speed: f64,
-    border_type: BorderType,
+    border_set: border::Set<'a>,
     tick: u64,
     no_border: bool,
     has_title: bool,
-    horizontal_padding: u16,
     transparent_border: bool,
 }
 
@@ -40,11 +40,10 @@ impl<'a> StyledBlock<'a> {
             follow_corner_color: false,
             border_gradient: None,
             border_gradient_speed: 0.0,
-            border_type: BorderType::Plain,
+            border_set: border::PLAIN,
             tick: 0,
             no_border: false,
             has_title: false,
-            horizontal_padding: 0,
             transparent_border: false,
         }
     }
@@ -78,8 +77,8 @@ impl<'a> StyledBlock<'a> {
         self
     }
 
-    fn border_type(mut self, border_type: BorderType) -> Self {
-        self.border_type = border_type;
+    fn with_border_set(mut self, border_set: border::Set<'a>) -> Self {
+        self.border_set = border_set;
         self
     }
 
@@ -95,15 +94,17 @@ impl<'a> StyledBlock<'a> {
 
     pub(super) fn from_color(style: &'a BlockStyle<'a>, no_border_bg: Color) -> Self {
         let border_color = style.colors.border;
-        let border_type = border_type(style.border.style);
-        let (block, horizontal_padding, no_border) = if style.border.enabled {
+        let border_set = match style.border.style {
+            BorderStyle::Custom => custom_border_set(style.border.chars.as_ref()),
+            other => border_type(other).to_border_set(),
+        };
+        let (block, no_border) = if style.border.enabled {
             (
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_type(border_type)
+                    .border_set(border_set)
                     .border_style(Style::default().fg(border_color))
                     .title_style(Style::default().fg(style.colors.muted)),
-                0,
                 false,
             )
         } else {
@@ -115,7 +116,6 @@ impl<'a> StyledBlock<'a> {
                     .style(Style::default().bg(no_border_bg))
                     .title_style(Style::default().fg(style.colors.muted))
                     .padding(padding),
-                1,
                 true,
             )
         };
@@ -125,28 +125,28 @@ impl<'a> StyledBlock<'a> {
             .follow_corner_color(style.border.follow_corner_color)
             .border_gradient(style.border.border_gradient)
             .border_gradient_speed(style.border.border_gradient_speed)
-            .border_type(border_type)
+            .with_border_set(border_set)
             .tick(style.tick)
             .transparent_border(border_color == Color::Reset)
-            .set_borderless(horizontal_padding, no_border)
+            .set_borderless(no_border)
     }
 
-    pub(super) fn set_borderless(mut self, horizontal_padding: u16, no_border: bool) -> Self {
-        self.horizontal_padding = horizontal_padding;
+    pub(super) fn set_borderless(mut self, no_border: bool) -> Self {
         self.no_border = no_border;
         self
     }
 
     pub(super) fn title(mut self, title: &'a str, colors: &'a Theme) -> Self {
+        // Borderless blocks have no title row. The space stays as the block's
+        // top padding, so content does not shift when borders are toggled off.
+        if self.no_border {
+            return self;
+        }
         let title_line = ratatui::text::Line::from(styled_text::parse_styled(title, colors));
         self.block = self
             .block
             .title(title_line)
             .title_style(Style::default().fg(colors.muted));
-        if self.no_border {
-            let h = self.horizontal_padding;
-            self.block = self.block.padding(Padding::new(h, h, 0, 0));
-        }
         self.has_title = true;
         self
     }
@@ -200,7 +200,7 @@ impl<'a> Widget for StyledBlock<'a> {
         // transparent border: blank the horizontal/vertical line segments so
         // only the corner characters (painted with corner_color below) show.
         if self.transparent_border {
-            let border_set = self.border_type.to_border_set();
+            let border_set = self.border_set;
             for x in (left + max_h)..=(right - max_h) {
                 Self::blank_if_border_line(buf, (x, top), &border_set);
                 Self::blank_if_border_line(buf, (x, bottom), &border_set);
@@ -350,6 +350,24 @@ impl<'a> StyledBlock<'a> {
     }
 }
 
+/// Characters for `style = "custom"`, falling back to the plain set when the
+/// section is absent. Missing slots were filled with plain glyphs by serde.
+fn custom_border_set(chars: Option<&BorderChars>) -> border::Set<'_> {
+    let Some(chars) = chars else {
+        return border::PLAIN;
+    };
+    border::Set {
+        top_left: &chars.top_left,
+        top_right: &chars.top_right,
+        bottom_left: &chars.bottom_left,
+        bottom_right: &chars.bottom_right,
+        vertical_left: &chars.vertical_left,
+        vertical_right: &chars.vertical_right,
+        horizontal_top: &chars.horizontal_top,
+        horizontal_bottom: &chars.horizontal_bottom,
+    }
+}
+
 fn border_type(style: BorderStyle) -> BorderType {
     match style {
         BorderStyle::Plain => BorderType::Plain,
@@ -364,6 +382,8 @@ fn border_type(style: BorderStyle) -> BorderType {
         BorderStyle::HeavyQuadrupleDashed => BorderType::HeavyQuadrupleDashed,
         BorderStyle::QuadrantInside => BorderType::QuadrantInside,
         BorderStyle::QuadrantOutside => BorderType::QuadrantOutside,
+        // Custom characters are installed as a `border::Set`, not a type.
+        BorderStyle::Custom => BorderType::Plain,
     }
 }
 
@@ -372,7 +392,7 @@ mod tests {
     use ratatui::{Terminal, backend::TestBackend, style::Color};
 
     use super::*;
-    use crate::config::{BorderConfig, BorderStyle};
+    use crate::config::{BorderChars, BorderConfig, BorderStyle};
 
     const STYLES: [BorderStyle; 12] = [
         BorderStyle::Plain,
@@ -419,5 +439,86 @@ mod tests {
                     .expect("render border");
             }
         }
+    }
+
+    fn render_title(bordered: bool) -> ratatui::buffer::Buffer {
+        let theme = Theme::default();
+        let border = BorderConfig {
+            enabled: bordered,
+            ..BorderConfig::default()
+        };
+        let bs = BlockStyle {
+            colors: &theme,
+            border: &border,
+            tick: 0,
+        };
+        let mut term = Terminal::new(TestBackend::new(20, 4)).unwrap();
+        term.draw(|f| {
+            let block = StyledBlock::from_color(&bs, theme.bg).title("Title", &theme);
+            f.render_widget(block, ratatui::layout::Rect::new(0, 0, 20, 4));
+        })
+        .unwrap();
+        term.backend().buffer().clone()
+    }
+
+    fn rendered_text(buffer: &ratatui::buffer::Buffer) -> String {
+        let area = buffer.area;
+        (0..area.height)
+            .flat_map(|y| (0..area.width).map(move |x| (x, y)))
+            .map(|(x, y)| buffer[(x, y)].symbol().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn custom_border_uses_configured_characters() {
+        // A Reset border colour makes the block blank its own line segments,
+        // which is not what this test checks.
+        let theme = Theme {
+            border: Color::White,
+            ..Theme::default()
+        };
+        let border = BorderConfig {
+            style: BorderStyle::Custom,
+            chars: Some(BorderChars {
+                top_left: "◆".into(),
+                top_right: "◆".into(),
+                bottom_left: "◆".into(),
+                bottom_right: "◆".into(),
+                horizontal_top: "╌".into(),
+                horizontal_bottom: "╌".into(),
+                vertical_left: "╎".into(),
+                vertical_right: "╎".into(),
+            }),
+            ..BorderConfig::default()
+        };
+        let bs = BlockStyle {
+            colors: &theme,
+            border: &border,
+            tick: 0,
+        };
+        let mut term = Terminal::new(TestBackend::new(12, 4)).unwrap();
+        term.draw(|f| {
+            f.render_widget(
+                StyledBlock::from_color(&bs, theme.bg),
+                ratatui::layout::Rect::new(0, 0, 12, 4),
+            );
+        })
+        .unwrap();
+        let text = rendered_text(term.backend().buffer());
+        assert!(text.contains('◆'), "custom corner missing: {text}");
+        assert!(text.contains('╌'), "custom horizontal missing: {text}");
+        assert!(text.contains('╎'), "custom vertical missing: {text}");
+    }
+
+    #[test]
+    fn borderless_blocks_drop_the_title() {
+        assert!(
+            !rendered_text(&render_title(false)).contains("Title"),
+            "borderless blocks should not draw a title"
+        );
+        assert!(
+            rendered_text(&render_title(true)).contains("Title"),
+            "bordered blocks keep their title"
+        );
     }
 }

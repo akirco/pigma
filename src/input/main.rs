@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent, MouseEventKind};
+use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEventKind};
 
 use crate::{
     app::App,
@@ -68,10 +68,6 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Resul
                 && app.state.navigation.page != Page::Playlist
             {
                 app.cell_select_prev_column();
-            } else if app.state.navigation.page == Page::Main
-                && app.state.navigation.content_columns > 1
-            {
-                app.content_select_left();
             } else if app.playback.current_song().is_some() {
                 let interval = app.config.seek_interval_secs as f64;
                 app.playback.seek_relative(-interval);
@@ -83,10 +79,6 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Resul
                 && app.state.navigation.page != Page::Playlist
             {
                 app.cell_select_next_column();
-            } else if app.state.navigation.page == Page::Main
-                && app.state.navigation.content_columns > 1
-            {
-                app.content_select_right();
             } else if app.playback.current_song().is_some() {
                 let interval = app.config.seek_interval_secs as f64;
                 app.playback.seek_relative(interval);
@@ -135,15 +127,36 @@ pub(super) fn handle_main_key(app: &mut App, key_event: KeyEvent) -> eyre::Resul
 }
 
 pub(super) fn handle_main_mouse(app: &mut App, kind: MouseEventKind, col: u16, row: u16) {
-    // Volume scroll: if mouse is over playerbar area
+    // Volume scroll and control clicks: if mouse is over playerbar area
     let area = app.playerbar_area();
     if row >= area.y && row < area.y + area.height && col >= area.x && col < area.x + area.width {
         match kind {
+            MouseEventKind::Down(MouseButton::Left) => app.playerbar_click(col, row),
             MouseEventKind::ScrollUp => app.adjust_volume(0.05),
             MouseEventKind::ScrollDown => app.adjust_volume(-0.05),
             _ => {}
         }
         return;
+    }
+
+    // Wheel over the navigation moves its selection; the renderer keeps the
+    // selected item in view, which is how the nav scrolls.
+    if app.state.navigation.page == Page::Main
+        && matches!(kind, MouseEventKind::ScrollUp | MouseEventKind::ScrollDown)
+    {
+        let point = (col, row).into();
+        let over_nav = {
+            let nav = &app.state.navigation.nav;
+            nav.list_area.contains(point) || nav.top_area.contains(point)
+        };
+        if over_nav {
+            if kind == MouseEventKind::ScrollUp {
+                app.nav_select_prev();
+            } else {
+                app.nav_select_next();
+            }
+            return;
+        }
     }
 
     match app.state.navigation.page {
@@ -154,20 +167,26 @@ pub(super) fn handle_main_mouse(app: &mut App, kind: MouseEventKind, col: u16, r
                 app.playback.seek_relative(5.0);
             }
         }
-        Page::Main => {
-            if kind == MouseEventKind::ScrollUp {
-                app.content_select_prev();
-            } else if kind == MouseEventKind::ScrollDown {
-                app.content_select_next();
+        Page::Main => match kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                if !app.nav_click(col, row) {
+                    app.content_double_click(col, row);
+                }
             }
-        }
-        Page::Playlist => {
-            if kind == MouseEventKind::ScrollUp {
-                app.playlist_select_prev();
-            } else if kind == MouseEventKind::ScrollDown {
-                app.playlist_select_next();
+            MouseEventKind::ScrollUp => app.content_select_prev(),
+            MouseEventKind::ScrollDown => app.content_select_next(),
+            _ => {}
+        },
+        Page::Playlist => match kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                if !app.queue_tab_click(col, row) {
+                    app.queue_double_click(col, row);
+                }
             }
-        }
+            MouseEventKind::ScrollUp => app.playlist_select_prev(),
+            MouseEventKind::ScrollDown => app.playlist_select_next(),
+            _ => {}
+        },
         _ => {}
     }
 }

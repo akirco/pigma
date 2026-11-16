@@ -25,7 +25,9 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> eyre::Result<()>
         }
     }
 
-    if key_event.code == KeyCode::Char('?') {
+    // Global help shortcut, but `?` must reach the text input as a normal
+    // character while the search / queue-filter box is focused.
+    if key_event.code == KeyCode::Char('?') && !app.state.navigation.search.active {
         app.state.help.toggle();
         return Ok(());
     }
@@ -66,10 +68,10 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> eyre::Result<()>
         return Ok(());
     }
 
-    if let KeyCode::Char(c) = key_event.code
-        && c.eq_ignore_ascii_case(&'w')
-        && key_event.modifiers == KeyModifiers::NONE
-    {
+    // Only lowercase `w`, matching the help text. crossterm reports uppercase
+    // `W` with SHIFT, so `eq_ignore_ascii_case` combined with `modifiers == NONE`
+    // could never match the uppercase form anyway.
+    if key_event.code == KeyCode::Char('w') && key_event.modifiers == KeyModifiers::NONE {
         app.clear_play_queue();
         return Ok(());
     }
@@ -78,6 +80,10 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> eyre::Result<()>
 }
 
 pub fn handle_mouse_event(app: &mut App, kind: MouseEventKind, col: u16, row: u16) {
+    // Recorded for every event, not just motion: terminals that do not report
+    // motion still update the hover target on click and scroll.
+    app.state.mouse = Some((col, row));
+
     if app.state.help.open {
         help::handle_help_mouse(app, kind);
         return;

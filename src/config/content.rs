@@ -11,11 +11,11 @@
 //! hot_search = "table"
 //! ```
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use super::ContentType;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ContentStyle {
     /// Original table with configured columns.
@@ -23,6 +23,27 @@ pub enum ContentStyle {
     Table,
     /// Two-column cover cards.
     Cards,
+}
+
+impl ContentStyle {
+    fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "table" => Some(Self::Table),
+            "cards" => Some(Self::Cards),
+            _ => None,
+        }
+    }
+}
+
+/// Unknown styles fall back to the table instead of failing the whole config.
+impl<'de> Deserialize<'de> for ContentStyle {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        Ok(Self::from_name(&raw).unwrap_or_default())
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

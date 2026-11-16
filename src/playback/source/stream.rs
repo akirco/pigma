@@ -61,7 +61,7 @@ impl AudioSource {
     fn tracked_settings(
         &self,
         mark_cache: bool,
-        song: &SongInfo,
+        song: &Arc<SongInfo>,
         ext: &'static str,
         mut msong: Option<sonar::Song>,
         part_path: Option<std::path::PathBuf>,
@@ -69,7 +69,7 @@ impl AudioSource {
         let event_tx = self.event_tx.clone();
         let cache = self.cache.clone();
         let sent = Arc::new(AtomicBool::new(false));
-        let song = song.clone();
+        let song = Arc::clone(song);
         let (updates_tx, updates_rx) = watch::channel(0u64);
         let progress = StreamProgress {
             buffered: Arc::new(AtomicU64::new(0)),
@@ -101,7 +101,7 @@ impl AudioSource {
             if should_finalize_cache(mark_cache, complete, &sent)
                 && cache.mark_cached(&song, ext, msong.take(), part_path.as_deref())
             {
-                let _ = event_tx.send(PlaybackEvent::Cached(song.id).into());
+                let _ = event_tx.send(PlaybackEvent::Cached(song.id));
             }
         });
         (settings, progress)
@@ -151,7 +151,7 @@ impl AudioSource {
     pub(super) async fn build_stream(
         &self,
         url: url::Url,
-        song: &SongInfo,
+        song: &Arc<SongInfo>,
         ext: &'static str,
         msong: Option<sonar::Song>,
     ) -> Result<AudioInput, String> {

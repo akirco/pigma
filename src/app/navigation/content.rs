@@ -50,15 +50,11 @@ impl App {
                     let sender = self.events.sender();
                     tokio::spawn(async move {
                         let state = service.load_album(album_id).await;
-                        let _ = sender.send(
-                            NavigationEvent::ContentLoaded {
-                                content: state,
-                                generation,
-                            }
-                            .into(),
-                        );
-                        let _ =
-                            sender.send(NavigationEvent::BreadcrumbSet { name, generation }.into());
+                        let _ = sender.send(NavigationEvent::ContentLoaded {
+                            content: state,
+                            generation,
+                        });
+                        let _ = sender.send(NavigationEvent::BreadcrumbSet { name, generation });
                     });
                 }
             }
@@ -77,15 +73,11 @@ impl App {
                     let limit = self.config.search_limit;
                     tokio::spawn(async move {
                         let state = service.load_artist_songs(artist_id, limit).await;
-                        let _ = sender.send(
-                            NavigationEvent::ContentLoaded {
-                                content: state,
-                                generation,
-                            }
-                            .into(),
-                        );
-                        let _ =
-                            sender.send(NavigationEvent::BreadcrumbSet { name, generation }.into());
+                        let _ = sender.send(NavigationEvent::ContentLoaded {
+                            content: state,
+                            generation,
+                        });
+                        let _ = sender.send(NavigationEvent::BreadcrumbSet { name, generation });
                     });
                 }
             }
@@ -104,15 +96,11 @@ impl App {
                     let limit = self.config.search_limit;
                     tokio::spawn(async move {
                         let state = service.load_artist_songs(artist_id, limit).await;
-                        let _ = sender.send(
-                            NavigationEvent::ContentLoaded {
-                                content: state,
-                                generation,
-                            }
-                            .into(),
-                        );
-                        let _ =
-                            sender.send(NavigationEvent::BreadcrumbSet { name, generation }.into());
+                        let _ = sender.send(NavigationEvent::ContentLoaded {
+                            content: state,
+                            generation,
+                        });
+                        let _ = sender.send(NavigationEvent::BreadcrumbSet { name, generation });
                     });
                 }
             }

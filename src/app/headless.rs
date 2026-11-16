@@ -1,6 +1,6 @@
 //! Headless daemon mode (`pigma --daemon <endpoint>`): no terminal is opened.
-//! Loads the endpoint as the initial list, starts playing it, and runs the
-//! IPC socket so `pigma status` / `pigma msg` can observe and control it.
+//! Loads the endpoint as the initial list without starting playback, and runs
+//! the IPC socket so `pigma status` / `pigma msg` can observe and control it.
 //! Stops on SIGINT/SIGTERM (saving the session).
 
 use std::sync::Arc;
@@ -21,7 +21,7 @@ impl App {
             Arc::clone(&self.ipc.status),
             Arc::clone(&self.ipc.queue),
             self.ipc.status_tx.clone(),
-            self.events.sender(),
+            self.events.control_sender(),
             Arc::clone(&self.search.engine),
         );
 
@@ -50,7 +50,7 @@ impl App {
         let tx = self.events.sender();
         tokio::spawn(async move {
             wait_shutdown_signal().await;
-            let _ = tx.send(crate::event::AppEvent::Quit.into());
+            let _ = tx.send(crate::event::AppEvent::Quit);
         });
 
         self.bootstrap_headless(endpoint, playlist_index).await;

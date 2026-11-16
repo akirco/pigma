@@ -157,6 +157,18 @@ impl PlaybackEngine {
         Some(next_display)
     }
 
+    /// Switch to the queue at `index` in [`Self::queue_keys`] (mouse click on a
+    /// tab). Unlike `switch_queue`, the index comes from what the user saw, so
+    /// it is looked up in the same cached list without refreshing it first.
+    pub fn switch_to_queue(&mut self, index: usize) -> Option<String> {
+        let (id, display) = self.queue_entries_cache.get(index)?.clone();
+        if id == self.active_queue_id {
+            return None;
+        }
+        self.activate_by_id(&display, &id, true);
+        Some(display)
+    }
+
     /// Append today's `MM-DD` to a breadcrumb context, producing the full queue
     /// key that is stored in the queue file (and shown as its tab). Time-based
     /// content like 每日推荐 therefore gets one queue per day; replaying the

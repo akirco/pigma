@@ -26,9 +26,9 @@ pub(crate) const MODE_HEARTBEAT: &str = "\u{F0430}";
 pub(crate) const SEARCH: &str = "\u{F002}";
 pub(crate) const MUSIC_NOTE: &str = "\u{266a}"; // ♪
 pub(crate) const PLAY_INDICATOR: &str = "\u{25b6}"; // ▶
+pub(crate) const SECTION_MARK: &str = "\u{258e}"; // ▎
 pub(crate) const NAV_CAPSULE_START: &str = "\u{e0b2}";
 pub(crate) const NAV_CAPSULE_END: &str = "\u{e0b0}";
-pub(crate) const SECTION_MARK: &str = "\u{258e}"; // ▎
 pub(crate) const TITLE_START: &str = "\u{25ba}"; // ►
 pub(crate) const TITLE_END: &str = "\u{25c4}"; // ◄
 
@@ -67,3 +67,7 @@ pub(crate) const SPINNER_FRAMES: &[&str] = &[
     "▰▰▰▰▰▰▰",
     "▰▱▱▱▱▱▱",
 ];
+/// Animated marker shown at the end of the card that is playing: three braille
+/// cells that shift between each other, one frame per animation tick.
+pub(crate) const LOADING_FRAMES: &[&str] =
+    &["⡄⡇⡆", "⡆⡄⡇", "⡇⡆⡄", "⡆⡇⡆", "⡄⡆⡇", "⡇⡄⡆", "⡆⡇⡄", "⡄⡆⡆"];

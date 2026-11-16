@@ -9,8 +9,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use tokio::sync::mpsc;
-
 use super::{
     super::{
         equalizer::EqHandle,
@@ -19,7 +17,7 @@ use super::{
     device::{DeviceHealth, current_default_id, underrun_now},
     reader::{AudioInput, SharedReader},
 };
-use crate::event::{Event, PlaybackEvent};
+use crate::event::{EventSender, PlaybackEvent};
 
 pub(crate) enum ControlCmd {
     Switch(AudioInput, Option<Duration>),
@@ -68,7 +66,7 @@ pub(crate) fn run(
     initial_speed: f32,
     initial_speed_mode: SpeedMode,
     eq: EqHandle,
-    event_tx: mpsc::UnboundedSender<Event>,
+    event_tx: EventSender,
     control_rx: std::sync::mpsc::Receiver<ControlCmd>,
 ) {
     tokio::task::spawn_blocking(move || {
@@ -112,7 +110,7 @@ pub(super) struct PlayerTask {
     /// rebuild retries so a device that comes back still resumes the current
     /// song at the same position.
     pub(super) pending_resume: Option<(Option<Duration>, bool)>,
-    pub(super) event_tx: mpsc::UnboundedSender<Event>,
+    pub(super) event_tx: EventSender,
 }
 
 impl PlayerTask {
@@ -122,7 +120,7 @@ impl PlayerTask {
         initial_speed: f32,
         initial_speed_mode: SpeedMode,
         eq: EqHandle,
-        event_tx: mpsc::UnboundedSender<Event>,
+        event_tx: EventSender,
     ) -> Self {
         // Playback speed. rodio's `Player::set_speed` resamples (raising the
         // source's sample rate), which shifts the pitch by the same factor —
@@ -220,7 +218,7 @@ impl PlayerTask {
         log::warn!("{message}");
         let _ = self
             .event_tx
-            .send(PlaybackEvent::DeviceError(Some(message)).into());
+            .send(PlaybackEvent::DeviceError(Some(message)));
     }
 
     pub(super) fn clear_device_error(&mut self) {
@@ -228,7 +226,7 @@ impl PlayerTask {
             return;
         }
         self.device_error_reported = false;
-        let _ = self.event_tx.send(PlaybackEvent::DeviceError(None).into());
+        let _ = self.event_tx.send(PlaybackEvent::DeviceError(None));
     }
 
     /// Poll the system default output device and rebuild the sink once a change
@@ -276,7 +274,7 @@ impl PlayerTask {
             .as_ref()
             .is_some_and(|p| p.empty() && !p.is_paused());
         if finished {
-            let _ = self.event_tx.send(PlaybackEvent::Finished.into());
+            let _ = self.event_tx.send(PlaybackEvent::Finished);
             if let Some(p) = self.player.as_ref() {
                 p.stop();
             }
@@ -291,13 +289,10 @@ impl PlayerTask {
         }
 
         let pos = self.song_pos();
-        let _ = self.event_tx.send(
-            PlaybackEvent::Progress {
-                position: pos,
-                total: self.total_duration,
-            }
-            .into(),
-        );
+        let _ = self.event_tx.send(PlaybackEvent::Progress {
+            position: pos,
+            total: self.total_duration,
+        });
 
         // Watchdog: position frozen for STALL_TICKS while playing means the
         // stream died silently (macOS sometimes removes the output device

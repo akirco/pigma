@@ -12,7 +12,7 @@ use ncm_api::SongInfo;
 use super::{
     super::{
         CacheManager,
-        index::{CacheEntry, CacheIndex},
+        index::{CacheEntry, CacheIndex, saturating_sub_total},
     },
     provider::{CacheFileProvider, replace_file},
 };
@@ -160,8 +160,9 @@ impl CacheManager {
         self.cached_total_bytes
             .fetch_add(file_bytes, Ordering::Relaxed);
         if let Some((_, previous_bytes)) = previous {
-            self.cached_total_bytes
-                .fetch_sub(previous_bytes, Ordering::Relaxed);
+            // Saturating: a concurrent eviction may already have removed the
+            // old entry and subtracted its bytes.
+            saturating_sub_total(&self.cached_total_bytes, previous_bytes);
         }
         self.save_index();
         true
@@ -226,7 +227,7 @@ impl CacheManager {
         // Evict only enough oldest entries to get under the limit — not the
         // whole cache, which would force a full re-download of everything.
         let mut freed = 0u64;
-        let mut victims: Vec<(u64, String)> = Vec::new();
+        let mut victims: Vec<(u64, String, u64)> = Vec::new();
         for (id, filename) in entries {
             if freed >= need {
                 break;
@@ -235,23 +236,32 @@ impl CacheManager {
                 .map(|m| m.len())
                 .unwrap_or(0);
             freed += size;
-            victims.push((id, filename));
+            victims.push((id, filename, size));
         }
         if victims.is_empty() {
             return 0;
         }
 
+        // Only delete/subtract entries this call actually removed from the
+        // index. Without this, a concurrent `delete_cached_file` would subtract
+        // the same bytes twice and underflow the (non-saturating) total, making
+        // the cache look permanently over budget.
+        let mut removed = Vec::new();
+        let mut removed_bytes = 0u64;
         {
             let mut index = self.index.write().unwrap_or_else(|e| e.into_inner());
-            for (id, _) in &victims {
-                index.remove(id);
+            for (id, filename, size) in &victims {
+                if index.remove(id).is_some() {
+                    removed_bytes += size;
+                    removed.push(filename.clone());
+                }
             }
         }
-        for (_, filename) in &victims {
+        for filename in &removed {
             let _ = fs::remove_file(self.downloads_dir.join(filename));
         }
-        self.cached_total_bytes.fetch_sub(freed, Ordering::Relaxed);
-        log::info!("Evicted {} cached songs", victims.len());
-        victims.len()
+        saturating_sub_total(&self.cached_total_bytes, removed_bytes);
+        log::info!("Evicted {} cached songs", removed.len());
+        removed.len()
     }
 }
