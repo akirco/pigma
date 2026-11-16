@@ -2374,7 +2374,7 @@ dependencies = [
 
 [[package]]
 name = "pigma"
-version = "0.2.16"
+version = "0.3.0"
 dependencies = [
  "biquad",
  "clap",

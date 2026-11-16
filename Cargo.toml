@@ -1,6 +1,6 @@
 [package]
 name = "pigma"
-version = "0.2.16"
+version = "0.3.0"
 edition = "2024"
 # Highest requirement in the dependency graph is stream-download 0.24.4
 rust-version = "1.91.0"

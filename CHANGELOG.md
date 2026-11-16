@@ -1,3 +1,55 @@
+## [0.3.0] - 2026-11-16
+
+### 🚀 Features
+
+- *(playbackd)* Add equalizer functionality with UI integration (@akirco)
+- Overhaul UI interactions, page transitions and config handling (@akirco)
+
+### 🐛 Bug Fixes
+
+- *(playback)* Finalize cache entries only when the download completes (@akirco)
+- *(app)* Probe the network through the configured client at startup (@akirco)
+- *(playback)* Keep the queue playhead and version in sync (@akirco)
+- *(sonar)* Keep trying sources after a missing provider (@akirco)
+- Write config and queue files atomically (@akirco)
+- *(ui)* Clamp player bar areas to avoid panic on tiny terminals (@wbbo)
+- *(cache,playback)* Finalize cached downloads atomically (@akirco)
+- *(app)* Drop stale content and breadcrumb responses (@akirco)
+- *(playback)* Serialize queue saves by sequence (@akirco)
+- *(ipc)* Harden the local control socket (@akirco)
+- *(playback,auth)* Drop stale heartbeat and QR login responses (@akirco)
+- *(network)* Bound sonar, cover, stream and IPC client calls (@akirco)
+- *(cache)* Scope personal content cache by account (@akirco)
+- *(playback)* Surface audio device failures and resume on recovery (@akirco)
+- *(cloud)* Move upload digest and metadata parsing off the async worker (@akirco)
+- *(library)* Make local scans loop-safe and cache durations (@akirco)
+- *(security)* Tighten log/config/cache permissions and rotate logs (@akirco)
+- *(playback)* Keep the queue duplicate-free (@akirco)
+- *(main)* Restore mouse capture from the panic hook (@akirco)
+
+### 💼 Other
+
+- Files & code structure (@akirco)
+- Add a workspace and run sub-crate tests in CI (@akirco)
+
+### 🚜 Refactor
+
+- *(core)* Extract persistence and content cache modules (@akirco)
+- Mirror the proposed crate layout with module folders (@akirco)
+- Finish the first round of module decoupling (@akirco)
+- *(service)* Move local library scanning out of playback (@akirco)
+- Adopt self-named modules and apply review fixes (@akirco)
+- *(service)* Split the misnamed library module by change reason (@akirco)
+- *(service)* Fold thin NCM passthroughs back into api.rs and library.rs (@akirco)
+- *(ui)* Keep cover prefetching out of the render pass (@akirco)
+- *(input)* Turn queue filtering into navigation events (@akirco)
+- *(input)* Move user actions and their toasts into app::actions (@akirco)
+
+### ⚙️ Miscellaneous Tasks
+
+- Remove dead download API and fix stale review items (@akirco)
+- *(release)* Ship generic x86-64 binaries (@akirco)
+- Enforce workspace lints and minimize dependency features (@akirco)
 ## [0.2.16] - 2026-10-23
 
 ### 🚀 Features
