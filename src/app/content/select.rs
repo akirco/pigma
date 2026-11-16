@@ -1,0 +1,199 @@
+//! Playlist selection (lazy detail loading) and song activation from the
+//! content list.
+
+use super::super::{App, event::send_event};
+use crate::{
+    event::{NavigationEvent, PlaybackEvent},
+    playback::{NCM_SEARCH_QUEUE_KEY, THIRD_PARTY_QUEUE_KEY},
+    service::ApiEndpoint,
+    state::ContentState,
+};
+
+impl App {
+    pub(crate) fn handle_playlist_select(&mut self, id: u64, name: Option<String>) {
+        let generation = self.bump_content_generation();
+        self.state.navigation.push_breadcrumb();
+        self.state.navigation.set_content(ContentState::Loading);
+        // The playlist is being reloaded (content may have changed), so invalidate the previous "全量已入队" marker.
+        self.queued_playlists.remove(&id);
+
+        let selected_endpoint = self.selected_endpoint();
+
+        let is_album = selected_endpoint == Some(ApiEndpoint::SavedAlbums);
+        let is_radio = selected_endpoint == Some(ApiEndpoint::UserRadioSublist);
+
+        if !is_album {
+            self.playback.set_playlist_id(id);
+        }
+
+        let service = self.service.clone();
+        let sender = self.events.sender();
+        let limit = self.config.search_limit;
+        tokio::spawn(async move {
+            if is_album {
+                let state = service.load_album(id).await;
+                send_event(
+                    &sender,
+                    NavigationEvent::ContentLoaded {
+                        content: state,
+                        generation,
+                    }
+                    .into(),
+                );
+                if let Some(n) = name.clone() {
+                    send_event(
+                        &sender,
+                        NavigationEvent::BreadcrumbSet {
+                            name: n,
+                            generation,
+                        }
+                        .into(),
+                    );
+                }
+                return;
+            }
+            let (state, detail_name, pagination) =
+                service.load_playlist_detail(id, is_radio, limit).await;
+            if let Some(pg) = pagination {
+                send_event(
+                    &sender,
+                    NavigationEvent::ContentLoadedPaged {
+                        content: state,
+                        pagination: pg,
+                        generation,
+                    }
+                    .into(),
+                );
+            } else {
+                send_event(
+                    &sender,
+                    NavigationEvent::ContentLoaded {
+                        content: state,
+                        generation,
+                    }
+                    .into(),
+                );
+            }
+            let breadcrumb = detail_name.or(name);
+            if let Some(n) = breadcrumb {
+                send_event(
+                    &sender,
+                    NavigationEvent::BreadcrumbSet {
+                        name: n,
+                        generation,
+                    }
+                    .into(),
+                );
+            }
+        });
+    }
+
+    pub(crate) fn handle_song_play(&mut self, id: u64) {
+        if self.playback.is_currently_playing(id) {
+            self.playback.toggle_pause();
+            return;
+        }
+        let pos = match self.state.navigation.content.as_ref() {
+            ContentState::Songs(songs) => songs.iter().position(|s| s.id == id),
+            _ => None,
+        };
+        if let Some(pos) = pos {
+            if let ContentState::Songs(songs) = self.state.navigation.content.as_ref() {
+                if self.state.navigation.content_is_search && sonar::is_sonar_song_id(id) {
+                    // Third-party search always goes into the same queue; do not reuse queues built by keyword/date
+                    self.playback
+                        .append_and_play_key(THIRD_PARTY_QUEUE_KEY, &songs[pos..=pos], 0);
+                } else if self.state.navigation.content_is_search {
+                    // NetEase Cloud search always goes into the "官方搜索" queue
+                    self.playback
+                        .append_and_play_key(NCM_SEARCH_QUEUE_KEY, &songs[pos..=pos], 0);
+                } else {
+                    let key = self.state.navigation.current_queue_key();
+                    let lazy_playlist_id = self
+                        .state
+                        .navigation
+                        .pagination
+                        .as_ref()
+                        .filter(|p| p.has_more)
+                        .and_then(|p| p.api.strip_prefix("playlist:"))
+                        .and_then(|s| s.parse::<u64>().ok());
+
+                    if let Some(playlist_id) = lazy_playlist_id {
+                        if self.queued_playlists.contains(&playlist_id) {
+                            // The full track list was already merged into this playlist's
+                            // queue (in memory or persisted), so activate the queue directly
+                            // and seek to the song, avoiding rebuilding/truncating or refetching.
+                            // Locate by song ID rather than content-list index: `a` inserts
+                            // the next song after the current one, so the queue order no longer
+                            // matches the content list, and `play_index` by content index would
+                            // play the wrong song.
+                            let qkey = self.playback.queue_key_for(&key);
+                            self.playback.activate_queue(&qkey);
+                            if let Some(qidx) =
+                                self.playback.queue_songs().iter().position(|s| s.id == id)
+                            {
+                                self.playback.play_index(qidx);
+                            } else {
+                                self.playback.play_songs(&key, songs.to_vec(), pos);
+                            }
+                        } else {
+                            // Lazily-paged playlist: play the first page immediately; the remaining tracks are merged into the same queue in the background in batches.
+                            self.playback.play_songs(&key, songs.to_vec(), pos);
+                            let Some(p) = self.state.navigation.pagination.as_ref() else {
+                                log::warn!("lazy playlist without pagination state");
+                                return;
+                            };
+                            let (api, limit, total) = (p.api.clone(), p.limit, p.total);
+                            let qkey = self.playback.queue_key_for(&key);
+                            let service = self.service.clone();
+                            let sender = self.events.sender();
+                            let start = songs.len() as u32;
+                            tokio::spawn(async move {
+                                let mut offset = start;
+                                let mut completed = true;
+                                loop {
+                                    match service.load_more(&api, offset, limit).await {
+                                        Some((ContentState::Songs(page), next_pg)) => {
+                                            if page.is_empty() {
+                                                break;
+                                            }
+                                            send_event(
+                                                &sender,
+                                                PlaybackEvent::QueueAppend {
+                                                    key: qkey.clone(),
+                                                    songs: page,
+                                                }
+                                                .into(),
+                                            );
+                                            offset = next_pg.offset + next_pg.limit;
+                                            if !next_pg.has_more || u64::from(offset) >= total {
+                                                break;
+                                            }
+                                        }
+                                        _ => {
+                                            completed = false;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if completed {
+                                    send_event(
+                                        &sender,
+                                        PlaybackEvent::QueueLoadDone { playlist_id }.into(),
+                                    );
+                                }
+                            });
+                        }
+                    } else {
+                        self.playback.play_songs(&key, songs.to_vec(), pos);
+                    }
+                }
+            }
+            let toast_name: &str = match self.state.navigation.content.as_ref() {
+                ContentState::Songs(songs) => songs.get(pos).map(|s| s.name.as_str()).unwrap_or(""),
+                _ => "",
+            };
+            self.toast(format!("{}  {}", crate::icons::PLAY_INDICATOR, toast_name));
+        }
+    }
+}

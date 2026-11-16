@@ -9,12 +9,12 @@ use crate::{
 
 impl App {
     pub(crate) fn open_equalizer(&mut self) {
-        self.state.navigation.page = Page::Equalizer;
+        self.start_page_transition(Page::Equalizer);
     }
 
     pub(crate) fn close_equalizer(&mut self) {
         self.save_equalizer();
-        self.state.navigation.page = Page::Main;
+        self.start_page_transition(Page::Main);
     }
 
     /// Copy the live equalizer settings into the config and write the file.

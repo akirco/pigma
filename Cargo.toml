@@ -1,45 +1,121 @@
 [package]
 name = "pigma"
-version = "0.2.16"
+version = "0.3.0"
 edition = "2024"
+# Highest requirement in the dependency graph is stream-download 0.24.4
+rust-version = "1.91.0"
 description = "A netease cloud music client"
 repository = "https://github.com/akirco/pigma.git"
 license = "Apache-2.0"
 # authors = ["akirco <earlfx@163.com>"]
 
 [dependencies]
-biquad = "0.6.0"
-clap = { version = "4.6.7", features = ["derive"] }
-clap_complete = "4.6.11"
-crossterm = { version = "0.29.0", features = ["event-stream"] }
-dirs = "7.0.0"
-eyre = "0.6.14"
-futures = { version = "0.3.33", default-features = false, features = ["std"] }
-image = { version = "0.25.10", default-features = false, features = ["jpeg"] }
-log = { version = "0.4.34", features = ["serde", "std"] }
-ncm-api = { path = "crates/ncm-api" }
-qrcode = { version = "0.14.1", default-features = false }
-rand = "0.10.3"
-ratatui = { version = "0.30.2", default-features = false, features = ["crossterm_0_29", "layout-cache", "serde"] }
-ratatui-image = { version = "11.1.0", default-features = false, features = ["crossterm"] }
-reqwest = { version = "0.13.4", default-features = false, features = ["rustls-no-provider"] }
-rodio = { version = "0.22.2", default-features = false, features = ["playback", "symphonia-aac", "symphonia-flac", "symphonia-isomp4", "symphonia-mp3", "symphonia-vorbis", "symphonia-wav"] }
-rustls = { version = "0.23.46", default-features = false, features = ["ring", "std"] }
-serde = { version = "1.0.229", features = ["derive", "rc"] }
-serde_json = "1.0.154"
-sonar = { path = "crates/sonar" }
-stream-download = { version = "0.24.4", default-features = false, features = ["async-read", "reqwest", "temp-storage"] }
-time = { version = "0.3.55", features = ["formatting", "local-offset", "macros"] }
-tokio = { version = "1.54.1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
-toml_edit = { version = "0.25.17", features = ["serde"] }
-unicode-width = "0.2.2"
-url = "2.5.8"
+biquad = { workspace = true }
+clap = { workspace = true, features = ["color", "derive", "error-context", "help", "std", "suggestions", "usage"] }
+clap_complete = { workspace = true }
+crossterm = { workspace = true, features = ["event-stream", "events", "windows"] }
+dirs = { workspace = true }
+eyre = { workspace = true, features = ["auto-install", "track-caller"] }
+futures = { workspace = true, features = ["std"] }
+image = { workspace = true, features = ["jpeg"] }
+log = { workspace = true, features = ["serde", "std"] }
+ncm-api = { workspace = true }
+qrcode = { workspace = true }
+rand = { workspace = true, features = ["std", "thread_rng"] }
+ratatui = { workspace = true, features = ["crossterm_0_29", "layout-cache", "serde"] }
+ratatui-image = { workspace = true, features = ["crossterm"] }
+reqwest = { workspace = true, features = ["rustls-no-provider"] }
+rodio = { workspace = true, features = ["playback", "symphonia-aac", "symphonia-flac", "symphonia-isomp4", "symphonia-mp3", "symphonia-vorbis", "symphonia-wav"] }
+rustls = { workspace = true, features = ["ring", "std"] }
+serde = { workspace = true, features = ["derive", "rc", "std"] }
+serde_json = { workspace = true, features = ["std"] }
+sonar = { workspace = true }
+stream-download = { workspace = true, features = ["async-read", "reqwest", "temp-storage"] }
+tachyonfx = "0.25.2"
+time = { workspace = true, features = ["formatting", "local-offset", "macros", "std"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+toml_edit = { workspace = true, features = ["display", "parse", "serde"] }
+unicode-width = { workspace = true, features = ["cjk"] }
+url = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
-rustls = { version = "0.23.46", default-features = false, features = ["ring", "std"] }
+rustls = { workspace = true, features = ["ring", "std"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-libc = "0.2.191"
+libc = { workspace = true, features = ["std"] }
+
+[target."cfg(windows)".dependencies]
+windows-sys = {version = "0.61.2",default-features = false,features = ["Win32_Foundation","Win32_Security","Win32_Security_Authorization"]}
+
+[lints]
+workspace = true
+
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+# y7dl is a git submodule with its own formatting/lockfile; making it a
+# workspace member would make root `cargo fmt` rewrite the submodule and
+# require a submodule commit. CI runs its tests/clippy with
+# `--manifest-path crates/y7dl/Cargo.toml` instead.
+exclude = ["crates/y7dl"]
+# Release builds and plain `cargo build` still operate on pigma itself; CI
+# runs `--workspace` explicitly to include ncm-api and sonar.
+default-members = ["."]
+
+[workspace.dependencies]
+# Unified declarations. `default-features = false` is a workspace-wide vote:
+# every member inherits it with `{ workspace = true }` and opts into only the
+# features its own code actually touches. `y7dl` is deliberately absent — it is
+# an excluded git submodule with its own lockfile and formatting, and stays a
+# direct path dependency of `sonar` to avoid rewriting the submodule.
+aes = { version = "0.9.3", default-features = false }
+async-trait = { version = "0.1.92", default-features = false }
+base64 = { version = "0.23.1", default-features = false }
+biquad = { version = "0.6.0", default-features = false }
+clap = { version = "4.6.7", default-features = false }
+clap_complete = { version = "4.6.11", default-features = false }
+crossterm = { version = "0.29.0", default-features = false }
+dirs = { version = "7.0.0", default-features = false }
+eyre = { version = "0.6.14", default-features = false }
+futures = { version = "0.3.33", default-features = false }
+image = { version = "0.25.10", default-features = false }
+libc = { version = "0.2.191", default-features = false }
+lofty = { version = "0.25.4", default-features = false }
+log = { version = "0.4.34", default-features = false }
+md-5 = { version = "0.11.0", default-features = false }
+ncm-api = { path = "crates/ncm-api", default-features = false }
+once_cell = { version = "1.21.4", default-features = false }
+percent-encoding = { version = "2.3.2", default-features = false }
+qrcode = { version = "0.14.1", default-features = false }
+rand = { version = "0.10.3", default-features = false }
+ratatui = { version = "0.30.2", default-features = false }
+ratatui-image = { version = "11.1.0", default-features = false }
+regex = { version = "1.13.1", default-features = false }
+reqwest = { version = "0.13.4", default-features = false }
+rodio = { version = "0.22.2", default-features = false }
+rsa = { version = "0.9.10", default-features = false }
+rustls = { version = "0.23.46", default-features = false }
+serde = { version = "1.0.229", default-features = false }
+serde_json = { version = "1.0.154", default-features = false }
+sonar = { path = "crates/sonar", default-features = false }
+stream-download = { version = "0.24.4", default-features = false }
+thiserror = { version = "2.0.21", default-features = false }
+time = { version = "0.3.55", default-features = false }
+tokio = { version = "1.54.1", default-features = false }
+toml_edit = { version = "0.25.17", default-features = false }
+unicode-width = { version = "0.2.2", default-features = false }
+url = { version = "2.5.8", default-features = false }
+urlencoding = { version = "2.1", default-features = false }
+
+[workspace.lints.clippy]
+assigning_clones = "deny"
+clone_on_copy = "deny"
+needless_borrow = "deny"
+redundant_clone = "deny"
+
+[workspace.lints.rust]
+unreachable_pub = "deny"
+unused_crate_dependencies = "deny"
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
 [profile.release]

@@ -155,7 +155,7 @@ impl CookieStore {
 
             // Track __csrf
             if name == "__csrf" && !value.is_empty() {
-                self.csrf = value.clone();
+                self.csrf.clone_from(&value);
             }
 
             if self.cookies.get(&name) != Some(&value) {

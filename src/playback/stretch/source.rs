@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use rodio::{ChannelCount, Sample, SampleRate, Source, source::SeekError};
+use rodio::{ChannelCount, Sample, SampleRate, Source};
 
 use super::{core::Stretch, handle::SpeedMode};
 
@@ -81,27 +81,9 @@ impl<I: Source + Send> Source for Stretch<I> {
             .map(|d| d.mul_f64(1.0 / self.handle.factor() as f64))
     }
 
-    /// `pos` addresses the recording. Under [`SpeedMode::PreservePitch`] the
-    /// stretcher consumes `factor` input frames per output frame, so the seek
-    /// target has to be scaled; under [`SpeedMode::ShiftPitch`] frames are
-    /// handed over 1:1 and the factor is carried by the sample rate instead.
-    /// The stretch pipeline is dropped either way.
-    fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
-        let scaled = match self.handle.mode() {
-            SpeedMode::PreservePitch => pos.mul_f64(self.handle.factor() as f64),
-            SpeedMode::ShiftPitch => pos,
-        };
-        self.input.try_seek(scaled)?;
-        self.out.clear();
-        self.block = None;
-        self.buf.clear();
-        self.prev.clear();
-        self.buf_start = 0;
-        self.prev_start = 0;
-        self.primed = false;
-        self.input_done = false;
-        self.finished = false;
-        self.handle.reset_position();
-        Ok(())
-    }
+    // Seeking is intentionally left at the trait default (`NotSupported`):
+    // the player rebuilds the decoder for a seek (`ControlCmd::SeekTo`), so a
+    // custom implementation here would be dead code. The previous version also
+    // scaled the position by the stretch factor, which does not match the
+    // recording timeline the player uses.
 }

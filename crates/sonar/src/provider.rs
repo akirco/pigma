@@ -1,9 +1,12 @@
+use std::time::Duration;
+
+use async_trait::async_trait;
+use reqwest::Client;
+
 use crate::{
     error::Result,
     model::{PlayUrlResult, Quality, SearchQuery, SearchResult, SonarSource, Song},
 };
-use async_trait::async_trait;
-use reqwest::Client;
 
 /// Default provider priorities (see [`SonarProvider::priority`]). Lower values
 /// rank higher; the finder sorts providers by priority descending.
@@ -12,11 +15,18 @@ pub(crate) const PRIORITY_KUWO: u8 = 20;
 pub(crate) const PRIORITY_YOUTUBE: u8 = 30;
 pub(crate) const PRIORITY_BILIVIDEO: u8 = 40;
 
+/// Keep a provider request from hanging even if an outer timeout is forgotten.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Build a `reqwest::Client` with the given user agent and an optional HTTP
 /// proxy (empty `proxy_url` = direct connection). Fallible so callers can
 /// surface an invalid proxy URL or a failed builder instead of panicking.
 pub(crate) fn build_client(proxy_url: &str, user_agent: &str) -> Result<Client> {
-    let mut builder = Client::builder().user_agent(user_agent);
+    let mut builder = Client::builder()
+        .user_agent(user_agent)
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(REQUEST_TIMEOUT);
     if !proxy_url.is_empty() {
         builder = builder.proxy(reqwest::Proxy::all(proxy_url)?);
     }

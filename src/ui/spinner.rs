@@ -1,19 +1,8 @@
 use ratatui::{buffer::Buffer, layout::Rect, style::Style, widgets::Widget};
 
-const BLOCKS_FRAMES: &[&str] = &[
-    "▰▱▱▱▱▱▱",
-    "▰▰▱▱▱▱▱",
-    "▰▰▰▱▱▱▱",
-    "▰▰▰▰▱▱▱",
-    "▰▰▰▰▰▱▱",
-    "▰▰▰▰▰▰▱",
-    "▰▰▰▰▰▰▰",
-    "▰▱▱▱▱▱▱",
-];
-
 const SPEED: u64 = 3;
 
-pub struct Spinner {
+pub(super) struct Spinner {
     tick: u64,
     filled_color: Style,
     empty_color: Style,
@@ -46,15 +35,15 @@ impl Widget for Spinner {
         if area.is_empty() {
             return;
         }
-        let frame_idx = (self.tick / SPEED) as usize % BLOCKS_FRAMES.len();
-        let frame = BLOCKS_FRAMES[frame_idx];
+        let frame_idx = (self.tick / SPEED) as usize % crate::icons::SPINNER_FRAMES.len();
+        let frame = crate::icons::SPINNER_FRAMES[frame_idx];
 
         for (i, ch) in frame.chars().enumerate() {
             let x = area.x + i as u16;
             if x >= area.right() {
                 break;
             }
-            let style = if ch == '▰' {
+            let style = if ch == crate::icons::SPINNER_FILLED {
                 self.filled_color
             } else {
                 self.empty_color

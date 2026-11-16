@@ -26,7 +26,7 @@ const FIXED_SCALE: f32 = 10.0;
 const REFRESH_FRAMES: u32 = 64;
 
 #[derive(Debug, Clone)]
-pub struct EqHandle(Arc<EqShared>);
+pub(super) struct EqHandle(Arc<EqShared>);
 
 #[derive(Debug)]
 struct EqShared {
@@ -36,7 +36,7 @@ struct EqShared {
 }
 
 impl EqHandle {
-    pub fn new(settings: EqualizerConfig) -> Self {
+    pub(super) fn new(settings: EqualizerConfig) -> Self {
         let settings = settings.sanitized();
         Self(Arc::new(EqShared {
             preamp: AtomicI32::new(fixed(settings.preamp_db)),
@@ -46,7 +46,7 @@ impl EqHandle {
     }
 
     /// Replace all settings. The audio thread picks them up within ~1.5 ms.
-    pub fn apply(&self, settings: EqualizerConfig) {
+    pub(super) fn apply(&self, settings: EqualizerConfig) {
         let settings = settings.sanitized();
         self.0
             .preamp
@@ -54,7 +54,10 @@ impl EqHandle {
         for (slot, gain) in self.0.gains.iter().zip(settings.bands) {
             slot.store(fixed(gain), Ordering::Relaxed);
         }
-        self.0.generation.fetch_add(1, Ordering::Relaxed);
+        // Publish the settings above to the audio thread. `Acquire` on the
+        // read side pairs with this `Release`, so observing the new generation
+        // guarantees the preamp/gain stores are visible too.
+        self.0.generation.fetch_add(1, Ordering::Release);
     }
 
     fn settings(&self) -> EqualizerConfig {
@@ -65,7 +68,7 @@ impl EqHandle {
     }
 
     fn generation(&self) -> u32 {
-        self.0.generation.load(Ordering::Relaxed)
+        self.0.generation.load(Ordering::Acquire)
     }
 }
 
@@ -78,7 +81,7 @@ fn unfixed(value: i32) -> f32 {
 }
 
 /// A [`Source`] that applies the 10-band equalizer to its input.
-pub struct EqSource<I> {
+pub(super) struct EqSource<I> {
     input: I,
     handle: EqHandle,
     channels: usize,
@@ -93,7 +96,7 @@ pub struct EqSource<I> {
 }
 
 impl<I: Source<Item = f32> + Send> EqSource<I> {
-    pub fn new(input: I, handle: EqHandle) -> Self {
+    pub(super) fn new(input: I, handle: EqHandle) -> Self {
         let settings = handle.settings();
         let channels = input.channels().get() as usize;
         let sample_rate = input.sample_rate().get();
@@ -297,6 +300,22 @@ mod tests {
     fn flat_config_is_a_passthrough() {
         let data = sine(440.0, 0.1);
         assert_eq!(run(EqualizerConfig::default(), data.clone()), data);
+    }
+
+    /// `apply` must publish settings with a new generation so the audio thread
+    /// notices the change (and sees the relaxed gain stores through the
+    /// release/acquire pair).
+    #[test]
+    fn apply_bumps_the_generation() {
+        let handle = EqHandle::new(EqualizerConfig::default());
+        let before = handle.generation();
+        let mut bands = [0.0; 10];
+        bands[0] = 3.0;
+        handle.apply(EqualizerConfig {
+            bands,
+            ..EqualizerConfig::default()
+        });
+        assert_ne!(handle.generation(), before);
     }
 
     #[test]

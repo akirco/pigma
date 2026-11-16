@@ -1,5 +1,10 @@
 {
   "files.associations": {
     "*.css": "gtk-css"
-  }
+  },
+  // AGENTS.md: every workspace dependency disables default features, so
+  // allFeatures would re-enable a much larger graph for no benefit. Keep IDE
+  // checks on the minimal default set; CI covers --all-features explicitly.
+  "rust-analyzer.cargo.features": [],
+  "rust-analyzer.check.allFeatures": false
 }

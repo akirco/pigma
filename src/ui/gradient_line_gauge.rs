@@ -7,9 +7,9 @@ use ratatui::{
     widgets::Widget,
 };
 
-use crate::utils::GradientPreset;
+use crate::config::GradientPreset;
 
-pub struct GradientLineGauge<'a> {
+pub(super) struct GradientLineGauge<'a> {
     ratio: f64,
     label: Option<Line<'a>>,
     filled_symbol: String,
@@ -63,8 +63,14 @@ impl Widget for GradientLineGauge<'_> {
         }
 
         let ratio = self.ratio;
-        let default_label = Line::from(format!("{:3.0}%", ratio * 100.0));
-        let label = self.label.as_ref().unwrap_or(&default_label);
+        let default_label;
+        let label = match self.label.as_ref() {
+            Some(label) => label,
+            None => {
+                default_label = Line::from(format!("{:3.0}%", ratio * 100.0));
+                &default_label
+            }
+        };
         let (col, row) = buf.set_line(area.left(), area.top(), label, area.width);
         let start = col + 1;
         if start >= area.right() {

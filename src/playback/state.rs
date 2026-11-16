@@ -4,8 +4,7 @@ use ncm_api::SongInfo;
 
 use super::{cover::CoverState, mode::PlayMode};
 
-use super::lyrics::LyricLine;
-use crate::config::EqualizerConfig;
+use crate::{config::EqualizerConfig, lyrics::LyricLine};
 
 /// Lower bound of the playback speed factor (keyboard `[`).
 pub const MIN_SPEED: f64 = 0.5;
@@ -29,6 +28,10 @@ pub struct PlaybackState {
     pub seeking: bool,
     pub current_song: Option<Arc<SongInfo>>,
     pub error: Option<String>,
+    /// Output-device failure (no device, device removed, ...). Kept separate
+    /// from `error` so a later decode/API error cannot hide it and device
+    /// recovery can clear only this slot.
+    pub device_error: Option<String>,
     pub lyrics: Option<Vec<LyricLine>>,
     pub translated_lyrics: Option<Vec<LyricLine>>,
     pub mode: PlayMode,
@@ -50,6 +53,7 @@ impl Default for PlaybackState {
             seeking: false,
             current_song: None,
             error: None,
+            device_error: None,
             lyrics: None,
             translated_lyrics: None,
             mode: PlayMode::Sequential,
@@ -62,7 +66,7 @@ impl Default for PlaybackState {
 }
 
 /// Clamp a playback speed factor into [`MIN_SPEED`]..=[`MAX_SPEED`].
-pub fn clamp_speed(speed: f64) -> f64 {
+pub(super) fn clamp_speed(speed: f64) -> f64 {
     if !speed.is_finite() {
         return 1.0;
     }
@@ -132,6 +136,20 @@ impl PlaybackState {
         self.error = Some(err);
     }
 
+    /// Surface/clear an output-device failure. This must not advance the queue
+    /// or count toward the decode-error retry budget: the song itself is fine.
+    pub(super) fn on_device_error(&mut self, message: Option<String>) {
+        match message {
+            Some(e) => {
+                log::error!("Audio device error: {e}");
+                self.device_error = Some(e);
+            }
+            None => {
+                self.device_error = None;
+            }
+        }
+    }
+
     pub(super) fn on_lyrics_loaded(
         &mut self,
         song_id: u64,
@@ -179,5 +197,22 @@ mod tests {
         assert_eq!(s.speed, MIN_SPEED);
         s.set_speed(f64::NAN);
         assert_eq!(s.speed, 1.0);
+    }
+
+    /// A device failure has its own slot: it must not be mistaken for a decode
+    /// error (which advances the queue) and recovery must not erase a real
+    /// playback error.
+    #[test]
+    fn device_error_is_separate_from_playback_errors() {
+        let mut s = PlaybackState::default();
+        s.on_error("decode: bad stream".into());
+        s.on_device_error(Some("音频设备不可用".into()));
+
+        assert_eq!(s.error.as_deref(), Some("decode: bad stream"));
+        assert_eq!(s.device_error.as_deref(), Some("音频设备不可用"));
+
+        s.on_device_error(None);
+        assert_eq!(s.device_error, None);
+        assert_eq!(s.error.as_deref(), Some("decode: bad stream"));
     }
 }

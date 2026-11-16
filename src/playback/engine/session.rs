@@ -6,7 +6,7 @@ use std::sync::Arc;
 use super::{PlaybackEngine, mode};
 use crate::{
     playback::{queue::PlaylistQueue, storage::PlaylistStorage},
-    utils::time::local_month_day,
+    time::local_month_day,
 };
 
 impl PlaybackEngine {
@@ -155,6 +155,18 @@ impl PlaybackEngine {
         let (next_display, next_id) = (next.1.clone(), next.0.clone());
         self.activate_by_id(&next_display, &next_id, true);
         Some(next_display)
+    }
+
+    /// Switch to the queue at `index` in [`Self::queue_keys`] (mouse click on a
+    /// tab). Unlike `switch_queue`, the index comes from what the user saw, so
+    /// it is looked up in the same cached list without refreshing it first.
+    pub fn switch_to_queue(&mut self, index: usize) -> Option<String> {
+        let (id, display) = self.queue_entries_cache.get(index)?.clone();
+        if id == self.active_queue_id {
+            return None;
+        }
+        self.activate_by_id(&display, &id, true);
+        Some(display)
     }
 
     /// Append today's `MM-DD` to a breadcrumb context, producing the full queue

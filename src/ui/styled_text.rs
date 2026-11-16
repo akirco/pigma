@@ -3,7 +3,7 @@ use ratatui::{
     text::Span,
 };
 
-use crate::{config::Theme, utils::gradient_color};
+use crate::config::{GradientPreset, Theme};
 
 /// Parse `<tag>text</tag>` markup into styled `Vec<Span>`.
 ///
@@ -60,22 +60,18 @@ pub(super) fn parse_styled_with<'a>(text: &'a str, theme: &Theme, base: Style) -
                     let inner = &text[pos..pos + rest];
                     pos = pos + rest + close_tag.len();
 
+                    let preset = GradientPreset::from_str_or_rainbow(preset);
                     let char_count = inner.chars().count();
-                    for (i, ch) in inner.chars().enumerate() {
+                    for (i, (byte_start, ch)) in inner.char_indices().enumerate() {
                         let t = if char_count <= 1 {
                             0.0
                         } else {
                             i as f32 / (char_count - 1) as f32
                         };
-                        let [r, g, b] = gradient_color(preset, t);
+                        let [r, g, b] = preset.color(t);
                         let style = current_style.fg(Color::Rgb(r, g, b));
-                        let byte_start =
-                            inner.char_indices().nth(i).map(|(idx, _)| idx).unwrap_or(0);
-                        let char_len = ch.len_utf8();
-                        spans.push(Span::styled(
-                            &inner[byte_start..byte_start + char_len],
-                            style,
-                        ));
+                        let byte_end = byte_start + ch.len_utf8();
+                        spans.push(Span::styled(&inner[byte_start..byte_end], style));
                     }
                 } else {
                     // no closing tag found: skip the entire unclosed gradient

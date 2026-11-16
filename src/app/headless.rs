@@ -1,12 +1,12 @@
 //! Headless daemon mode (`pigma --daemon <endpoint>`): no terminal is opened.
-//! Loads the endpoint as the initial list, starts playing it, and runs the
-//! IPC socket so `pigma status` / `pigma msg` can observe and control it.
+//! Loads the endpoint as the initial list without starting playback, and runs
+//! the IPC socket so `pigma status` / `pigma msg` can observe and control it.
 //! Stops on SIGINT/SIGTERM (saving the session).
 
 use std::sync::Arc;
 
 use super::App;
-use crate::{state::Page, utils::lock_recover};
+use crate::{lock::lock_recover, state::Page};
 
 impl App {
     /// Headless daemon mode: load the endpoint, start the IPC server, and pump
@@ -21,7 +21,7 @@ impl App {
             Arc::clone(&self.ipc.status),
             Arc::clone(&self.ipc.queue),
             self.ipc.status_tx.clone(),
-            self.state.events.sender(),
+            self.events.control_sender(),
             Arc::clone(&self.search.engine),
         );
 
@@ -47,10 +47,10 @@ impl App {
 
         // Forward termination signals to the event loop so shutdown goes through
         // `App::quit` (session save + cookie flush) like a normal quit.
-        let tx = self.state.events.sender();
+        let tx = self.events.sender();
         tokio::spawn(async move {
             wait_shutdown_signal().await;
-            let _ = tx.send(crate::event::AppEvent::Quit.into());
+            let _ = tx.send(crate::event::AppEvent::Quit);
         });
 
         self.bootstrap_headless(endpoint, playlist_index).await;
@@ -78,8 +78,12 @@ impl App {
 
 #[cfg(unix)]
 async fn wait_shutdown_signal() {
-    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-        .expect("failed to install SIGTERM handler");
+    let Ok(mut sigterm) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+    else {
+        log::warn!("failed to install SIGTERM handler; falling back to Ctrl-C");
+        let _ = tokio::signal::ctrl_c().await;
+        return;
+    };
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {}
         _ = sigterm.recv() => {}

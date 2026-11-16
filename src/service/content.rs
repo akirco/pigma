@@ -1,10 +1,13 @@
 //! Endpoint content resolution and pagination: navigation endpoints, playlist
 //! detail, album/artist pages, and `load_more` for cloud disk + playlist tracks.
 
-use super::{ApiEndpoint, ApiService, arc_songs, content_result};
+use super::{
+    ApiEndpoint, ApiService,
+    api::{arc_songs, content_result},
+};
 use crate::{
+    lock::lock_recover,
     state::{ContentState, HotSearchKeywords, PaginationInfo},
-    utils::lock_recover,
 };
 
 impl ApiService {
@@ -18,19 +21,7 @@ impl ApiService {
         uid: Option<u64>,
         limit: u16,
     ) -> (ContentState, Option<PaginationInfo>) {
-        let requires_login = matches!(
-            api,
-            ApiEndpoint::RecommendSongs
-                | ApiEndpoint::RecommendResource
-                | ApiEndpoint::UserRadioSublist
-                | ApiEndpoint::UserCloudDisk
-                | ApiEndpoint::LikedSongs
-                | ApiEndpoint::UserSongList
-                | ApiEndpoint::UserCreatedSongList
-                | ApiEndpoint::UserSubscribedSongList
-                | ApiEndpoint::SavedAlbums
-                | ApiEndpoint::Recent
-        );
+        let requires_login = api.is_personal();
         if requires_login && !self.client.is_logged_in() {
             return (ContentState::Error("未登录".into()), None);
         }

@@ -10,8 +10,8 @@ use super::{
     mode::{self, PlayMode},
 };
 use crate::{
+    lock::lock_recover,
     playback::{queue::PlaylistQueue, storage::PlaylistStorage},
-    utils::lock_recover,
 };
 
 impl PlaybackEngine {
@@ -39,7 +39,7 @@ impl PlaybackEngine {
     }
 
     pub fn set_queue_songs(&mut self, songs: Vec<Arc<SongInfo>>) {
-        self.queue.set_songs(songs);
+        self.replace_queue_songs(songs);
     }
 
     /// Replace the queue with a subset of `full` selected by `indices`, cloning
@@ -50,7 +50,25 @@ impl PlaybackEngine {
             .iter()
             .filter_map(|&i| full.get(i).map(Arc::clone))
             .collect();
-        self.queue.set_songs(songs);
+        self.replace_queue_songs(songs);
+    }
+
+    /// Replace the active queue's songs without losing the playhead: the song
+    /// that is actually playing is re-located by id (queue filter/unfilter) and
+    /// the strategy is rebuilt for the new length, so a stale shuffle order or
+    /// an out-of-range `current_index` can never survive the swap.
+    fn replace_queue_songs(&mut self, songs: Vec<Arc<SongInfo>>) {
+        // `state.current_song` is the track that is actually playing; the
+        // queue's own entry is already unset while that track is filtered out.
+        let current_id = self
+            .state
+            .current_song
+            .as_ref()
+            .map(|s| s.id)
+            .or_else(|| self.queue.current_song().map(|s| s.id));
+        self.queue.set_songs(songs, current_id);
+        self.strategy =
+            mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);
     }
 
     /// Replace the queue for `key` with `songs` and start playing `index`.
@@ -66,6 +84,9 @@ impl PlaybackEngine {
         if songs.is_empty() || index >= songs.len() {
             return;
         }
+        // Loading a different queue must drop any heartbeat response still in
+        // flight; otherwise it could start playing behind this loaded queue.
+        self.invalidate_heartbeat_request();
         let key = self.dated_key(key);
         self.activate_queue(&key);
         self.playing_queue_key = self.active_queue_key.clone();
@@ -87,17 +108,22 @@ impl PlaybackEngine {
     /// the active queue (the user switched elsewhere mid-load), the target
     /// queue is loaded, appended, persisted, then the previous one restored.
     /// Duplicate ids are skipped. `songs` are already shared `Arc`s, so no
-    /// deep clone happens.
+    /// deep clone happens. Returns whether anything was actually appended.
     pub fn append_songs_to_key(&mut self, key: &str, songs: Vec<Arc<SongInfo>>) -> bool {
         if songs.is_empty() {
             return false;
         }
         let id = PlaylistStorage::queue_id(key);
         if self.active_queue_id == id {
-            self.queue.append(&songs);
-            self.strategy =
-                mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);
-            return true;
+            let appended = self.queue.append(&songs).is_some();
+            if appended {
+                self.strategy = mode::create_strategy(
+                    &self.state.mode,
+                    self.queue.len(),
+                    self.queue.current_index,
+                );
+            }
+            return appended;
         }
         let prev = (self.active_queue_id.clone(), self.active_queue_key.clone());
         // Persist the previous queue once, then switch without a redundant
@@ -105,14 +131,16 @@ impl PlaybackEngine {
         // back without another redundant save (2 serializations total instead of 4).
         self.persist_active_queue();
         self.activate_by_id(key, &id, false);
-        self.queue.append(&songs);
-        self.strategy =
-            mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);
-        self.persist_active_queue();
+        let appended = self.queue.append(&songs).is_some();
+        if appended {
+            self.strategy =
+                mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);
+            self.persist_active_queue();
+        }
         if !prev.0.is_empty() {
             self.activate_by_id(&prev.1, &prev.0, false);
         }
-        true
+        appended
     }
 
     /// Append `songs` to a fixed, non-dated queue key and start playing
@@ -131,8 +159,16 @@ impl PlaybackEngine {
             return;
         }
         self.controller.stop();
-        let offset = self.queue.append(songs);
-        self.queue.current_index = Some(offset + index);
+        if self.queue.append(songs).is_none() {
+            return;
+        }
+        // `append` dedupes by id, so locate the selected song rather than
+        // assuming it landed at `old_len + index` (incoming duplicates or an
+        // intra-batch duplicate would shift that position).
+        let Some(pos) = self.queue.find_song_index(songs[index].id) else {
+            return;
+        };
+        self.queue.current_index = Some(pos);
         self.strategy =
             mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);
         self.start_current_song(None);
@@ -166,8 +202,11 @@ impl PlaybackEngine {
     /// Keeps the rest of the queue intact. Does not interrupt the currently
     /// playing song.
     pub fn add_next(&mut self, song: Arc<SongInfo>) {
-        self.queue.insert_next(vec![song]);
-        self.persist_active_queue();
+        // Already queued: leave the queue untouched (and avoid a redundant
+        // save) instead of creating a duplicate id.
+        if self.queue.insert_next(vec![song]).is_some() {
+            self.persist_active_queue();
+        }
     }
 
     pub fn next(&mut self) {
@@ -181,18 +220,23 @@ impl PlaybackEngine {
         }
 
         match self.queue.next_index(&mut self.strategy) {
-            Some(idx) => {
+            // A strategy index must still be inside the queue: `set_songs`
+            // rebuilds it, but staying defensive here beats corrupting
+            // `current_index` with an out-of-range value that gets persisted.
+            Some(idx) if idx < self.queue.len() => {
                 self.controller.stop();
                 self.queue.advance_to(idx);
                 self.start_current_song(None);
             }
-            None => {
+            _ => {
                 self.stop();
             }
         }
     }
 
     pub fn prev(&mut self) {
+        // Manual navigation invalidates any heartbeat response in flight.
+        self.invalidate_heartbeat_request();
         if self.queue.is_empty() {
             return;
         }
@@ -207,7 +251,9 @@ impl PlaybackEngine {
             return;
         }
 
-        if let Some(idx) = self.queue.prev_index(&mut self.strategy) {
+        if let Some(idx) = self.queue.prev_index(&mut self.strategy)
+            && idx < self.queue.len()
+        {
             self.controller.stop();
             self.queue.current_index = Some(idx);
             self.queue.bump();
@@ -220,7 +266,9 @@ impl PlaybackEngine {
             let seek_time = if self.state.progress > 0.0 {
                 self.queue.current_song().and_then(|s| {
                     let secs = self.state.progress * (s.duration as f64 / 1000.0);
-                    (secs > 0.0).then(|| Duration::from_secs_f64(secs))
+                    (secs > 0.0)
+                        .then(|| Duration::try_from_secs_f64(secs).ok())
+                        .flatten()
                 })
             } else {
                 None
@@ -231,12 +279,19 @@ impl PlaybackEngine {
         if self.state.paused {
             self.controller.resume();
         } else {
+            // Pausing stops progress events; a seek that was still in flight
+            // would otherwise leave the 32ms seeking poll spinning forever.
+            self.state.seeking = false;
+            // Do not let a pending heartbeat response start the next song while
+            // the user is trying to pause.
+            self.invalidate_heartbeat_request();
             self.controller.pause();
         }
         self.state.paused = !self.state.paused;
     }
 
     pub(super) fn stop(&mut self) {
+        self.invalidate_heartbeat_request();
         self.controller.stop();
         self.queue.current_index = None;
         self.state.playing = false;
@@ -249,6 +304,7 @@ impl PlaybackEngine {
     }
 
     pub fn clear_queue(&mut self) {
+        self.invalidate_heartbeat_request();
         // Only stop the current playback when the cleared queue is the one the
         // playing song came from. Clearing a different queue (viewed on the
         // Playlist page after switching) must not kill the current song.

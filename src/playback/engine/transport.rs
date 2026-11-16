@@ -30,8 +30,13 @@ impl PlaybackEngine {
         let cur_secs = self.state.progress * total_secs;
         let new_secs = (cur_secs + delta_secs).clamp(0.0, total_secs);
         self.state.progress = new_secs / total_secs;
-        self.state.seeking = true;
-        self.controller.seek_to(Duration::from_secs_f64(new_secs));
+        // The player rebuilds its decoder on a seek and honors the paused state,
+        // so no progress event follows a paused seek. Leaving `seeking` set
+        // would keep the event loop polling every 32ms for a reply that never
+        // comes (the tick loop skips paused players).
+        self.state.seeking = !self.state.paused;
+        self.controller
+            .seek_to(Duration::try_from_secs_f64(new_secs).unwrap_or(Duration::ZERO));
     }
 
     /// Replace the equalizer settings; the audio thread retunes its running
@@ -104,7 +109,9 @@ impl PlaybackEngine {
         next
     }
 
-    pub(in crate::playback) fn set_mode(&mut self, mode: PlayMode) {
+    pub(super) fn set_mode(&mut self, mode: PlayMode) {
+        // Any response for the previous mode is no longer relevant.
+        self.invalidate_heartbeat_request();
         self.state.mode = mode;
         self.strategy =
             mode::create_strategy(&self.state.mode, self.queue.len(), self.queue.current_index);

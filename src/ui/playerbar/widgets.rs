@@ -9,14 +9,19 @@ use ratatui_image::{Resize, StatefulImage};
 
 use crate::{
     config::{PlayerbarConfig, Theme},
+    lock::lock_recover,
     playback::{PlaybackState, mode_icon},
+    time::format_duration_into,
     ui::{gradient_line_gauge::GradientLineGauge, spinner::Spinner},
-    utils::{format_duration_into, lock_recover},
 };
 
 pub(super) fn draw_song_info(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     if let Some(song) = &player.current_song {
-        let like_icon = if player.liked { "\u{f004}" } else { "\u{f08a}" };
+        let like_icon = if player.liked {
+            crate::icons::LIKE_FILLED
+        } else {
+            crate::icons::LIKE_OUTLINE
+        };
         let like_color = if player.liked {
             colors.accent
         } else {
@@ -24,7 +29,8 @@ pub(super) fn draw_song_info(f: &mut Frame, player: &PlaybackState, colors: &The
         };
         let info_lines = vec![
             Line::from(vec![
-                Span::styled("\u{266a} ", Style::default().fg(colors.accent)),
+                Span::styled(crate::icons::MUSIC_NOTE, Style::default().fg(colors.accent)),
+                Span::raw(" "),
                 Span::styled(
                     &song.name,
                     Style::default()
@@ -50,17 +56,25 @@ pub(super) fn draw_song_info(f: &mut Frame, player: &PlaybackState, colors: &The
     }
 }
 
+/// One-cell hit targets for the three transport controls, in screen cells.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct ControlHits {
+    pub prev: Rect,
+    pub play: Rect,
+    pub next: Rect,
+}
+
 pub(super) fn draw_controls(
     f: &mut Frame,
     player: &PlaybackState,
     colors: &Theme,
     area: Rect,
     is_default: bool,
-) {
+) -> ControlHits {
     let play_icon = if player.paused || !player.playing {
-        "\u{f040a}"
+        crate::icons::CONTROL_PAUSE
     } else {
-        "\u{f03e4}"
+        crate::icons::CONTROL_PLAY
     };
     let alignment = if is_default {
         Alignment::Center
@@ -68,7 +82,10 @@ pub(super) fn draw_controls(
         Alignment::Left
     };
     let controls = Line::from(vec![
-        Span::styled("\u{f049}", Style::default().fg(colors.muted)),
+        Span::styled(
+            crate::icons::CONTROL_PREV,
+            Style::default().fg(colors.muted),
+        ),
         Span::raw("   "),
         Span::styled(
             play_icon,
@@ -77,10 +94,28 @@ pub(super) fn draw_controls(
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw("   "),
-        Span::styled("\u{f050}", Style::default().fg(colors.muted)),
+        Span::styled(
+            crate::icons::CONTROL_NEXT,
+            Style::default().fg(colors.muted),
+        ),
     ])
     .alignment(alignment);
+
+    // Ratatui centres with `(area / 2) - (line / 2)`, and icon widths can
+    // differ from the cell each glyph occupies. Mirror that for the start
+    // column, then step one cell per glyph and three per gap.
+    let start = if is_default {
+        area.x + (area.width / 2).saturating_sub(controls.width() as u16 / 2)
+    } else {
+        area.x
+    };
     f.render_widget(Paragraph::new(controls), area);
+
+    ControlHits {
+        prev: Rect::new(start, area.y, 1, 1),
+        play: Rect::new(start.saturating_add(4), area.y, 1, 1),
+        next: Rect::new(start.saturating_add(8), area.y, 1, 1),
+    }
 }
 
 pub(super) fn draw_mode_icon(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
@@ -235,7 +270,11 @@ fn render_gauge(
 
 pub(super) fn draw_song_detail(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     if let Some(song) = &player.current_song {
-        let like_icon = if player.liked { "\u{f004}" } else { "\u{f08a}" };
+        let like_icon = if player.liked {
+            crate::icons::LIKE_FILLED
+        } else {
+            crate::icons::LIKE_OUTLINE
+        };
         let like_color = if player.liked {
             colors.accent
         } else {
@@ -257,11 +296,11 @@ pub(super) fn draw_song_detail(f: &mut Frame, player: &PlaybackState, colors: &T
 }
 pub(super) fn draw_volume(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
     let icon = if player.volume <= 0.30 {
-        ""
+        crate::icons::VOLUME_MUTE
     } else if player.volume <= 0.60 {
-        ""
+        crate::icons::VOLUME_LOW
     } else {
-        ""
+        crate::icons::VOLUME_HIGH
     };
 
     f.render_widget(
@@ -290,17 +329,17 @@ pub(super) fn draw_cover(f: &mut Frame, player: &PlaybackState, colors: &Theme, 
         for y in 0..area.height {
             for x in 0..area.width {
                 if let Some(cell) = f.buffer_mut().cell_mut((area.x + x, area.y + y)) {
-                    cell.set_char('░');
+                    cell.set_char(crate::icons::COVER_PLACEHOLDER);
                     cell.set_style(Style::default().fg(colors.surface));
                 }
             }
         }
 
-        let icon = "\u{266a}";
+        let icon = crate::icons::MUSIC_NOTE;
         let icon_x = area.x + area.width / 2;
         let icon_y = area.y + area.height / 2;
         if let Some(cell) = f.buffer_mut().cell_mut((icon_x, icon_y)) {
-            cell.set_char(icon.chars().next().unwrap_or('♪'));
+            cell.set_char(icon.chars().next().unwrap_or(' '));
             cell.set_style(Style::default().fg(colors.accent));
         }
     }

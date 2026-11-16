@@ -8,14 +8,11 @@ mod queueing;
 mod session;
 mod transport;
 
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-    time::Duration,
-};
+use heartbeat::HeartbeatGate;
+
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use ncm_api::{SongInfo, SongQuality};
-use tokio::sync::mpsc;
 
 use super::{
     controller::PlaybackHandle,
@@ -27,19 +24,12 @@ use super::{
 };
 use crate::{
     cache::CacheManager,
-    event::{Event, PlaybackEvent},
-    playback::LyricLine,
-    service::ApiService,
-    utils::{lock_recover, process::trim_heap},
+    event::{EventSender, PlaybackEvent},
+    lock::lock_recover,
+    lyrics::LyricLine,
+    playback::memory::trim_heap,
+    service::{ApiService, SonarSongs},
 };
-
-/// Fixed queue key (display name) shared by every third-party (sonar) search
-/// queue; all such songs are stored in the single `thirdparty_source.json`.
-pub const THIRD_PARTY_QUEUE_KEY: &str = "第三方搜索";
-
-/// Fixed queue key (display name) shared by every NCM search queue; all such
-/// songs are stored in the single `ncm_search.json`.
-pub const NCM_SEARCH_QUEUE_KEY: &str = "官方搜索";
 
 /// Return whether an error is a transient audio stream error (buffer underrun/overrun). These
 /// occur frequently when the stream download can't keep up with playback (e.g. YouTube), and
@@ -76,7 +66,7 @@ pub struct PlaybackEngine {
     storage: PlaylistStorage,
     source: AudioSource,
     pub(super) controller: PlaybackHandle,
-    pub(super) event_tx: mpsc::UnboundedSender<Event>,
+    pub(super) event_tx: EventSender,
     pub(super) service: ApiService,
     playlist_id: Option<u64>,
     consecutive_errors: u32,
@@ -86,12 +76,15 @@ pub struct PlaybackEngine {
     /// switches songs so a stale resolve neither consumes bandwidth nor sends a
     /// `Play` command for a song that is no longer current.
     current_resolve: Option<tokio::task::JoinHandle<()>>,
+    /// Invalidates late heartbeat API responses (see `heartbeat::HeartbeatGate`).
+    heartbeat: HeartbeatGate,
 }
 
 impl PlaybackEngine {
+    // Engine construction wires all shared services; keep the flat signature until a second constructor exists.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        event_tx: mpsc::UnboundedSender<Event>,
+        event_tx: EventSender,
         service: ApiService,
         cache: Arc<CacheManager>,
         base_dir: std::path::PathBuf,
@@ -100,7 +93,7 @@ impl PlaybackEngine {
         stream_client: reqwest::Client,
         finder: Arc<sonar::SonarFinder>,
         sonar_enabled: bool,
-        sonar_songs: Arc<std::sync::Mutex<HashMap<u64, Arc<sonar::Song>>>>,
+        sonar_songs: SonarSongs,
         liked_ids: Arc<std::sync::Mutex<HashSet<u64>>>,
     ) -> Self {
         let storage = PlaylistStorage::new(base_dir);
@@ -126,12 +119,13 @@ impl PlaybackEngine {
                 event_tx.clone(),
             ),
             controller: PlaybackHandle::new(event_tx.clone()),
-            event_tx: event_tx.clone(),
+            event_tx,
             service,
             playlist_id: None,
             consecutive_errors: 0,
             liked_ids,
             current_resolve: None,
+            heartbeat: HeartbeatGate::default(),
         };
         this.restore_session();
         this
@@ -189,6 +183,10 @@ impl PlaybackEngine {
         self.state.on_progress(position, total);
     }
 
+    pub fn on_device_error(&mut self, message: Option<String>) {
+        self.state.on_device_error(message);
+    }
+
     pub fn on_playback_error(&mut self, err: String) {
         // Buffer underruns/overruns are transient events (e.g. YouTube streams downloading
         // slower than playback), and rodio recovers automatically, so ignore them to avoid
@@ -208,10 +206,11 @@ impl PlaybackEngine {
         if retryable && let Some(song) = self.state.current_song.as_ref() {
             let song_id = song.id;
             let cache = self.source.cache.clone();
-            tokio::task::spawn_blocking(move || {
-                let _ = std::fs::remove_file(cache.cache_path(song_id, "mp3"));
-                cache.remove_from_index(song_id);
-            });
+            // Invalidate synchronously so the retry below cannot re-open the
+            // corrupt file; delete it off the async thread.
+            if let Some(path) = cache.invalidate_cached(song_id) {
+                tokio::task::spawn_blocking(move || cache.delete_cached_file(&path));
+            }
             self.start_current_song(None);
             return;
         }
@@ -241,7 +240,15 @@ impl PlaybackEngine {
         self.queue.replace_with(queue);
     }
 
+    /// Drop any in-flight heartbeat response: a song change, pause, manual
+    /// navigation or mode switch means the response is no longer wanted.
+    pub(super) fn invalidate_heartbeat_request(&mut self) {
+        self.heartbeat.invalidate();
+    }
+
     pub(super) fn start_current_song(&mut self, seek_time: Option<Duration>) {
+        // Starting any song makes an in-flight heartbeat response stale.
+        self.invalidate_heartbeat_request();
         // Cancel any in-flight resolve for a previously requested song before
         // starting a new one, so a stale network request cannot finish late and
         // send a `Play` command for the wrong song (or waste bandwidth).
@@ -272,7 +279,7 @@ impl PlaybackEngine {
         let event_tx = self.event_tx.clone();
         let controller = self.controller.clone();
 
-        if event_tx.send(PlaybackEvent::Started.into()).is_err() {
+        if event_tx.send(PlaybackEvent::Started).is_err() {
             log::error!("Failed to send PlaybackStarted: receiver dropped");
         }
 
@@ -284,7 +291,7 @@ impl PlaybackEngine {
                     // of letting them sit in the allocator's free lists (RSS would
                     // otherwise ratchet upward across songs in a long-lived TUI).
                     trim_heap();
-                    if event_tx.send(PlaybackEvent::Error(e).into()).is_err() {
+                    if event_tx.send(PlaybackEvent::Error(e)).is_err() {
                         log::error!("Failed to send PlaybackError: receiver dropped");
                     }
                     return;

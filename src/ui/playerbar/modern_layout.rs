@@ -12,6 +12,14 @@ use crate::{
 pub(super) struct ModernLayout;
 
 impl Playerbar for ModernLayout {
+    fn like_area(&self, layout: &LayoutArea) -> Rect {
+        if layout.song_detail.width > 0 && layout.song_detail.height > 0 {
+            Rect::new(layout.song_detail.x, layout.song_detail.y, 1, 1)
+        } else {
+            Rect::default()
+        }
+    }
+
     fn layout(&self, area: Rect, config: &PlayerbarConfig, is_sixel: bool) -> LayoutArea {
         let cols = Layout::horizontal([
             if config.visible.cover {
@@ -97,7 +105,7 @@ impl Playerbar for ModernLayout {
         tick: u64,
         config: &PlayerbarConfig,
         layout: &LayoutArea,
-    ) {
+    ) -> widgets::ControlHits {
         if config.visible.cover && layout.cover.width > 0 {
             widgets::draw_cover(f, player, colors, layout.cover);
         }
@@ -112,7 +120,7 @@ impl Playerbar for ModernLayout {
         }
 
         widgets::draw_song_detail(f, player, colors, layout.song_detail);
-        widgets::draw_controls(f, player, colors, layout.controls, false);
+        let controls = widgets::draw_controls(f, player, colors, layout.controls, false);
         if config.visible.volume && layout.volume.width > 0 {
             widgets::draw_volume(f, player, colors, layout.volume);
         }
@@ -120,5 +128,6 @@ impl Playerbar for ModernLayout {
             widgets::draw_mode_icon(f, player, colors, layout.mode_icon);
         }
         widgets::draw_speed(f, player, colors, layout.speed);
+        controls
     }
 }

@@ -5,8 +5,8 @@ use crossterm::event::{KeyCode, KeyEvent};
 use crate::app::App;
 
 pub(super) fn handle_equalizer_key(app: &mut App, key_event: KeyEvent) {
-    if super::common::handle_playback_key(app, key_event)
-        || super::common::handle_page_key(app, key_event)
+    if super::global::handle_playback_key(app, key_event)
+        || super::global::handle_page_key(app, key_event)
     {
         return;
     }

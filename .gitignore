@@ -2,3 +2,4 @@
 debug.log
 /aur
 cookies.json
+.cargo/*.bak

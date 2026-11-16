@@ -1,9 +1,23 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct NavConfig {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sections: Vec<NavSectionConfig>,
+    /// Characters drawn on each side of the **selected or hovered** item.
+    #[serde(default = "default_selected_left")]
+    pub selected_left: String,
+    #[serde(default = "default_selected_right")]
+    pub selected_right: String,
+}
+
+fn default_selected_left() -> String {
+    crate::icons::NAV_CAPSULE_START.to_string()
+}
+
+fn default_selected_right() -> String {
+    crate::icons::NAV_CAPSULE_END.to_string()
 }
 
 impl NavConfig {
@@ -22,9 +36,14 @@ impl NavConfig {
 impl Default for NavConfig {
     fn default() -> Self {
         Self {
+            selected_left: default_selected_left(),
+            selected_right: default_selected_right(),
             sections: vec![
                 NavSectionConfig {
-                    title: "<accent>▎</accent> <accent>DISCOVER</accent>".into(),
+                    title: format!(
+                        "<accent>{}</accent> <accent>DISCOVER</accent>",
+                        crate::icons::SECTION_MARK
+                    ),
                     items: vec![
                         NavItemConfig {
                             name: " 每日推荐".into(),
@@ -64,7 +83,10 @@ impl Default for NavConfig {
                     ],
                 },
                 NavSectionConfig {
-                    title: "<accent>▎</accent> <accent>MY MUSIC</accent>".into(),
+                    title: format!(
+                        "<accent>{}</accent> <accent>MY MUSIC</accent>",
+                        crate::icons::SECTION_MARK
+                    ),
                     items: vec![
                         NavItemConfig {
                             name: " 我喜欢的音乐".into(),
@@ -128,4 +150,71 @@ pub struct NavItemConfig {
     /// If None, defaults to `"a"`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title_template: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum NavPosition {
+    #[default]
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+impl NavPosition {
+    fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "left" => Some(Self::Left),
+            "right" => Some(Self::Right),
+            "top" => Some(Self::Top),
+            "bottom" => Some(Self::Bottom),
+            _ => None,
+        }
+    }
+}
+
+/// Unknown positions fall back to `left` instead of failing the whole config.
+impl<'de> Deserialize<'de> for NavPosition {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        Ok(Self::from_name(&raw).unwrap_or_default())
+    }
+}
+
+impl NavPosition {
+    /// The next position in the left → right → top → bottom cycle.
+    pub fn cycle(self) -> Self {
+        match self {
+            NavPosition::Left => NavPosition::Right,
+            NavPosition::Right => NavPosition::Top,
+            NavPosition::Top => NavPosition::Bottom,
+            NavPosition::Bottom => NavPosition::Left,
+        }
+    }
+
+    /// Human-readable Chinese label used for toasts.
+    pub fn label(self) -> &'static str {
+        match self {
+            NavPosition::Left => "左侧",
+            NavPosition::Right => "右侧",
+            NavPosition::Top => "顶部",
+            NavPosition::Bottom => "底部",
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NavConfig;
+
+    #[test]
+    fn default_selected_pads_use_the_powerline_separators() {
+        let config = NavConfig::default();
+        assert_eq!(config.selected_left, "\u{e0b2}");
+        assert_eq!(config.selected_right, "\u{e0b0}");
+    }
 }

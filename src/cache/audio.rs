@@ -1,306 +1,131 @@
-use std::{
-    fs::{self, File, OpenOptions},
-    io,
-    path::PathBuf,
-    sync::{Arc, atomic::Ordering},
-};
+//! Audio-file cache: filename templates, lookup/eviction and the streaming
+//! provider that writes downloads into a hidden part file.
 
-use ncm_api::SongInfo;
-use stream_download::storage::StorageProvider;
+mod naming;
+mod provider;
+mod store;
 
-use super::{
-    CacheManager,
-    index::{CacheEntry, CacheIndex},
-};
-use crate::utils::{sanitize_filename, unix_secs};
+pub(crate) use naming::canonical_ext;
+pub use provider::CacheFileProvider;
 
-impl CacheManager {
-    fn resolve_filename(&self, song: &SongInfo, ext: &str) -> String {
-        if self.template == "{id}" {
-            use std::fmt::Write;
-            let mut out = String::with_capacity(16 + ext.len());
-            let _ = write!(out, "{}.{}", song.id, ext);
-            return out;
-        }
-        let mut out = String::with_capacity(self.template.len() + ext.len() + 16);
-        let mut rest = self.template.as_str();
-        while let Some(pos) = rest.find('{') {
-            out.push_str(&rest[..pos]);
-            let end = rest[pos..]
-                .find('}')
-                .map(|e| pos + e + 1)
-                .unwrap_or(rest.len());
-            let placeholder = &rest[pos..end];
-            match placeholder {
-                "{id}" => {
-                    use std::fmt::Write;
-                    let _ = write!(out, "{}", song.id);
-                }
-                "{name}" => out.push_str(&sanitize_filename(&song.name)),
-                "{singer}" => out.push_str(&sanitize_filename(&song.singer)),
-                "{album}" => out.push_str(&sanitize_filename(&song.album)),
-                other => out.push_str(other),
-            }
-            rest = &rest[end..];
-        }
-        out.push_str(rest);
-        out.push('.');
-        out.push_str(ext);
-        out
-    }
+#[cfg(test)]
+mod tests {
+    //! Audio-cache tests: filename uniqueness, part-file finalization and size
+    //! accounting on removal.
 
-    pub fn cache_path(&self, id: u64, ext: &str) -> PathBuf {
-        let index = self.index.read().unwrap_or_else(|e| e.into_inner());
-        if let Some(entry) = index.get(&id) {
-            return self.downloads_dir.join(&entry.filename);
-        }
-        drop(index);
-        self.downloads_dir.join(format!("{}.{}", id, ext))
-    }
+    use std::{fs, path::PathBuf, sync::atomic::Ordering};
 
-    pub fn is_cached(&self, id: u64, ext: &str) -> bool {
-        self.cache_path(id, ext).exists()
-    }
+    use ncm_api::{SongCopyright, SongInfo};
 
-    /// Find the first cached extension for a song in a single lock + iteration.
-    /// Returns `Some(ext)` if any cached file exists, `None` otherwise.
-    pub fn find_cached_extension(&self, id: u64) -> Option<&'static str> {
-        // Resolve the path under a single read lock, then drop the guard before
-        // touching the filesystem. Re-entering the read lock (as `cache_path`
-        // does) while a writer is queued could deadlock with `std::sync::RwLock`.
-        let path = {
-            let index = self.index.read().unwrap_or_else(|e| e.into_inner());
-            index
-                .get(&id)
-                .map(|e| self.downloads_dir.join(&e.filename))?
-        };
-        if !path.exists() {
-            return None;
-        }
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        Some(crate::utils::audio::canonical_ext(ext))
-    }
+    use crate::cache::CacheManager;
 
-    fn ensure_dir(&self) -> io::Result<()> {
-        fs::create_dir_all(&self.downloads_dir)
-    }
-
-    pub fn open_cached(&self, id: u64, ext: &str) -> io::Result<File> {
-        let file = File::open(self.cache_path(id, ext))?;
-        let now = unix_secs();
-        if let Ok(mut index) = self.index.write()
-            && let Some(entry) = index.get_mut(&id)
-        {
-            entry.accessed_at = now;
-        }
-        Ok(file)
-    }
-
-    pub fn create_provider(&self, song: &SongInfo, ext: &str) -> io::Result<CacheFileProvider> {
-        self.ensure_dir()?;
-        let filename = self.resolve_filename(song, ext);
-        let path = self.downloads_dir.join(&filename);
-
-        // Evict oldest entries if cache exceeds size limit
-        self.evict();
-
-        Ok(CacheFileProvider { path })
-    }
-
-    /// Mark a song as successfully cached. Call this only after the download
-    /// completes, so the index never contains entries for incomplete/failed
-    /// downloads. Persists the index so a completed download survives an
-    /// immediate quit.
-    pub fn mark_cached(&self, song: &SongInfo, ext: &str, thirdparty: Option<sonar::Song>) {
-        let now = unix_secs();
-        let filename = self.resolve_filename(song, ext);
-        let path = self.downloads_dir.join(&filename);
-        let file_bytes = fs::metadata(&path).ok().map(|m| m.len()).unwrap_or(0);
-        self.index
-            .write()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(
-                song.id,
-                CacheEntry {
-                    filename,
-                    duration: song.duration,
-                    accessed_at: now,
-                    pic_url: song.pic_url.clone(),
-                    uploaded_at: 0,
-                    thirdparty: thirdparty.map(Arc::new),
-                },
-            );
-        self.cached_total_bytes
-            .fetch_add(file_bytes, Ordering::Relaxed);
-        self.save_index();
-    }
-
-    /// Collect cached songs by iterating the index under a read lock, avoiding
-    /// a full clone of the HashMap.
-    fn collect_cached_songs(&self, index: &CacheIndex) -> Vec<SongInfo> {
-        let mut songs = Vec::with_capacity(index.len());
-        for (id, entry) in index {
-            let path = self.downloads_dir.join(&entry.filename);
-            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-            let (name, singer) = self.parse_filename(stem, *id);
-            let name = if entry.uploaded_at > 0 {
-                format!("{name} ↑")
-            } else {
-                name
-            };
-            songs.push(SongInfo {
-                id: *id,
-                name,
-                singer,
-                artist_id: 0,
-                album: String::new(),
-                album_id: 0,
-                pic_url: entry.pic_url.clone(),
-                duration: entry.duration,
-                copyright: ncm_api::SongCopyright::Unknown,
-            });
-        }
-        songs
-    }
-
-    pub async fn list_cached_songs_async(&self) -> Vec<SongInfo> {
-        {
-            let index = self.index.read().unwrap_or_else(|e| e.into_inner());
-            self.collect_cached_songs(&index)
+    fn song(id: u64) -> SongInfo {
+        SongInfo {
+            id,
+            name: "夜曲".into(),
+            singer: "周杰伦".into(),
+            artist_id: 0,
+            album: String::new(),
+            album_id: 0,
+            pic_url: String::new(),
+            duration: 1_000,
+            copyright: SongCopyright::Unknown,
         }
     }
 
-    /// Parse a cached filename stem into (name, singer) using the template.
-    fn parse_filename(&self, stem: &str, id: u64) -> (String, String) {
-        Self::parse_filename_static(stem, id, &self.template)
+    fn cache(template: &str) -> (CacheManager, PathBuf) {
+        let dir = std::env::temp_dir().join(format!(
+            "pigma_cache_audio_test_{}_{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        let cache = CacheManager::new(dir.join("downloads"), dir.clone(), template.into());
+        (cache, dir)
     }
 
-    fn parse_filename_static(stem: &str, id: u64, template: &str) -> (String, String) {
-        if template == "{id}" {
-            return (id.to_string(), String::new());
-        }
+    /// Two songs with identical name/singer must never share a cache file:
+    /// the id suffix is the uniqueness guarantee.
+    #[test]
+    fn template_without_id_still_gets_a_unique_filename() {
+        let (cache, dir) = cache("{name}-{singer}");
+        let a = song(1);
+        let b = song(2);
 
-        // Find the last literal separator in the template
-        let placeholders = ["{id}", "{name}", "{singer}", "{album}"];
-        let mut last_sep_start = 0;
-        let mut last_sep_len = 0;
-        let mut remaining = template;
-        let mut offset = 0;
-        while !remaining.is_empty() {
-            let mut earliest = remaining.len();
-            let mut earliest_len = 0;
-            for ph in &placeholders {
-                if let Some(pos) = remaining.find(ph)
-                    && pos < earliest
-                {
-                    earliest = pos;
-                    earliest_len = ph.len();
-                }
-            }
-            if earliest_len == 0 {
-                break;
-            }
-            if earliest > 0 {
-                last_sep_start = offset;
-                last_sep_len = earliest;
-            }
-            remaining = &remaining[earliest + earliest_len..];
-            offset += earliest + earliest_len;
-        }
+        assert_eq!(cache.resolve_filename(&a, "mp3"), "夜曲-周杰伦-1.mp3");
+        assert_ne!(
+            cache.resolve_filename(&a, "mp3"),
+            cache.resolve_filename(&b, "mp3")
+        );
 
-        if last_sep_len == 0 {
-            return (stem.to_string(), String::new());
-        }
+        // The id suffix stays out of the displayed name/singer pair.
+        let (name, singer) =
+            CacheManager::parse_filename_static("夜曲-周杰伦-1", 1, "{name}-{singer}");
+        assert_eq!(name, "夜曲");
+        assert_eq!(singer, "周杰伦");
 
-        let sep = &template[last_sep_start..last_sep_start + last_sep_len];
-
-        if sep.is_empty() {
-            return (stem.to_string(), String::new());
-        }
-
-        // Split from the right by the separator
-        if let Some(pos) = stem.rfind(sep) {
-            let name = stem[..pos].to_string();
-            let singer = stem[pos + sep.len()..].to_string();
-            return (name, singer);
-        }
-
-        (stem.to_string(), String::new())
+        let _ = fs::remove_dir_all(dir);
     }
 
-    fn evict(&self) -> usize {
-        let total_bytes = self.cached_total_bytes.load(Ordering::Relaxed);
-        if total_bytes <= self.max_cache_bytes {
-            return 0;
-        }
-        let need = total_bytes - self.max_cache_bytes;
+    /// A corrupt index must not orphan existing downloads: the id is encoded in
+    /// the default filename suffix, so it can be recovered.
+    #[test]
+    fn corrupt_index_is_rebuilt_from_downloads() {
+        let dir = std::env::temp_dir().join(format!(
+            "pigma_cache_rebuild_test_{}_{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        let downloads = dir.join("downloads");
+        fs::create_dir_all(&downloads).expect("create downloads");
+        fs::write(downloads.join("夜曲-周杰伦-42.mp3"), b"audio").expect("write audio");
+        fs::write(downloads.join("cache_index.json"), b"not json").expect("write bad index");
 
-        // Under the read lock, only decide the LRU candidate order (IDs +
-        // filenames). All filesystem I/O happens after the lock is released so
-        // concurrent readers are never blocked by disk operations.
-        let entries: Vec<(u64, String)> = {
-            let index = self.index.read().unwrap_or_else(|e| e.into_inner());
-            let mut by_age: Vec<(u64, u64)> =
-                index.iter().map(|(id, e)| (*id, e.accessed_at)).collect();
-            by_age.sort_by_key(|e| e.1);
-            by_age
-                .into_iter()
-                .filter_map(|(id, _)| index.get(&id).map(|e| (id, e.filename.clone())))
-                .collect()
-        };
+        let cache = CacheManager::new(downloads, dir.clone(), "{name}-{singer}".into());
 
-        // Evict only enough oldest entries to get under the limit — not the
-        // whole cache, which would force a full re-download of everything.
-        let mut freed = 0u64;
-        let mut victims: Vec<(u64, String)> = Vec::new();
-        for (id, filename) in entries {
-            if freed >= need {
-                break;
-            }
-            let size = fs::metadata(self.downloads_dir.join(&filename))
-                .map(|m| m.len())
-                .unwrap_or(0);
-            freed += size;
-            victims.push((id, filename));
-        }
-        if victims.is_empty() {
-            return 0;
-        }
-
-        {
-            let mut index = self.index.write().unwrap_or_else(|e| e.into_inner());
-            for (id, _) in &victims {
-                index.remove(id);
-            }
-        }
-        for (_, filename) in &victims {
-            let _ = fs::remove_file(self.downloads_dir.join(filename));
-        }
-        self.cached_total_bytes.fetch_sub(freed, Ordering::Relaxed);
-        log::info!("Evicted {} cached songs", victims.len());
-        victims.len()
+        assert_eq!(cache.find_cached_extension(42), Some("mp3"));
+        let _ = fs::remove_dir_all(dir);
     }
-}
 
-pub struct CacheFileProvider {
-    path: PathBuf,
-}
+    /// A completed download is moved from its hidden `.part` file to the final
+    /// path only when `mark_cached` is called; the index then points at it.
+    #[tokio::test]
+    async fn mark_cached_finalizes_the_part_file() {
+        let (cache, dir) = cache("{name}-{singer}");
+        let song = song(42);
+        let (_provider, part_path) = cache.create_provider(&song).expect("provider");
+        fs::write(&part_path, b"audio").expect("write part");
 
-impl StorageProvider for CacheFileProvider {
-    type Reader = File;
-    type Writer = File;
+        cache.mark_cached(&song, "mp3", None, Some(&part_path));
 
-    fn into_reader_writer(
-        self,
-        _content_length: Option<u64>,
-    ) -> io::Result<(Self::Reader, Self::Writer)> {
-        let writer = OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .read(true)
-            .open(&self.path)?;
-        let reader = File::open(&self.path)?;
-        Ok((reader, writer))
+        let final_path = cache.cache_path(song.id, "mp3");
+        assert!(final_path.exists(), "final cache file missing");
+        assert_eq!(fs::read(&final_path).expect("read final"), b"audio");
+        assert!(!part_path.exists(), "part file should be renamed away");
+        assert_eq!(cache.find_cached_extension(song.id), Some("mp3"));
+
+        cache.save_index_sync();
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// Removing a cached song must delete the file and subtract its size from
+    /// the running total; otherwise eviction later frees space that is no
+    /// longer occupied.
+    #[tokio::test]
+    async fn remove_cached_deletes_the_file_and_frees_its_bytes() {
+        let (cache, dir) = cache("{id}");
+        let song = song(7);
+        let (_provider, part_path) = cache.create_provider(&song).expect("provider");
+        fs::write(&part_path, b"12345").expect("write part");
+        cache.mark_cached(&song, "mp3", None, Some(&part_path));
+        assert_eq!(cache.cached_total_bytes.load(Ordering::Relaxed), 5);
+
+        cache.remove_cached(song.id);
+
+        assert_eq!(cache.cached_total_bytes.load(Ordering::Relaxed), 0);
+        assert!(!cache.cache_path(song.id, "mp3").exists());
+        assert_eq!(cache.find_cached_extension(song.id), None);
+
+        cache.save_index_sync();
+        let _ = fs::remove_dir_all(dir);
     }
 }

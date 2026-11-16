@@ -2,10 +2,13 @@
 
 use std::collections::HashSet;
 
-use super::{ApiService, arc_songs, find_liked_playlist};
+use super::{
+    ApiService,
+    api::{arc_songs, find_liked_playlist},
+};
 use crate::{
+    lock::lock_recover,
     state::{ContentState, PaginationInfo},
-    utils::lock_recover,
 };
 
 impl ApiService {

@@ -6,16 +6,23 @@
 //! dispatch); everything else lives here.
 
 pub mod app;
+mod bootstrap;
 pub mod cache;
 pub mod cli;
 pub mod config;
 pub mod event;
+pub(crate) mod icons;
 pub mod input;
 pub mod ipc;
+pub(crate) mod lock;
 pub mod logger;
+pub mod lyrics;
+mod persist;
 pub mod playback;
 pub mod service;
 pub mod state;
 pub mod text_input;
+pub(crate) mod time;
 pub mod ui;
-pub mod utils;
+
+pub use bootstrap::run;

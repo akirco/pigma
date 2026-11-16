@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use ratatui_image::protocol::StatefulProtocol;
 
-use crate::utils::lock_recover;
+use crate::lock::lock_recover;
 
 /// Cover image state shared with async loaders. `protocol` holds the decoded
 /// image; `song_id` records which song the cover belongs to so a slow loader

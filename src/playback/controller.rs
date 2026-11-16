@@ -7,10 +7,10 @@ use super::{
     player::{self, AudioInput, ControlCmd},
     stretch::SpeedMode,
 };
-use crate::{config::EqualizerConfig, event::Event};
+use crate::{config::EqualizerConfig, event::EventSender};
 
 #[derive(Clone)]
-pub struct PlaybackHandle {
+pub(super) struct PlaybackHandle {
     cmd_tx: tokio_mpsc::UnboundedSender<PlayerCmd>,
     eq: EqHandle,
 }
@@ -30,7 +30,7 @@ enum PlayerCmd {
 }
 
 impl PlaybackHandle {
-    pub(super) fn new(event_tx: tokio_mpsc::UnboundedSender<Event>) -> Self {
+    pub(super) fn new(event_tx: EventSender) -> Self {
         let (cmd_tx, mut cmd_rx) = tokio_mpsc::unbounded_channel::<PlayerCmd>();
         let eq = EqHandle::new(EqualizerConfig::default());
         let player_eq = eq.clone();

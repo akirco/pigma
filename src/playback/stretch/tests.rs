@@ -295,7 +295,7 @@ fn factor_change_mid_stream_keeps_pitch_and_audio_flowing() {
 fn returning_to_one_x_after_stretching_hands_back_the_rest() {
     let handle = SpeedHandle::new(2.0);
     let src: Vec<f32> = noise(10.0).collect();
-    let mut s = Stretch::new(buffer(src.clone(), 1), handle.clone());
+    let mut s = Stretch::new(buffer(src, 1), handle.clone());
     let mut out: Vec<f32> = (&mut s).take(SR as usize).collect();
     handle.set(1.0);
     out.extend((&mut s).take(SR as usize * 10));
@@ -366,7 +366,7 @@ fn short_tail_of_a_longer_stream_is_not_dropped() {
     let src: Vec<f32> = (0..(SR as usize + 7))
         .map(|i| (i as f32 * 0.03).sin())
         .collect();
-    let (out, handle) = run(buffer(src.clone(), 1), 3.0);
+    let (out, handle) = run(buffer(src, 1), 3.0);
     assert!(!out.is_empty(), "nothing came out");
     assert!(
         handle.position().as_secs_f64() > 0.9,
@@ -417,7 +417,7 @@ fn shift_mode_resamples_and_moves_the_pitch() {
     // the samples play faster and the pitch rises with them.
     let h = SpeedHandle::new(2.0);
     h.set_mode(SpeedMode::ShiftPitch);
-    let s = Stretch::new(sine(2.0, 220.0), h.clone());
+    let s = Stretch::new(sine(2.0, 220.0), h);
     assert_eq!(s.sample_rate().get(), SR * 2, "rate must scale with factor");
     let out: Vec<f32> = s.collect();
     // The samples are handed over untouched; only the rate (and thus the

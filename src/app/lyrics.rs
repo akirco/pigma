@@ -3,16 +3,34 @@
 
 use super::{App, event::send_event};
 use crate::{
-    event::{Event, PlaybackEvent},
-    playback::{LyricLine, parse_lyric_lines},
+    event::{EventSender, PlaybackEvent},
+    lyrics::{LyricLine, parse_lyric_lines},
+    state::Page,
 };
 
 impl App {
+    /// Toggle between the main and lyrics pages with the shared page
+    /// transition, used by the modern player-bar cover.
+    pub(crate) fn toggle_lyrics_transition(&mut self) {
+        if self.page_transition.is_some() {
+            return;
+        }
+        let target = match self.state.navigation.page {
+            Page::Main => Page::Lyrics,
+            Page::Lyrics => Page::Main,
+            _ => return,
+        };
+        if target == Page::Lyrics && self.playback.current_song().is_none() {
+            return;
+        }
+        self.start_page_transition(target);
+    }
+
     /// Spawn a background task that loads the lyrics for `song_id` (NCM or
     /// sonar path) and emits `LyricsLoaded` when found.
     pub(super) fn spawn_lyrics_load(&self, song_id: u64) {
         let service = self.service.clone();
-        let sender = self.state.events.sender();
+        let sender = self.events.sender();
         if sonar::is_sonar_song_id(song_id) {
             let finder = self.search.finder.clone();
             let registry = self.search.sonar_songs.clone();
@@ -37,7 +55,7 @@ impl App {
 }
 
 fn send_lyrics(
-    sender: &tokio::sync::mpsc::UnboundedSender<Event>,
+    sender: &EventSender,
     song_id: u64,
     lyrics: Vec<LyricLine>,
     translated_lyrics: Vec<LyricLine>,

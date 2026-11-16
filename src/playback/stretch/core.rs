@@ -38,7 +38,7 @@ pub(super) struct Block {
 
 /// Wraps a [`Source`], time-scaling it while preserving pitch.
 #[derive(Debug)]
-pub struct Stretch<I> {
+pub(crate) struct Stretch<I> {
     pub(super) input: I,
     pub(super) handle: SpeedHandle,
     /// Frames per analysis window (even, so `hop == win / 2`).
@@ -76,7 +76,7 @@ pub struct Stretch<I> {
 impl<I: Source + Send> Stretch<I> {
     /// Wrap `input`. `handle` must be the same one the player loop controls —
     /// creating a source resets the reported position (it is per source).
-    pub fn new(input: I, handle: SpeedHandle) -> Self {
+    pub(crate) fn new(input: I, handle: SpeedHandle) -> Self {
         handle.reset_position();
         let rate = input.sample_rate().get() as f64;
         // An even frame count keeps the 50% overlap — and with it the

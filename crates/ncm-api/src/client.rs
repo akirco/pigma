@@ -12,7 +12,6 @@ mod album;
 mod artist;
 mod auth;
 mod cloud;
-mod download;
 mod home;
 mod interaction;
 mod playlist;

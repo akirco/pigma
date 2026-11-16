@@ -1,6 +1,8 @@
 //! Equalizer page: ten horizontal sliders with dB on the x-axis and frequency
 //! on the y-axis.
 
+use std::sync::LazyLock;
+
 use ratatui::{
     Frame,
     layout::Rect,
@@ -9,8 +11,15 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use super::{BlockStyle, block::CornerBlock};
+use super::{BlockStyle, block::StyledBlock};
 use crate::config::{BAND_LABELS, EqualizerConfig, MAX_GAIN_DB, MIN_GAIN_DB};
+
+static BAND_LABEL_TEXT: LazyLock<Vec<String>> = LazyLock::new(|| {
+    BAND_LABELS
+        .iter()
+        .map(|label| format!("{label:>3} "))
+        .collect()
+});
 
 pub(super) fn draw(
     f: &mut Frame,
@@ -26,7 +35,7 @@ pub(super) fn draw(
         BAND_LABELS[selected],
         eq.bands[selected]
     );
-    let block = CornerBlock::from_color(bs, bs.colors.bg).title(&title, bs.colors);
+    let block = StyledBlock::from_color(bs, bs.colors.bg).title(&title, bs.colors);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -65,7 +74,7 @@ pub(super) fn draw(
             Style::default().fg(bs.colors.text)
         };
         lines.push(Line::from(vec![
-            Span::styled(format!("{:>3} ", BAND_LABELS[band]), style),
+            Span::styled(BAND_LABEL_TEXT[band].as_str(), style),
             Span::styled(slider(bar_width, center, gain), style),
         ]));
         if offset + 1 < visible {
@@ -146,7 +155,7 @@ fn slider(width: usize, center: usize, gain: f32) -> String {
         *cell = '┼';
     }
     if let Some(cell) = cells.get_mut(pos) {
-        *cell = '●';
+        *cell = crate::icons::BULLET;
     }
     cells.into_iter().collect()
 }

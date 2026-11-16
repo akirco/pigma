@@ -58,10 +58,16 @@ fn render_progress(f: &mut Frame, splash: &SplashState, colors: &Theme, area: Re
 
     let mut line = Line::default();
     for _ in 0..filled {
-        line.push_span(Span::styled("▍", Style::default().fg(colors.accent)));
+        line.push_span(Span::styled(
+            crate::icons::SPLASH_MARK,
+            Style::default().fg(colors.accent),
+        ));
     }
     for _ in 0..empty {
-        line.push_span(Span::styled("▍", Style::default().fg(colors.surface)));
+        line.push_span(Span::styled(
+            crate::icons::SPLASH_MARK,
+            Style::default().fg(colors.surface),
+        ));
     }
     f.render_widget(Paragraph::new(line).alignment(Alignment::Center), bar_area);
 
@@ -79,7 +85,7 @@ fn render_progress(f: &mut Frame, splash: &SplashState, colors: &Theme, area: Re
 fn render_logs(f: &mut Frame, splash: &SplashState, colors: &Theme, area: Rect) {
     let max_logs = area.height as usize;
     let start = splash.logs.len().saturating_sub(max_logs);
-    let visible: Vec<_> = splash.logs[start..].to_vec();
+    let visible = &splash.logs[start..];
 
     if visible.is_empty() {
         return;
@@ -88,7 +94,7 @@ fn render_logs(f: &mut Frame, splash: &SplashState, colors: &Theme, area: Rect) 
     let tag_width = 7;
     let time_width = 10;
     let mut max_text_len = 0usize;
-    for entry in &visible {
+    for entry in visible {
         max_text_len = max_text_len.max(entry.text.len());
     }
     let max_line_width = (time_width + tag_width + 1 + max_text_len) as u16;
@@ -124,7 +130,7 @@ fn render_logs(f: &mut Frame, splash: &SplashState, colors: &Theme, area: Rect) 
                 format!("[{}] ", entry.time),
                 Style::default().fg(colors.muted),
             ),
-            Span::styled(tag.to_string(), Style::default().fg(tag_color)),
+            Span::styled(tag, Style::default().fg(tag_color)),
             Span::raw(" "),
             Span::styled(entry.text.as_str(), Style::default().fg(colors.muted)),
         ]);

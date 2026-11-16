@@ -46,6 +46,27 @@ impl KugouProvider {
             .map(|s| s.to_string())
     }
 
+    /// Album id as a string. The search API sends it as a number in current
+    /// responses and as a string in older ones.
+    fn album_id(&self, song: &Value) -> String {
+        match song.get("album_id") {
+            Some(Value::Number(n)) => n.to_string(),
+            Some(Value::String(s)) => s.clone(),
+            _ => String::new(),
+        }
+    }
+
+    /// Album cover URL. The search response carries no cover, but the album id
+    /// maps to one on Kugou's image host.
+    fn cover_url(&self, song: &Value) -> String {
+        let id = self.album_id(song);
+        if id.is_empty() {
+            String::new()
+        } else {
+            format!("https://imge.kugou.com/stdmusic/240/{id}.jpg")
+        }
+    }
+
     fn build_meta(&self, song: &Value) -> SongMeta {
         SongMeta {
             high_hash: song
@@ -58,11 +79,7 @@ impl KugouProvider {
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
                 .map(String::from),
-            album_id: song
-                .get("album_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
+            album_id: self.album_id(song),
         }
     }
 
@@ -192,7 +209,7 @@ impl SonarProvider for KugouProvider {
                     album: album_name,
                     duration,
                     source: SonarSource::Kugou,
-                    pic_url: String::new(),
+                    pic_url: self.cover_url(item),
                     meta: self.build_meta(item),
                 })
             })
@@ -342,6 +359,25 @@ mod tests {
         let provider = KugouProvider::new(true).unwrap();
         let got = provider.candidate_hashes(&song);
         assert_eq!(got, vec![("base".to_string(), Quality::Standard)]);
+    }
+
+    #[test]
+    fn numeric_album_id_maps_to_a_cover_url() {
+        ensure_crypto();
+        let provider = KugouProvider::new(true).unwrap();
+        let item = json!({ "album_id": 958909 });
+        assert_eq!(provider.album_id(&item), "958909");
+        assert_eq!(
+            provider.cover_url(&item),
+            "https://imge.kugou.com/stdmusic/240/958909.jpg"
+        );
+    }
+
+    #[test]
+    fn missing_album_id_has_no_cover_url() {
+        ensure_crypto();
+        let provider = KugouProvider::new(true).unwrap();
+        assert!(provider.cover_url(&json!({})).is_empty());
     }
 
     #[test]

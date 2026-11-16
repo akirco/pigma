@@ -435,10 +435,13 @@ impl SonarFinder {
 
     /// Fetch LRC lyrics for a song via the provider that produced it.
     pub async fn get_lyrics(&self, song: &crate::model::Song) -> Result<Option<String>> {
-        let provider = self.providers.iter().find(|p| p.source() == song.source);
-        match provider {
-            Some(p) => p.get_lyrics(song).await,
-            None => Ok(None),
+        let Some(provider) = self.providers.iter().find(|p| p.source() == song.source) else {
+            return Ok(None);
+        };
+        let timeout = std::time::Duration::from_millis(self.config.timeout_ms);
+        match tokio::time::timeout(timeout, provider.get_lyrics(song)).await {
+            Ok(result) => result,
+            Err(_) => Err(crate::error::SonarError::Timeout),
         }
     }
 
@@ -452,7 +455,11 @@ impl SonarFinder {
             return Some(l);
         }
         for source in [SonarSource::Kugou, SonarSource::Kuwo] {
-            let candidate = self.search_first(&[source], song).await?;
+            // A missing/failed source must fall through to the next one, not
+            // abort the whole fallback chain.
+            let Some(candidate) = self.search_first(&[source], song).await else {
+                continue;
+            };
             if let Ok(Some(l)) = self.get_lyrics(&candidate).await
                 && !l.trim().is_empty()
             {
@@ -474,7 +481,11 @@ impl SonarFinder {
             SonarSource::Kugou,
             SonarSource::BiliVideo,
         ] {
-            let candidate = self.search_first(&[source], song).await?;
+            // Same as lyrics: keep trying the remaining sources when one is
+            // not configured or returns nothing.
+            let Some(candidate) = self.search_first(&[source], song).await else {
+                continue;
+            };
             if !candidate.pic_url.is_empty() {
                 return Some(candidate.pic_url);
             }
@@ -490,16 +501,28 @@ impl SonarFinder {
     ) -> Option<Song> {
         let query =
             SearchQuery::new(format!("{} {}", song.name, song.singer)).with_duration(song.duration);
+        let timeout = std::time::Duration::from_millis(self.config.timeout_ms);
         for source in sources {
-            let provider = self
+            let Some(provider) = self
                 .providers
                 .iter()
                 .find(|p| p.source() == *source)
-                .cloned()?;
-            if let Ok(result) = provider.search(&query).await
-                && let Some(first) = result.songs.into_iter().next()
-            {
-                return Some(first);
+                .cloned()
+            else {
+                continue;
+            };
+            match tokio::time::timeout(timeout, provider.search(&query)).await {
+                Ok(Ok(result)) => {
+                    if let Some(first) = result.songs.into_iter().next() {
+                        return Some(first);
+                    }
+                }
+                Ok(Err(e)) => {
+                    log::warn!("sonar fallback: {:?} search failed: {e}", source);
+                }
+                Err(_) => {
+                    log::warn!("sonar fallback: {:?} search timed out", source);
+                }
             }
         }
         None
@@ -529,7 +552,65 @@ pub async fn quick_search_with_mode(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::make_song_id;
+    use crate::model::{PlayUrlResult, Quality, make_song_id};
+
+    #[test]
+    fn live_word_boundary_stays_unicode_aware() {
+        // The regex crate's `unicode` feature keeps CJK characters on the
+        // "word" side of `\b`. With ASCII-only boundaries `现场live` would
+        // match, silently changing which titles count as live recordings.
+        assert!(LIVE_RE.is_match("live version"));
+        assert!(!LIVE_RE.is_match("alive"));
+        assert!(!LIVE_RE.is_match("现场live"));
+    }
+
+    /// Provider whose answers are fixed, for testing the finder's fallback
+    /// chains without touching the network.
+    struct FakeProvider {
+        source: SonarSource,
+        songs: Vec<Song>,
+        lyrics: Option<String>,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::provider::SonarProvider for FakeProvider {
+        fn source(&self) -> SonarSource {
+            self.source
+        }
+
+        async fn search(&self, query: &SearchQuery) -> crate::error::Result<SearchResult> {
+            Ok(SearchResult {
+                songs: self.songs.clone(),
+                source: self.source,
+                query: query.clone(),
+                total: None,
+            })
+        }
+
+        async fn get_play_url(
+            &self,
+            _song: &Song,
+            _quality: Option<Quality>,
+        ) -> crate::error::Result<PlayUrlResult> {
+            Err(crate::error::SonarError::NoPlayUrl)
+        }
+
+        async fn get_lyrics(&self, _song: &Song) -> crate::error::Result<Option<String>> {
+            Ok(self.lyrics.clone())
+        }
+    }
+
+    fn fake(
+        source: SonarSource,
+        songs: Vec<Song>,
+        lyrics: Option<&str>,
+    ) -> Arc<dyn crate::provider::SonarProvider> {
+        Arc::new(FakeProvider {
+            source,
+            songs,
+            lyrics: lyrics.map(str::to_string),
+        })
+    }
 
     fn song(name: &str, singer: &str) -> Song {
         Song {
@@ -543,6 +624,69 @@ mod tests {
             pic_url: String::new(),
             meta: Default::default(),
         }
+    }
+
+    fn finder(providers: Vec<Arc<dyn crate::provider::SonarProvider>>) -> SonarFinder {
+        SonarFinder {
+            providers,
+            config: SearchConfig::default(),
+        }
+    }
+
+    /// Provider whose calls never finish, used to verify the per-request
+    /// timeout applied to lyrics and fallback searches.
+    struct SlowProvider;
+
+    #[async_trait::async_trait]
+    impl crate::provider::SonarProvider for SlowProvider {
+        fn source(&self) -> SonarSource {
+            SonarSource::Kugou
+        }
+
+        async fn search(&self, _query: &SearchQuery) -> crate::error::Result<SearchResult> {
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            unreachable!("slow provider should be cancelled by the timeout")
+        }
+
+        async fn get_play_url(
+            &self,
+            _song: &Song,
+            _quality: Option<Quality>,
+        ) -> crate::error::Result<PlayUrlResult> {
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            unreachable!("slow provider should be cancelled by the timeout")
+        }
+
+        async fn get_lyrics(&self, _song: &Song) -> crate::error::Result<Option<String>> {
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            unreachable!("slow provider should be cancelled by the timeout")
+        }
+    }
+
+    #[tokio::test]
+    async fn get_lyrics_times_out_instead_of_hanging() {
+        let mut finder = finder(vec![Arc::new(SlowProvider)]);
+        finder.config.timeout_ms = 20;
+
+        let started = std::time::Instant::now();
+        let result = finder.get_lyrics(&song("晴天", "周杰伦")).await;
+
+        assert!(matches!(result, Err(crate::error::SonarError::Timeout)));
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+    }
+
+    #[tokio::test]
+    async fn fallback_search_times_out_and_returns_none() {
+        let mut finder = finder(vec![Arc::new(SlowProvider)]);
+        finder.config.timeout_ms = 20;
+
+        let started = std::time::Instant::now();
+        let found = finder
+            .search_first(&[SonarSource::Kugou], &song("晴天", "周杰伦"))
+            .await;
+
+        assert!(found.is_none());
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
     }
 
     fn score(name: &str, singer: &str, keyword: &str) -> f64 {
@@ -624,6 +768,64 @@ mod tests {
         assert!(
             !is_secondary_version("alive"),
             "word boundary must guard live"
+        );
+    }
+
+    /// A preferred source that is simply not configured must not abort the
+    /// fallback chain: the next configured source still gets queried.
+    #[tokio::test]
+    async fn search_first_skips_sources_that_are_not_configured() {
+        let finder = finder(vec![fake(
+            SonarSource::Kuwo,
+            vec![song("晴天", "周杰伦")],
+            None,
+        )]);
+
+        let found = finder
+            .search_first(
+                &[SonarSource::Kugou, SonarSource::Kuwo],
+                &song("晴天", "周杰伦"),
+            )
+            .await;
+
+        assert_eq!(found.map(|s| s.name), Some("晴天".to_string()));
+    }
+
+    /// Cover fallback must keep trying after the first source is missing.
+    #[tokio::test]
+    async fn cover_fallback_keeps_trying_after_a_missing_source() {
+        let mut with_cover = song("晴天", "周杰伦");
+        with_cover.pic_url = "http://cover".into();
+        let finder = finder(vec![fake(SonarSource::Kugou, vec![with_cover], None)]);
+
+        let mut target = song("晴天", "周杰伦");
+        target.pic_url.clear();
+
+        // Kuwo (the first preferred source) is not configured.
+        assert_eq!(
+            finder.get_cover_fallback(&target).await.as_deref(),
+            Some("http://cover")
+        );
+    }
+
+    /// Lyrics fallback must keep trying after the first source is missing.
+    #[tokio::test]
+    async fn lyrics_fallback_keeps_trying_after_a_missing_source() {
+        let mut candidate = song("晴天", "周杰伦");
+        candidate.source = SonarSource::Kuwo;
+        let finder = finder(vec![fake(
+            SonarSource::Kuwo,
+            vec![candidate],
+            Some("[00:01.00]hi"),
+        )]);
+
+        // The song's own provider (Kugou) is not configured; Kuwo is.
+        assert_eq!(
+            finder
+                .get_lyrics_fallback(&song("晴天", "周杰伦"))
+                .await
+                .as_deref(),
+            Some("[00:01.00]hi")
         );
     }
 }

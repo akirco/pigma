@@ -1,9 +1,15 @@
+use std::time::Duration;
+
 use super::{App, event::send_event};
 use crate::{
     event::SplashEvent,
     state::{LogLevel, SplashLogEntry},
-    utils::clock_time,
+    time::clock_time,
 };
+
+/// Deadline for the startup reachability probe. Kept short on purpose: the
+/// splash screen must not stall on a dead network.
+const NETWORK_CHECK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
 fn splash_status(progress: f64) -> &'static str {
     if progress < 0.3 {
@@ -17,16 +23,35 @@ fn splash_status(progress: f64) -> &'static str {
     }
 }
 
-async fn check_network(_api: &ncm_api::NcmClient) -> bool {
-    use tokio::net::TcpStream;
-    TcpStream::connect("music.163.com:443").await.is_ok()
+async fn check_network(api: &ncm_api::NcmClient) -> bool {
+    // Probe through the configured client so the user's proxy is honoured, and
+    // bound the wait: a raw `TcpStream::connect` ignored both the proxy and any
+    // timeout, so proxied users were wrongly sent to offline/local mode and a
+    // dead network could stall startup for the OS TCP timeout (minutes).
+    tokio::time::timeout(NETWORK_CHECK_TIMEOUT, api.search_hot())
+        .await
+        .is_ok_and(|result| result.is_ok())
+}
+
+fn splash_duration_from_config(secs: f64) -> Duration {
+    if secs.is_finite() && secs >= 0.0 {
+        Duration::try_from_secs_f64(secs).unwrap_or(Duration::from_secs(2))
+    } else {
+        Duration::from_secs(2)
+    }
 }
 
 impl App {
+    /// Minimum splash duration, sanitized against negative/NaN/infinite config
+    /// values (which would panic in `Duration::from_secs_f64`).
+    pub(super) fn splash_duration(&self) -> Duration {
+        splash_duration_from_config(self.config.splash_duration_secs)
+    }
+
     pub(super) fn start_splash_boot(&self) {
-        let sender = self.state.events.sender();
+        let sender = self.events.sender();
         let client = self.service.client().clone();
-        let duration = std::time::Duration::from_secs_f64(self.config.splash_duration_secs);
+        let duration = self.splash_duration();
 
         tokio::spawn(async move {
             let send = |progress: f64, text: &str, level: LogLevel| {
@@ -106,5 +131,29 @@ impl App {
                 self.state.splash.status = new_status.to_string();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_splash_durations_fall_back_instead_of_panicking() {
+        assert_eq!(splash_duration_from_config(-1.0), Duration::from_secs(2));
+        assert_eq!(
+            splash_duration_from_config(f64::NAN),
+            Duration::from_secs(2)
+        );
+        assert_eq!(
+            splash_duration_from_config(f64::INFINITY),
+            Duration::from_secs(2)
+        );
+        assert_eq!(splash_duration_from_config(1e300), Duration::from_secs(2));
+        assert_eq!(splash_duration_from_config(0.0), Duration::ZERO);
+        assert_eq!(
+            splash_duration_from_config(1.5),
+            Duration::from_millis(1500)
+        );
     }
 }

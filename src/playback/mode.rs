@@ -11,13 +11,8 @@ pub enum PlayMode {
     Heartbeat { playlist_id: u64 },
 }
 
-pub trait PlayStrategy: Send {
-    fn next(&mut self, current_index: Option<usize>, queue_len: usize) -> Option<usize>;
-    fn prev(&mut self, current_index: Option<usize>, queue_len: usize) -> Option<usize>;
-}
-
 #[derive(Clone)]
-pub enum Strategy {
+pub(super) enum Strategy {
     Sequential,
     RepeatOne,
     RepeatAll,
@@ -25,8 +20,8 @@ pub enum Strategy {
     Heartbeat,
 }
 
-impl PlayStrategy for Strategy {
-    fn next(&mut self, ci: Option<usize>, queue_len: usize) -> Option<usize> {
+impl Strategy {
+    pub(super) fn next(&mut self, ci: Option<usize>, queue_len: usize) -> Option<usize> {
         match self {
             Strategy::Sequential => match ci {
                 Some(i) if i + 1 < queue_len => Some(i + 1),
@@ -51,7 +46,7 @@ impl PlayStrategy for Strategy {
         }
     }
 
-    fn prev(&mut self, ci: Option<usize>, queue_len: usize) -> Option<usize> {
+    pub(super) fn prev(&mut self, ci: Option<usize>, queue_len: usize) -> Option<usize> {
         match self {
             Strategy::Sequential => match ci {
                 Some(i) if i > 0 => Some(i - 1),
@@ -103,10 +98,10 @@ pub(super) fn create_strategy(
 
 pub fn mode_icon(mode: &PlayMode) -> (&str, &str) {
     match mode {
-        PlayMode::Sequential => ("\u{F049E}", "顺序"),
-        PlayMode::RepeatOne => ("\u{F0458}", "单曲"),
-        PlayMode::RepeatAll => ("\u{f0456}", "列表"),
-        PlayMode::Shuffle => ("\u{F049F}", "随机"),
-        PlayMode::Heartbeat { .. } => ("\u{F0430}", "心动"),
+        PlayMode::Sequential => (crate::icons::MODE_SEQUENTIAL, "顺序"),
+        PlayMode::RepeatOne => (crate::icons::MODE_REPEAT_ONE, "单曲"),
+        PlayMode::RepeatAll => (crate::icons::MODE_REPEAT_ALL, "列表"),
+        PlayMode::Shuffle => (crate::icons::MODE_SHUFFLE, "随机"),
+        PlayMode::Heartbeat { .. } => (crate::icons::MODE_HEARTBEAT, "心动"),
     }
 }

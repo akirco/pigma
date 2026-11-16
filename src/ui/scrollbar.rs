@@ -27,7 +27,7 @@ pub(super) fn render_scrollbar(
     let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
         .begin_symbol(None)
         .end_symbol(None)
-        .thumb_symbol("│")
+        .thumb_symbol(crate::icons::SCROLLBAR_THUMB)
         .thumb_style(Style::default().fg(fg))
         .track_symbol(None);
     f.render_stateful_widget(scrollbar, area, &mut state);
