@@ -16,17 +16,14 @@ use std::{
     time::Duration,
 };
 
-use ratatui_image::protocol::StatefulProtocol;
-
 use crate::{
     cache::cover::{fetch_cover, sized_cover_url},
     config::{ContentStyle, ContentType},
     event::AppEvent,
     lock::lock_recover,
-    playback::CoverState,
     state::ContentState,
     ui::cover::{
-        CONTENT_COVER_MAX_PX, COVER_MAX_PX, SINGER_COVER_MAX_PX, build_cover_protocol,
+        CONTENT_COVER_MAX_PX, COVER_MAX_PX, SINGER_COVER_MAX_PX, apply_cover, build_cover_protocol,
         thumb_protocol,
     },
 };
@@ -196,7 +193,7 @@ impl App {
         if own_pic.is_empty() && !is_sonar {
             return;
         }
-        let cover = self.playback.state.cover.clone();
+        let cover = self.cover.clone();
         let picker = self.picker.clone();
         let cache = self.service.cache().clone();
         let cover_http = self.cover_http.clone();
@@ -367,15 +364,6 @@ fn content_cover_urls<'a>(content: &'a ContentState, range: std::ops::Range<usiz
         _ => {}
     }
     urls
-}
-
-/// Apply a freshly loaded cover protocol, dropping it if the song changed while
-/// it was loading (a stale loader must not overwrite a newer cover).
-fn apply_cover(cover: &CoverState, song_id: u64, protocol: StatefulProtocol) {
-    let still_current = *lock_recover(&cover.song_id) == Some(song_id);
-    if still_current {
-        *lock_recover(&cover.protocol) = Some(protocol);
-    }
 }
 
 #[cfg(test)]

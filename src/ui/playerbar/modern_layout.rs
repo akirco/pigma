@@ -7,6 +7,7 @@ use super::{LayoutArea, Playerbar, widgets};
 use crate::{
     config::{PlayerbarConfig, Theme},
     playback::PlaybackState,
+    ui::cover::CoverState,
 };
 
 pub(super) struct ModernLayout;
@@ -97,17 +98,19 @@ impl Playerbar for ModernLayout {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render(
         &self,
         f: &mut Frame,
         player: &PlaybackState,
+        cover: &CoverState,
         colors: &Theme,
         tick: u64,
         config: &PlayerbarConfig,
         layout: &LayoutArea,
     ) -> widgets::ControlHits {
         if config.visible.cover && layout.cover.width > 0 {
-            widgets::draw_cover(f, player, colors, layout.cover);
+            widgets::draw_cover(f, player, cover, colors, layout.cover);
         }
 
         widgets::draw_current_time(f, player, colors, layout.progress_time_left);

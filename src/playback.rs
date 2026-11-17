@@ -1,8 +1,7 @@
-//! Audio playback subsystem: re-exports the `PlaybackEngine` plus the queue/cover
-//! state and play-mode types used across the app.
+//! Audio playback subsystem: re-exports the `PlaybackEngine` plus the queue and
+//! play-mode types used across the app.
 
 mod controller;
-mod cover;
 mod engine;
 mod equalizer;
 mod mode;
@@ -14,7 +13,6 @@ mod storage;
 mod stream_client;
 mod stretch;
 
-pub use cover::CoverState;
 // Backwards-compatible re-export: the event type now lives in `crate::event`.
 pub use crate::event::PlaybackEvent;
 pub use engine::PlaybackEngine;

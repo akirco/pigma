@@ -7,6 +7,7 @@ use super::{LayoutArea, Playerbar, widgets};
 use crate::{
     config::{PlayerbarConfig, Theme},
     playback::PlaybackState,
+    ui::cover::CoverState,
 };
 
 pub(super) struct ClassicLayout;
@@ -63,10 +64,12 @@ impl Playerbar for ClassicLayout {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render(
         &self,
         f: &mut Frame,
         player: &PlaybackState,
+        _cover: &CoverState,
         colors: &Theme,
         _tick: u64,
         config: &PlayerbarConfig,

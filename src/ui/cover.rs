@@ -14,6 +14,8 @@ use std::sync::{Arc, Mutex};
 use image::GenericImageView;
 use ratatui_image::protocol::StatefulProtocol;
 
+use crate::lock::lock_recover;
+
 /// Cover thumbnails for the content cards, keyed by the original cover URL.
 pub(crate) type ContentCovers = Arc<Mutex<cache::CoverCache>>;
 
@@ -41,6 +43,32 @@ pub(crate) struct PreparedCover {
     /// `None` when re-encoding failed; the cover still renders, it just is not
     /// written back to the cache.
     pub(crate) thumbnail: Option<Vec<u8>>,
+}
+
+/// Cover image state shared with async loaders. `protocol` holds the decoded
+/// image; `song_id` records which song the cover belongs to so a slow loader
+/// from a previously played song can't overwrite the current cover.
+#[derive(Clone, Default)]
+pub(crate) struct CoverState {
+    pub(crate) protocol: Arc<Mutex<Option<StatefulProtocol>>>,
+    pub(crate) song_id: Arc<Mutex<Option<u64>>>,
+}
+
+impl std::fmt::Debug for CoverState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CoverState")
+            .field("has_cover", &lock_recover(&self.protocol).is_some())
+            .finish()
+    }
+}
+
+/// Apply a freshly loaded cover protocol, dropping it if the song changed while
+/// it was loading (a stale loader must not overwrite a newer cover).
+pub(crate) fn apply_cover(cover: &CoverState, song_id: u64, protocol: StatefulProtocol) {
+    let still_current = *lock_recover(&cover.song_id) == Some(song_id);
+    if still_current {
+        *lock_recover(&cover.protocol) = Some(protocol);
+    }
 }
 
 pub(crate) fn thumb_protocol(

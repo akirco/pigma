@@ -28,7 +28,7 @@ impl App {
 
         // Clear the cover so a new song never shows the previous one's
         // cover while its own cover is loading (or missing).
-        *lock_recover(&self.playback.state.cover.protocol) = None;
+        *lock_recover(&self.cover.protocol) = None;
         self.spawn_cover_load(song.id, song.pic_url.clone());
     }
 

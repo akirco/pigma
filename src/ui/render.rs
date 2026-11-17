@@ -94,6 +94,7 @@ pub(crate) fn draw(f: &mut Frame, app: &mut App) -> RenderOutcome {
             outcome.playerbar_hits = playerbar::draw(
                 f,
                 &app.playback.state,
+                &app.cover,
                 app.state.tick,
                 &bs,
                 &app.config.playerbar,

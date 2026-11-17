@@ -12,7 +12,7 @@ use crate::{
     lock::lock_recover,
     playback::{PlaybackState, mode_icon},
     time::format_duration_into,
-    ui::{gradient_line_gauge::GradientLineGauge, spinner::Spinner},
+    ui::{cover::CoverState, gradient_line_gauge::GradientLineGauge, spinner::Spinner},
 };
 
 pub(super) fn draw_song_info(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
@@ -313,11 +313,17 @@ pub(super) fn draw_volume(f: &mut Frame, player: &PlaybackState, colors: &Theme,
     );
 }
 
-pub(super) fn draw_cover(f: &mut Frame, player: &PlaybackState, colors: &Theme, area: Rect) {
+pub(super) fn draw_cover(
+    f: &mut Frame,
+    player: &PlaybackState,
+    cover: &CoverState,
+    colors: &Theme,
+    area: Rect,
+) {
     if player.current_song.is_some() {
         // Try to render real cover image if available
         {
-            let mut guard = lock_recover(&player.cover.protocol);
+            let mut guard = lock_recover(&cover.protocol);
             if let Some(protocol) = guard.as_mut() {
                 let image = StatefulImage::new().resize(Resize::Fit(None));
                 f.render_stateful_widget(image, area, protocol);
