@@ -27,7 +27,7 @@ use crate::{
     event::{EventSender, PlaybackEvent},
     lock::lock_recover,
     lyrics::LyricLine,
-    playback::memory::trim_heap,
+    memory::trim_heap,
     service::{ApiService, SonarSongs},
 };
 

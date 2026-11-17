@@ -5,7 +5,6 @@ mod controller;
 mod cover;
 mod engine;
 mod equalizer;
-pub(crate) mod memory;
 mod mode;
 mod player;
 mod queue;

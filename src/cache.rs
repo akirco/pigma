@@ -1,8 +1,8 @@
-//! On-disk media cache (`CacheManager`) and its audio/covers/lyrics/index
+//! On-disk media cache (`CacheManager`) and its audio/cover/lyrics/index
 //! submodules. Navigation content caching lives in [`crate::service::ContentCache`].
 
 mod audio;
-mod covers;
+pub(crate) mod cover;
 mod index;
 mod lyrics;
 mod manager;

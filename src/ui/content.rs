@@ -16,7 +16,7 @@ use super::{
     BlockStyle, cards, scrollbar::calc_scroll_offset, skeleton::Skeleton, styled_text, table,
 };
 use crate::{
-    app::cover::ContentCovers,
+    cache::cover::ContentCovers,
     config::{ColumnDef, ColumnsConfig, ContentConfig, ContentStyle, Theme},
     state::{ContentState, TableMode},
     time::format_duration,
@@ -284,7 +284,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        app::cover::ContentCovers,
+        cache::cover::ContentCovers,
         config::{BorderConfig, ColumnsConfig, ContentConfig, Theme},
     };
 

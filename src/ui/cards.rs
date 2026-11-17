@@ -19,7 +19,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::{BlockStyle, block::StyledBlock, scrollbar::render_scrollbar};
 use crate::{
-    app::cover::{ContentCovers, SINGER_COVER_MAX_PX},
+    cache::cover::{ContentCovers, SINGER_COVER_MAX_PX},
     config::ContentType,
     icons,
     lock::lock_recover,

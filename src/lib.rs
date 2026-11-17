@@ -17,6 +17,7 @@ pub mod ipc;
 pub(crate) mod lock;
 pub mod logger;
 pub mod lyrics;
+pub(crate) mod memory;
 mod persist;
 pub mod playback;
 pub mod service;
