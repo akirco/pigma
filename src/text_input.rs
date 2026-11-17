@@ -1,7 +1,6 @@
-//! A single-line text editor widget (cursor movement, insert/delete, history)
+//! A single-line text editor model (cursor movement, insert/delete, history)
 //! used by the search and command input fields.
 
-use ratatui::Frame;
 use unicode_width::UnicodeWidthChar;
 
 #[derive(Debug, Clone)]
@@ -58,7 +57,8 @@ impl TextInput {
         }
     }
 
-    fn cursor_width(&self, password: bool) -> u16 {
+    /// Display width of the text before the cursor, in terminal cells.
+    pub fn cursor_columns(&self, password: bool) -> u16 {
         if password {
             self.cursor as u16
         } else {
@@ -68,12 +68,5 @@ impl TextInput {
                 .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))
                 .sum::<usize>() as u16
         }
-    }
-
-    pub fn show_cursor_at(&self, f: &mut Frame, x: u16, y: u16, focused: bool, password: bool) {
-        if !focused {
-            return;
-        }
-        f.set_cursor_position((x + self.cursor_width(password), y));
     }
 }

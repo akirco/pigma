@@ -124,9 +124,12 @@ fn render_search(f: &mut Frame, search: &SearchState, colors: &Theme, area: Rect
     };
 
     f.render_widget(Paragraph::new(display), chunks[1]);
-    search
-        .input
-        .show_cursor_at(f, chunks[1].x, chunks[1].y, search.active, false);
+    if search.active {
+        f.set_cursor_position((
+            chunks[1].x + search.input.cursor_columns(false),
+            chunks[1].y,
+        ));
+    }
 
     if !search.filter_queue_only {
         let provider = Line::from(vec![
