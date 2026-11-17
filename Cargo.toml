@@ -2,8 +2,6 @@
 name = "pigma"
 version = "0.3.0"
 edition = "2024"
-# Highest requirement in the dependency graph is stream-download 0.24.4
-rust-version = "1.91.0"
 description = "A netease cloud music client"
 repository = "https://github.com/akirco/pigma.git"
 license = "Apache-2.0"
@@ -31,7 +29,7 @@ serde = { workspace = true, features = ["derive", "rc", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 sonar = { workspace = true }
 stream-download = { workspace = true, features = ["async-read", "reqwest", "temp-storage"] }
-tachyonfx = "0.25.2"
+tachyonfx = { workspace = true, features = ["std"] }
 time = { workspace = true, features = ["formatting", "local-offset", "macros", "std"] }
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 toml_edit = { workspace = true, features = ["display", "parse", "serde"] }
@@ -45,7 +43,7 @@ rustls = { workspace = true, features = ["ring", "std"] }
 libc = { workspace = true, features = ["std"] }
 
 [target."cfg(windows)".dependencies]
-windows-sys = {version = "0.61.2",default-features = false,features = ["Win32_Foundation","Win32_Security","Win32_Security_Authorization"]}
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization"] }
 
 [lints]
 workspace = true
@@ -99,6 +97,7 @@ serde = { version = "1.0.229", default-features = false }
 serde_json = { version = "1.0.154", default-features = false }
 sonar = { path = "crates/sonar", default-features = false }
 stream-download = { version = "0.24.4", default-features = false }
+tachyonfx = { version = "0.25.2", default-features = false }
 thiserror = { version = "2.0.21", default-features = false }
 time = { version = "0.3.55", default-features = false }
 tokio = { version = "1.54.1", default-features = false }
@@ -106,6 +105,7 @@ toml_edit = { version = "0.25.17", default-features = false }
 unicode-width = { version = "0.2.2", default-features = false }
 url = { version = "2.5.8", default-features = false }
 urlencoding = { version = "2.1", default-features = false }
+windows-sys = { version = "0.61.2", default-features = false }
 
 [workspace.lints.clippy]
 assigning_clones = "deny"
