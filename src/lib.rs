@@ -12,7 +12,7 @@ pub mod cli;
 pub mod config;
 pub mod event;
 pub(crate) mod icons;
-pub mod input;
+mod input;
 pub mod ipc;
 pub(crate) mod lock;
 pub mod logger;

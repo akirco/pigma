@@ -9,7 +9,7 @@ use crate::{
     state::Page,
 };
 
-pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> eyre::Result<()> {
+pub(crate) fn handle_key_events(app: &mut App, key_event: KeyEvent) -> eyre::Result<()> {
     if key_event.modifiers == KeyModifiers::CONTROL {
         match key_event.code {
             KeyCode::Char('c' | 'C') => {
@@ -79,7 +79,7 @@ pub fn handle_key_events(app: &mut App, key_event: KeyEvent) -> eyre::Result<()>
     main::handle_main_key(app, key_event)
 }
 
-pub fn handle_mouse_event(app: &mut App, kind: MouseEventKind, col: u16, row: u16) {
+pub(crate) fn handle_mouse_event(app: &mut App, kind: MouseEventKind, col: u16, row: u16) {
     // Recorded for every event, not just motion: terminals that do not report
     // motion still update the hover target on click and scroll.
     app.state.mouse = Some((col, row));
