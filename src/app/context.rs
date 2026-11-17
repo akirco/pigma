@@ -13,14 +13,13 @@ use reqwest::Client;
 
 use super::search::SearchHost;
 use crate::{
-    cache::cover::ContentCovers,
     config::{Config, ThemeRegistry},
     event::EventHandler,
     ipc::IpcState,
     playback::PlaybackEngine,
     service::ApiService,
     state::State,
-    ui::{PageTransition, PlayerbarHits},
+    ui::{PageTransition, PlayerbarHits, cover::ContentCovers},
 };
 
 pub struct App {

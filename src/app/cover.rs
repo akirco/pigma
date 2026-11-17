@@ -1,9 +1,10 @@
 //! Album-cover scheduling: when to prefetch content-card thumbnails, and when
 //! to (re)load the playerbar cover for the playing song.
 //!
-//! The cache and the fetch/decode helpers live in [`crate::cache::cover`]; this
-//! module only decides *when* to use them and where results are applied. Keeping
-//! the scheduling here is what leaves the app layer as the single orchestration
+//! The byte cache and fetch helpers live in [`crate::cache::cover`], and the
+//! render-ready protocol helpers in [`crate::ui::cover`]; this module only
+//! decides *when* to use them and where results are applied. Keeping the
+//! scheduling here is what leaves the app layer as the single orchestration
 //! point, while the render layer can reach the cache directly.
 
 use std::{
@@ -18,15 +19,16 @@ use std::{
 use ratatui_image::protocol::StatefulProtocol;
 
 use crate::{
-    cache::cover::{
-        CONTENT_COVER_MAX_PX, COVER_MAX_PX, SINGER_COVER_MAX_PX, build_cover_protocol, fetch_cover,
-        sized_cover_url, thumb_protocol,
-    },
+    cache::cover::{fetch_cover, sized_cover_url},
     config::{ContentStyle, ContentType},
     event::AppEvent,
     lock::lock_recover,
     playback::CoverState,
     state::ContentState,
+    ui::cover::{
+        CONTENT_COVER_MAX_PX, COVER_MAX_PX, SINGER_COVER_MAX_PX, build_cover_protocol,
+        thumb_protocol,
+    },
 };
 
 use super::App;

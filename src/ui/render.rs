@@ -194,7 +194,7 @@ fn draw_main(
     config: &Config,
     bs: &BlockStyle<'_>,
     lay: &layout::LayoutAreas,
-    covers: &crate::cache::cover::ContentCovers,
+    covers: &super::cover::ContentCovers,
     font_size: ratatui_image::FontSize,
     live: cards::LiveInputs,
 ) -> ContentLayout {

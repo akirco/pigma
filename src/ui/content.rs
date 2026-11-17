@@ -13,10 +13,10 @@ use ratatui::{
 };
 
 use super::{
-    BlockStyle, cards, scrollbar::calc_scroll_offset, skeleton::Skeleton, styled_text, table,
+    BlockStyle, cards, cover::ContentCovers, scrollbar::calc_scroll_offset, skeleton::Skeleton,
+    styled_text, table,
 };
 use crate::{
-    cache::cover::ContentCovers,
     config::{ColumnDef, ColumnsConfig, ContentConfig, ContentStyle, Theme},
     state::{ContentState, TableMode},
     time::format_duration,
@@ -283,10 +283,7 @@ mod tests {
     use ratatui::{Terminal, backend::TestBackend, widgets::TableState};
 
     use super::*;
-    use crate::{
-        cache::cover::ContentCovers,
-        config::{BorderConfig, ColumnsConfig, ContentConfig, Theme},
-    };
+    use crate::config::{BorderConfig, ColumnsConfig, ContentConfig, Theme};
 
     fn song(id: u64) -> Arc<SongInfo> {
         Arc::new(SongInfo {
