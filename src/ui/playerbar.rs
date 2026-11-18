@@ -9,7 +9,7 @@ use ratatui::{
     widgets::{Padding, Paragraph},
 };
 
-use super::{BlockStyle, block::StyledBlock};
+use super::{BlockStyle, block::StyledBlock, cover::CoverState};
 use crate::{
     config::{LayoutType, PlayerbarConfig, Theme},
     playback::PlaybackState,
@@ -115,10 +115,13 @@ pub(super) trait Playerbar {
         }
     }
 
+    // The per-layout renderer needs the same playback/cover/theme/layout inputs.
+    #[allow(clippy::too_many_arguments)]
     fn render(
         &self,
         f: &mut Frame,
         player: &PlaybackState,
+        cover: &CoverState,
         colors: &Theme,
         tick: u64,
         config: &PlayerbarConfig,
@@ -131,6 +134,7 @@ pub(super) trait Playerbar {
         &self,
         f: &mut Frame,
         player: &PlaybackState,
+        cover: &CoverState,
         tick: u64,
         bs: &BlockStyle<'_>,
         config: &PlayerbarConfig,
@@ -154,7 +158,7 @@ pub(super) trait Playerbar {
         }
 
         let layout = self.layout(inner, config, is_sixel).clamped_to(inner);
-        let controls = self.render(f, player, colors, tick, config, &layout);
+        let controls = self.render(f, player, cover, colors, tick, config, &layout);
         let hits = playerbar_hits(&layout, controls, self.like_area(&layout));
         paint_hover(f, &hits, mouse, area, colors);
         hits
@@ -215,6 +219,7 @@ fn layout_impl(layout: &LayoutType) -> &'static dyn Playerbar {
 pub(super) fn draw(
     f: &mut Frame,
     player: &PlaybackState,
+    cover: &CoverState,
     tick: u64,
     bs: &BlockStyle<'_>,
     config: &PlayerbarConfig,
@@ -223,7 +228,7 @@ pub(super) fn draw(
     mouse: Option<(u16, u16)>,
 ) -> PlayerbarHits {
     let layout = layout_impl(&config.layout);
-    layout.draw(f, player, tick, bs, config, area, is_sixel, mouse)
+    layout.draw(f, player, cover, tick, bs, config, area, is_sixel, mouse)
 }
 
 #[cfg(test)]
@@ -234,7 +239,7 @@ mod tests {
     use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
 
     use super::*;
-    use crate::config::BorderConfig;
+    use crate::{config::BorderConfig, ui::cover::CoverState};
 
     const W: u16 = 90;
     const H: u16 = 6;
@@ -282,6 +287,7 @@ mod tests {
             draw(
                 f,
                 &state,
+                &CoverState::default(),
                 0,
                 &bs,
                 &config,
@@ -376,6 +382,7 @@ mod tests {
             draw(
                 f,
                 &state,
+                &CoverState::default(),
                 0,
                 &bs,
                 &config,
@@ -490,6 +497,7 @@ mod tests {
                 draw(
                     f,
                     &state,
+                    &CoverState::default(),
                     0,
                     &bs,
                     &config,
@@ -528,6 +536,7 @@ mod tests {
             hits = draw(
                 f,
                 &state,
+                &CoverState::default(),
                 0,
                 &bs,
                 &config,
@@ -612,6 +621,7 @@ mod tests {
             draw(
                 f,
                 &state,
+                &CoverState::default(),
                 0,
                 &bs,
                 &config,

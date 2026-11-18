@@ -6,6 +6,7 @@ mod breadcrumb;
 mod cards;
 mod command_panel;
 mod content;
+pub(crate) mod cover;
 mod equalizer;
 mod gradient_line_gauge;
 mod help;

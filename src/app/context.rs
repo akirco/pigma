@@ -19,7 +19,10 @@ use crate::{
     playback::PlaybackEngine,
     service::ApiService,
     state::State,
-    ui::{PageTransition, PlayerbarHits},
+    ui::{
+        PageTransition, PlayerbarHits,
+        cover::{ContentCovers, CoverState},
+    },
 };
 
 pub struct App {
@@ -33,7 +36,9 @@ pub struct App {
     /// Async HTTP client for cover downloads (honours the proxy config).
     pub(super) cover_http: Client,
     /// Thumbnails for the content cards, keyed by cover URL.
-    pub(super) content_covers: super::cover::ContentCovers,
+    pub(super) content_covers: ContentCovers,
+    /// Render-ready cover for the playerbar, plus the song it belongs to.
+    pub(crate) cover: CoverState,
     /// Cover URLs already requested, so background fetches are not duplicated.
     pub(super) cover_requests: Arc<Mutex<HashSet<String>>>,
     /// Failed cover URLs wait before being retried.
@@ -88,7 +93,7 @@ impl App {
     }
 
     /// Shared thumbnail map for the content cards.
-    pub(crate) fn content_covers(&self) -> super::cover::ContentCovers {
+    pub(crate) fn content_covers(&self) -> ContentCovers {
         Arc::clone(&self.content_covers)
     }
 

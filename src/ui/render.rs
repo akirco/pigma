@@ -94,6 +94,7 @@ pub(crate) fn draw(f: &mut Frame, app: &mut App) -> RenderOutcome {
             outcome.playerbar_hits = playerbar::draw(
                 f,
                 &app.playback.state,
+                &app.cover,
                 app.state.tick,
                 &bs,
                 &app.config.playerbar,
@@ -194,7 +195,7 @@ fn draw_main(
     config: &Config,
     bs: &BlockStyle<'_>,
     lay: &layout::LayoutAreas,
-    covers: &crate::app::cover::ContentCovers,
+    covers: &super::cover::ContentCovers,
     font_size: ratatui_image::FontSize,
     live: cards::LiveInputs,
 ) -> ContentLayout {

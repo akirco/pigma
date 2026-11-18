@@ -1,6 +1,12 @@
+//! On-disk cover cache: the original (or re-encoded small) JPEG per song id,
+//! addressed by `song_id` and stored under the cache root's `covers/` directory.
+//!
+//! These are `CacheManager` methods rather than free functions because the
+//! directory is part of the manager's layout.
+
 use std::{fs, path::PathBuf};
 
-use super::CacheManager;
+use crate::cache::CacheManager;
 
 impl CacheManager {
     fn cover_path(&self, song_id: u64) -> PathBuf {

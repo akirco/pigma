@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use ncm_api::SongInfo;
 
-use super::{cover::CoverState, mode::PlayMode};
+use super::mode::PlayMode;
 
 use crate::{config::EqualizerConfig, lyrics::LyricLine};
 
@@ -37,7 +37,6 @@ pub struct PlaybackState {
     pub mode: PlayMode,
     pub cached: bool,
     pub liked: bool,
-    pub cover: CoverState,
     pub equalizer: EqualizerConfig,
 }
 
@@ -59,7 +58,6 @@ impl Default for PlaybackState {
             mode: PlayMode::Sequential,
             cached: false,
             liked: false,
-            cover: CoverState::default(),
             equalizer: EqualizerConfig::default(),
         }
     }

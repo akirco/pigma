@@ -12,4 +12,4 @@ mod search;
 mod splash;
 
 mod dispatch;
-pub use dispatch::{handle_key_events, handle_mouse_event};
+pub(crate) use dispatch::{handle_key_events, handle_mouse_event};

@@ -295,7 +295,8 @@ impl App {
             theme_registry,
             picker,
             cover_http,
-            content_covers: super::cover::ContentCovers::default(),
+            content_covers: crate::ui::cover::ContentCovers::default(),
+            cover: crate::ui::cover::CoverState::default(),
             cover_requests: Arc::new(Mutex::new(HashSet::new())),
             cover_retry_after: Arc::new(Mutex::new(HashMap::new())),
             search: SearchHost {

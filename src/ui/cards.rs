@@ -17,14 +17,13 @@ use ratatui::{
 use ratatui_image::{Resize, StatefulImage};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use super::{BlockStyle, block::StyledBlock, scrollbar::render_scrollbar};
-use crate::{
-    app::cover::{ContentCovers, SINGER_COVER_MAX_PX},
-    config::ContentType,
-    icons,
-    lock::lock_recover,
-    state::ContentState,
+use super::{
+    BlockStyle,
+    block::StyledBlock,
+    cover::{ContentCovers, SINGER_COVER_MAX_PX},
+    scrollbar::render_scrollbar,
 };
+use crate::{config::ContentType, icons, lock::lock_recover, state::ContentState};
 
 /// Card grid used for the current content type.
 #[derive(Clone, Copy, PartialEq, Eq)]
