@@ -92,13 +92,14 @@ impl App {
         }
         self.state.navigation.content_selected = count - 1;
         self.state.navigation.table_state.select(Some(count - 1));
+        self.check_load_more(count);
     }
 
     /// Ask for the next page when the selection approaches the loaded tail.
     fn check_load_more(&mut self, count: usize) {
         if let Some(ref mut pg) = self.state.navigation.pagination {
             let sel = self.state.navigation.content_selected;
-            if !pg.loading && pg.has_more && count >= 10 && sel >= count.saturating_sub(10) {
+            if !pg.loading && pg.has_more && sel >= count.saturating_sub(10) {
                 pg.loading = true;
                 self.events.send(NavigationEvent::LoadMore);
             }
