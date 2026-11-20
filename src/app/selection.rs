@@ -235,7 +235,7 @@ mod tests {
             let dir =
                 std::env::temp_dir().join(format!("pigma-pagination-test-{}", std::process::id()));
             std::fs::create_dir_all(&dir).unwrap();
-            let result = std::process::Command::new(std::env::current_exe().unwrap())
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap())
                 .args([
                     "--exact",
                     "app::selection::tests::playlist_pagination_releases_loading_after_a_failed_request",
@@ -247,8 +247,22 @@ mod tests {
                 .env("LOCALAPPDATA", &dir)
                 .env("XDG_CONFIG_HOME", &dir)
                 .env("XDG_CACHE_HOME", &dir)
-                .status()
+                .spawn()
                 .unwrap();
+            // A child that hangs must fail this test instead of blocking CI for
+            // the whole job timeout.
+            let deadline = Instant::now() + Duration::from_secs(60);
+            let result = loop {
+                if let Some(status) = child.try_wait().unwrap() {
+                    break status;
+                }
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    panic!("isolated pagination test did not finish within 60s");
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            };
             std::fs::remove_dir_all(dir).unwrap();
             assert!(result.success(), "isolated pagination test failed");
             return;
