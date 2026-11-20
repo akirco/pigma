@@ -92,13 +92,14 @@ impl App {
         }
         self.state.navigation.content_selected = count - 1;
         self.state.navigation.table_state.select(Some(count - 1));
+        self.check_load_more(count);
     }
 
     /// Ask for the next page when the selection approaches the loaded tail.
     fn check_load_more(&mut self, count: usize) {
         if let Some(ref mut pg) = self.state.navigation.pagination {
             let sel = self.state.navigation.content_selected;
-            if !pg.loading && pg.has_more && count >= 10 && sel >= count.saturating_sub(10) {
+            if !pg.loading && pg.has_more && sel >= count.saturating_sub(10) {
                 pg.loading = true;
                 self.events.send(NavigationEvent::LoadMore);
             }
@@ -226,6 +227,90 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn playlist_pagination_releases_loading_after_a_failed_request() {
+        const CHILD: &str = "PIGMA_PAGINATION_TEST_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let dir =
+                std::env::temp_dir().join(format!("pigma-pagination-test-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "app::selection::tests::playlist_pagination_releases_loading_after_a_failed_request",
+                ])
+                .env(CHILD, "1")
+                .env("HOME", &dir)
+                .env("USERPROFILE", &dir)
+                .env("APPDATA", &dir)
+                .env("LOCALAPPDATA", &dir)
+                .env("XDG_CONFIG_HOME", &dir)
+                .env("XDG_CACHE_HOME", &dir)
+                .spawn()
+                .unwrap();
+            // A child that hangs must fail this test instead of blocking CI for
+            // the whole job timeout.
+            let deadline = Instant::now() + Duration::from_secs(60);
+            let result = loop {
+                if let Some(status) = child.try_wait().unwrap() {
+                    break status;
+                }
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    panic!("isolated pagination test did not finish within 60s");
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            };
+            std::fs::remove_dir_all(dir).unwrap();
+            assert!(result.success(), "isolated pagination test failed");
+            return;
+        }
+
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let mut app = App::new(crate::config::Config::default(), false).unwrap();
+            let song = std::sync::Arc::new(ncm_api::SongInfo {
+                id: 1,
+                name: String::new(),
+                singer: String::new(),
+                artist_id: 0,
+                album: String::new(),
+                album_id: 0,
+                pic_url: String::new(),
+                duration: 0,
+                copyright: ncm_api::SongCopyright::Free,
+            });
+            app.state
+                .navigation
+                .set_content(ContentState::Songs(vec![song; 100]));
+            app.state.navigation.pagination = Some(crate::state::PaginationInfo {
+                api: "playlist:123456789".into(),
+                limit: 100,
+                has_more: true,
+                total: 200,
+                ..Default::default()
+            });
+
+            // The playlist has no cached IDs, so its next-page request fails without network.
+            app.state.navigation.content_selected = 89;
+            app.content_select_next();
+            assert_eq!(app.state.navigation.content_selected, 90);
+            assert!(app.state.navigation.pagination.as_ref().unwrap().loading);
+            tokio::time::timeout(Duration::from_secs(2), async {
+                while app.state.navigation.pagination.as_ref().unwrap().loading {
+                    app.handle_events().await.unwrap();
+                }
+            })
+            .await
+            .expect("the failed page request must release the loading state");
+        });
+    }
 
     #[test]
     fn double_click_needs_the_same_cell_within_the_window() {

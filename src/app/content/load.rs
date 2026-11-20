@@ -38,7 +38,7 @@ impl App {
 
     pub(crate) fn handle_load_more(&mut self) {
         let (api, offset, limit) = match self.state.navigation.pagination.as_ref() {
-            Some(pg) if pg.has_more && !pg.loading => (pg.api.clone(), pg.next_offset(), pg.limit),
+            Some(pg) if pg.has_more && pg.loading => (pg.api.clone(), pg.next_offset(), pg.limit),
             _ => return,
         };
 
